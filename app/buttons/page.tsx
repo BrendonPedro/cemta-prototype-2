@@ -19,6 +19,7 @@ const ButtonsPage = () => {
       <Button variant="ghostTeal">Ghost Teal</Button>
       <Button variant="sidebar">Sidebar</Button>
       <Button variant="sidebarOutline">Sidebar Outline</Button>
+      <Button variant="nextButton">Next Button</Button>
     </div>
   );
 };

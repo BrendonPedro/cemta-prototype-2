@@ -29,14 +29,14 @@ export const Sidebar = ({ className }: Props) => {
       </div>
 
       <div className="flex flex-col gap-y-2 flex-1">
-        <SidebarItem label="Learn" href="/learn" iconSrc="/learn.svg" />
+        <SidebarItem label="Menus" href="/menus" iconSrc="/menu.png" />
         <SidebarItem
-          label="Leaderboard"
-          href="/leaderboard"
-          iconSrc="/leaderboard.svg"
+          label="OCR"
+          href="/ocr"
+          iconSrc="/menu.svg"
         />
-        <SidebarItem label="quests" href="/quests" iconSrc="/quests.svg" />
-        <SidebarItem label="shop" href="/shop" iconSrc="/shop.svg" />
+        <SidebarItem label="TRANSLATE" href="/translate" iconSrc="/translate.png" />
+        <SidebarItem label="Validate" href="/validate" iconSrc="/validate.png" />
       </div>
       <div className="p-4">
         <ClerkLoading>

@@ -1,45 +1,45 @@
-"use client";
+// TranslateButton.jsx
+'use client'
 
 import React, { useState } from "react";
+import { Button } from "./ui/button"; 
 
-const TranslateButton = ({ documentId }) => {
-  const [isTranslating, setIsTranslating] = useState(false);
+const TranslateButton = ({ ocrText, setTranslation }) => {
+  const [loading, setLoading] = useState(false);
 
-  const handleTranslateClick = async () => {
-    setIsTranslating(true);
+  const handleTranslate = async () => {
+    if (!ocrText) return;
+
+    setLoading(true);
     try {
-      const response = await fetch("/api/translateMenu", {
+      const response = await fetch("/api/translation", {
+        // Adjust this URL based on your API structure
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ documentId }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: ocrText }),
       });
-
       const data = await response.json();
-
       if (response.ok) {
-        console.log("Translation successful:", data);
-        // Here, you might want to trigger a refresh of the menu item or a global state update
+        setTranslation(data.translatedText);
       } else {
-        console.error("Translation failed:", data.error);
+        throw new Error(data.error || "Failed to translate");
       }
     } catch (error) {
-      console.error("Error translating:", error);
+      console.error("Translation error:", error);
+      alert("Error translating text: " + error.message); // or handle this error visibly in another way
+    } finally {
+      setLoading(false);
     }
-    setIsTranslating(false);
   };
 
   return (
-    <button
-      onClick={handleTranslateClick}
-      disabled={isTranslating}
-      className={`px-4 py-2 text-white font-semibold rounded-lg ${
-        isTranslating ? "bg-gray-400" : "bg-blue-500 hover:bg-blue-700"
-      }`}
+    <Button
+      onClick={handleTranslate}
+      disabled={loading || !ocrText}
+      variant="secondary"
     >
-      {isTranslating ? "Translating..." : "Translate"}
-    </button>
+      {loading ? "Translating..." : "Translate"}
+    </Button>
   );
 };
 

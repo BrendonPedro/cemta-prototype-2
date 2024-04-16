@@ -44,7 +44,10 @@ const buttonVariants = cva(
 
         cemta:
           "bg-teal-500 text-white hover:bg-teal-500/90 border-teal-600 border-b-4 active:border-b-0",
-        cemtaOutline: "bg-transparent text-black hover:bg-teal-400",
+        cemtaOutline: "bg-teal-500/15 text-teal-500 border-teal-300 border-2 hover:bg-teal-500/20 transition-none",
+
+        nextButton:
+        "relative overflow-visible rounded-full hover:-translate-y-1 px-12 shadow-xl bg-background/30 after:content-[''] after:absolute after:rounded-full after:inset-0 after:bg-background/40 after:z-[-1] after:transition after:!duration-500 hover:after:scale-150 hover:after:opacity-",
       },
 
       size: {

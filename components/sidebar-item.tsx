@@ -18,7 +18,7 @@ export const SidebarItem = ({ label, iconSrc, href }: Props) => {
 
   return (
     <Button
-      variant={active ? "sidebarOutline" : "sidebar"}
+      variant={active ? "sidebarOutline" : "ghostTeal"}
       className="justify-start h-[52px]"
       asChild
     >
