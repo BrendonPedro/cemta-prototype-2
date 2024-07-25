@@ -1,8 +1,9 @@
+import MenuUpload from "@/components/MenuUpload";
 
 const DashboardPage = () => {
     return(
         <div>
-            Dashboard Page
+            <MenuUpload />
         </div>
 )};
 

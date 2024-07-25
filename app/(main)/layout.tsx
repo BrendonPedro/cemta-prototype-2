@@ -11,11 +11,11 @@ const MainLayout = ({
     return (
       <>
         <MobileHeader />
-        <Sidebar className="hidden lg:flex"/>
-        <main className="lg:pl-[256px] h-full pt-[50px] lg:pt-0">
-          <div className="bg-teal-500 h-full">
-                    {children}
-            </div>
+        <Sidebar className="hidden lg:flex" />
+        <main className="lg:pl-[256px] min-h-screen pt-[50px] lg:pt-0 flex flex-col">
+          <div className="bg-gradient-to-r from-teal-200 to-teal-300 tracking-wide flex-1 w-full">
+            {children}
+          </div>
         </main>
       </>
     );

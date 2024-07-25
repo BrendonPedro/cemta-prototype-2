@@ -6,30 +6,24 @@
     </linearGradient>
   </defs>
 
-  <!-- Central circle -->
-  <circle cx="32" cy="32" r="4" fill="url(#orbitGradient)" />
+  <!-- Knife -->
+  <path d="M31 20L31 40" stroke="url(#orbitGradient)" stroke-width="2" fill="none"/>
+  <path d="M29 16L33 16" stroke="url(#orbitGradient)" stroke-width="2" fill="none"/>
+  <path d="M30 16L30 20" stroke="url(#orbitGradient)" stroke-width="2" fill="none"/>
+  <path d="M32 16L32 20" stroke="url(#orbitGradient)" stroke-width="2" fill="none"/>
 
-  <!-- Orbit 1 -->
-  <ellipse cx="32" cy="32" rx="20" ry="10" fill="none" stroke="url(#orbitGradient)" stroke-width="2">
-    <animate attributeName="rx" values="20;25;20" dur="4s" repeatCount="indefinite" />
-    <animateTransform attributeName="transform" type="rotate" from="0 32 32" to="360 32 32" dur="10s" repeatCount="indefinite" />
-  </ellipse>
+  <!-- Fork -->
+  <path d="M35 20L35 40" stroke="url(#orbitGradient)" stroke-width="2" fill="none"/>
+  <path d="M34 16L34 14" stroke="url(#orbitGradient)" stroke-width="2" fill="none"/>
+  <path d="M35 16L35 14" stroke="url(#orbitGradient)" stroke-width="2" fill="none"/>
+  <path d="M36 16L36 14" stroke="url(#orbitGradient)" stroke-width="2" fill="none"/>
 
-  <!-- Orbit 2 -->
-  <ellipse cx="32" cy="32" rx="10" ry="20" fill="none" stroke="url(#orbitGradient)" stroke-width="2">
-    <animate attributeName="ry" values="20;25;20" dur="4s" repeatCount="indefinite" />
-    <animateTransform attributeName="transform" type="rotate" from="0 32 32" to="360 32 32" dur="10s" repeatCount="indefinite" />
-  </ellipse>
+  <!-- Orbit 1, rotated 0 degrees -->
+  <ellipse cx="32" cy="32" rx="20" ry="10" fill="none" stroke="url(#orbitGradient)" stroke-width="2"></ellipse>
 
-  <!-- Orbit 3, rotated 45 degrees -->
-  <ellipse cx="32" cy="32" rx="20" ry="10" fill="none" stroke="url(#orbitGradient)" stroke-width="2" transform="rotate(45 32 32)">
-    <animate attributeName="rx" values="20;25;20" dur="4s" repeatCount="indefinite" />
-    <animateTransform attributeName="transform" type="rotate" add="sum" from="0 32 32" to="360 32 32" dur="10s" repeatCount="indefinite" />
-  </ellipse>
+  <!-- Orbit 2, rotated 45 degrees -->
+  <ellipse cx="32" cy="32" rx="20" ry="10" fill="none" stroke="url(#orbitGradient)" stroke-width="2" transform="rotate(45 32 32)"></ellipse>
 
-  <!-- Orbit 4, rotated -45 degrees -->
-  <ellipse cx="32" cy="32" rx="20" ry="10" fill="none" stroke="url(#orbitGradient)" stroke-width="2" transform="rotate(-45 32 32)">
-    <animate attributeName="rx" values="20;25;20" dur="4s" repeatCount="indefinite" />
-    <animateTransform attributeName="transform" type="rotate" add="sum" from="0 32 32" to="360 32 32" dur="10s" repeatCount="indefinite" />
-  </ellipse>
+  <!-- Orbit 3, rotated -45 degrees -->
+  <ellipse cx="32" cy="32" rx="20" ry="10" fill="none" stroke="url(#orbitGradient)" stroke-width="2" transform="rotate(-45 32 32)"></ellipse>
 </svg>

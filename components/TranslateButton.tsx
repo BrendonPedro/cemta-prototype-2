@@ -1,32 +1,36 @@
 // TranslateButton.jsx
-'use client'
+"use client";
 
 import React, { useState } from "react";
-import { Button } from "./ui/button"; 
+import { Button } from "./ui/button";
 
-const TranslateButton = ({ ocrText, setTranslation }) => {
+const TranslateButton = ({ ocrText, setTranslation, disabled }) => {
   const [loading, setLoading] = useState(false);
 
   const handleTranslate = async () => {
-    if (!ocrText) return;
+    if (!ocrText) {
+      console.log("No OCR text provided for translation.");
+      return;
+    }
 
     setLoading(true);
     try {
       const response = await fetch("/api/translation", {
-        // Adjust this URL based on your API structure
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: ocrText }),
       });
+
       const data = await response.json();
       if (response.ok) {
         setTranslation(data.translatedText);
+        console.log("Translation successful:", data.translatedText);
       } else {
         throw new Error(data.error || "Failed to translate");
       }
     } catch (error) {
       console.error("Translation error:", error);
-      alert("Error translating text: " + error.message); // or handle this error visibly in another way
+      alert("Error translating text: " + error.message);
     } finally {
       setLoading(false);
     }

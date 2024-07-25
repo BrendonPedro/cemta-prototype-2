@@ -1,14 +1,18 @@
 
 import MenuUpload from "@/components/MenuUpload";
-import TranslateButton from "@/components/TranslateButton";
+import Link from "next/link";
 
 export default function Home() {
   return (
     <div>
-      <h1>Menu Translator</h1>
+      <h1>menus page</h1>
+      <Link href='/'>
+        <button>
+          Go Back
+          </button>
+        </Link>
       <MenuUpload />
-      <TranslateButton />
-       </div>
+    </div>
   );
 }
 

@@ -19,8 +19,8 @@ export const Sidebar = ({ className }: Props) => {
         className,
       )}
     >
-      <div className="pt-8 pl-4 pb-7 flex items-center gap-x-3">
-        <Image src="/cemta_animate.svg" height={40} width={40} alt="Mascot" />
+      <div className="flex items-center gap-x-0">
+        <Image src="/cemta_logo_idea2.svg" height={100} width={100} alt="Mascot" />
         <Link href="/">
           <h1 className="text-2xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-customTeal to-customBlack hover:animate-pulse tracking-wide">
             CEMTA
