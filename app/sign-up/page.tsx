@@ -1,10 +1,13 @@
-'use client'
+// /app/signup/page.tsx
+"use client";
 
 import { useState } from "react";
-import { createUserWithEmailAndPassword } from "firebase/auth";
-import { auth } from "@/config/Firebase/firebaseConfig";
+import { useAuth } from "@clerk/nextjs";
+import { signInWithCustomToken } from "firebase/auth";
+import { auth } from "@/config/firebaseConfig";
 
 const SignUpPage: React.FC = () => {
+  const { getToken } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -12,9 +15,13 @@ const SignUpPage: React.FC = () => {
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await createUserWithEmailAndPassword(auth, email, password);
-      // Handle successful sign-up
-      console.log("Sign-up successful");
+      // Use Clerk to sign up the user and get the token
+      const token = await getToken({ template: "integration_firebase" });
+      if (token) {
+        // Sign in with Firebase using the custom token
+        const userCredential = await signInWithCustomToken(auth, token);
+        console.log("Sign-up successful:", userCredential.user);
+      }
     } catch (error) {
       setError("Sign-up failed. Please try again.");
       console.error("Sign-up error:", error);
@@ -72,8 +79,6 @@ const SignUpPage: React.FC = () => {
 };
 
 export default SignUpPage;
-
-
 
 //What's happening above:
 

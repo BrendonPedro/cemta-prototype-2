@@ -1,4 +1,5 @@
-import * as admin from 'firebase-admin';
+// config/firebaseAdmin.ts
+import admin from 'firebase-admin';
 import { readFileSync } from 'fs';
 
 if (!admin.apps.length) {
@@ -10,3 +11,4 @@ if (!admin.apps.length) {
 }
 
 export default admin;
+

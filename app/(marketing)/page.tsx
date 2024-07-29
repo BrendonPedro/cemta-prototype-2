@@ -1,3 +1,5 @@
+"use client";
+
 import Image from "next/image";
 import { Loader } from "lucide-react";
 import {
@@ -10,15 +12,18 @@ import {
 } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
+import useClerkFirebaseAuth from "@/hooks/useClerkFirebaseAuth";
 
 export default function Home() {
+  const { firebaseUser } = useClerkFirebaseAuth();
+
   return (
     <div className="relative max-w-[1600px] mx-auto flex-1 w-full flex flex-col lg:flex-row items-center justify-center p-4 gap-2 overflow-hidden">
       <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none">
         <Image
           src="/cemta_logo_idea1.svg"
-          width={1600} // Increased from layout="fill"
-          height={1600} // Added height to maintain aspect ratio
+          width={1600}
+          height={1600}
           alt="cemta logo"
           className="animate-ping-slow"
         />
@@ -37,20 +42,12 @@ export default function Home() {
           </ClerkLoading>
           <ClerkLoaded>
             <SignedOut>
-              <SignUpButton
-                mode="modal"
-                afterSignInUrl="/dashboards"
-                afterSignUpUrl="/dashboards"
-              >
+              <SignUpButton>
                 <Button size="lg" variant="cemta" className="w-full">
                   Get Started
                 </Button>
               </SignUpButton>
-              <SignInButton
-                mode="modal"
-                afterSignInUrl="/dashboards"
-                afterSignUpUrl="/dashboards"
-              >
+              <SignInButton>
                 <Button size="lg" variant="ghostTeal" className="w-full">
                   I already have an account
                 </Button>
@@ -60,6 +57,11 @@ export default function Home() {
               <Button size="lg" variant="cemta" className="w-full" asChild>
                 <Link href="/dashboards">Continue to Dashboard</Link>
               </Button>
+              {firebaseUser && (
+                <div>
+                  <em>Signed In {firebaseUser.email}</em>
+                </div>
+              )}
             </SignedIn>
           </ClerkLoaded>
         </div>

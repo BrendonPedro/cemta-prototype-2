@@ -1,9 +1,7 @@
+// app/api/upload-to-gcs/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { Storage } from '@google-cloud/storage';
+import { unlabeledBucket } from '@/config/googleCloudConfig';
 import admin from '@/config/firebaseAdmin';
-
-const storage = new Storage();
-const bucket = storage.bucket('cemta_menu_uploads');
 
 export const config = {
   api: {
@@ -31,7 +29,7 @@ export async function POST(req: NextRequest) {
     }
 
     const fileName = `${Date.now()}`;
-    const file = bucket.file(fileName);
+    const file = unlabeledBucket.file(fileName);
     const stream = file.createWriteStream({
       resumable: false,
       contentType,
@@ -58,7 +56,7 @@ export async function POST(req: NextRequest) {
     });
 
     stream.on('finish', () => {
-      const publicUrl = `https://storage.googleapis.com/${bucket.name}/${file.name}`;
+      const publicUrl = `https://storage.googleapis.com/${unlabeledBucket.name}/${file.name}`;
       return NextResponse.json({ url: publicUrl }, { status: 200 });
     });
 

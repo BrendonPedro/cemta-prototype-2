@@ -1,12 +1,9 @@
-// /config/firebaseConfig.ts
-import { initializeApp, getApp, getApps } from 'firebase/app';
+import { initializeApp, getApp, getApps, FirebaseApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
-import { getAuth, signInWithRedirect, signInWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
-import { Storage } from '@google-cloud/storage';
-import { DocumentProcessorServiceClient } from '@google-cloud/documentai';
+import { getAuth, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 
-// Your web app's Firebase configuration
-export const firebaseConfig = {
+// CEMTA web app's Firebase configuration
+const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
   projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
@@ -16,7 +13,7 @@ export const firebaseConfig = {
 };
 
 // Initialize Firebase or use the existing app
-let app;
+let app: FirebaseApp;
 if (!getApps().length) {
   app = initializeApp(firebaseConfig);
 } else {
@@ -29,24 +26,9 @@ provider.setCustomParameters({ prompt: 'select_account' });
 const db = getFirestore(app);
 const auth = getAuth(app);
 
-// Google Cloud Storage
-const storage = new Storage({
-  projectId: process.env.GOOGLE_CLOUD_PROJECT_ID,
-  keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
-});
-
-// Document AI
-let documentAiClient;
-if (typeof window === 'undefined') {
-  documentAiClient = new DocumentProcessorServiceClient({
-    projectId: process.env.GOOGLE_CLOUD_PROJECT_ID,
-    keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
-  });
-}
-
 export const signInWithGooglePopup = () => signInWithPopup(auth, provider);
 
-export { db, auth, storage, documentAiClient };
+export { db, auth, app, firebaseConfig }; 
 
 
 

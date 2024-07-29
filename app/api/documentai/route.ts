@@ -1,16 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { Storage } from '@google-cloud/storage';
-import admin from '@/config/firebaseAdmin';
+import { documentAiClient, labeledBucket } from '@/config/googleCloudConfig';
 import fetch from 'node-fetch';
 
-const storage = new Storage();
-const labeledBucket = storage.bucket('cemta_menu_uploads_labeled');
+const processorEndpoint = 'https://us-documentai.googleapis.com/v1/projects/500843166981/locations/us/processors/9a89a0ae110dcf9e:process';
 
-// Define the Document AI processor endpoint
-const processorEndpoint = 'https://us-documentai.googleapis.com/v1/projects/137337939807/locations/us/processors/7a802a76ae5efb22:process';
-
+// Define the expected structure of the Document AI response
 interface DocumentAIResponse {
-  document: any; // Adjust this type based on your actual Document AI response structure
+  document: any; // Adjust this type based on the actual structure
 }
 
 export async function POST(req: NextRequest) {
@@ -29,8 +25,6 @@ export async function POST(req: NextRequest) {
     if (!token) {
       return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }
-
-    await admin.auth().verifyIdToken(token);
 
     // Get the content of the image from the URL
     const imageBuffer = await fetch(imageUrl).then((res) => res.arrayBuffer());
