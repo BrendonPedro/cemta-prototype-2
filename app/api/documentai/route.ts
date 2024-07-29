@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { documentAiClient, labeledBucket } from '@/config/googleCloudConfig';
+import admin from '@/config/firebaseAdmin';
 import fetch from 'node-fetch';
 
-const processorEndpoint = 'https://us-documentai.googleapis.com/v1/projects/500843166981/locations/us/processors/9a89a0ae110dcf9e:process';
+const processorEndpoint = 'https://us-documentai.googleapis.com/v1/projects/YOUR_PROJECT_ID/locations/YOUR_LOCATION/processors/YOUR_PROCESSOR_ID:process';
 
 // Define the expected structure of the Document AI response
 interface DocumentAIResponse {
@@ -25,6 +26,8 @@ export async function POST(req: NextRequest) {
     if (!token) {
       return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
     }
+
+    await admin.auth().verifyIdToken(token);
 
     // Get the content of the image from the URL
     const imageBuffer = await fetch(imageUrl).then((res) => res.arrayBuffer());
@@ -66,6 +69,7 @@ export async function POST(req: NextRequest) {
     const publicUrl = `https://storage.googleapis.com/${labeledBucket.name}/${labeledFile.name}`;
     return NextResponse.json({ document: result.document, labeledUrl: publicUrl }, { status: 200 });
   } catch (error) {
+    console.error('Internal server error:', error);
     return NextResponse.json({ message: 'Internal server error', error }, { status: 500 });
   }
 }

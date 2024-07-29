@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Image from "next/image";
 import { Loader } from "lucide-react";
 import {
@@ -13,9 +14,34 @@ import {
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import useClerkFirebaseAuth from "@/hooks/useClerkFirebaseAuth";
+import { getFirestore, doc, getDoc } from "firebase/firestore";
+import { firebaseConfig } from "@/config/firebaseConfig";
+import { initializeApp, getApps, getApp } from "firebase/app";
+
+const firebaseApp = !getApps().length
+  ? initializeApp(firebaseConfig)
+  : getApp();
+const db = getFirestore(firebaseApp);
 
 export default function Home() {
   const { firebaseUser } = useClerkFirebaseAuth();
+  const [username, setUsername] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchUserData = async () => {
+      if (firebaseUser) {
+        const userRef = doc(db, "USERS", firebaseUser.uid);
+        const userSnapshot = await getDoc(userRef);
+
+        if (userSnapshot.exists()) {
+          const userData = userSnapshot.data();
+          setUsername(userData.user_info.user_name);
+        }
+      }
+    };
+
+    fetchUserData();
+  }, [firebaseUser]);
 
   return (
     <div className="relative max-w-[1600px] mx-auto flex-1 w-full flex flex-col lg:flex-row items-center justify-center p-4 gap-2 overflow-hidden">
@@ -57,9 +83,9 @@ export default function Home() {
               <Button size="lg" variant="cemta" className="w-full" asChild>
                 <Link href="/dashboards">Continue to Dashboard</Link>
               </Button>
-              {firebaseUser && (
-                <div>
-                  <em>Signed In {firebaseUser.email}</em>
+              {username && (
+                <div className="text-sm lg:text-lg font-bold text-black max-w-[480px] text-center">
+                  Welcome <em>{username}</em>
                 </div>
               )}
             </SignedIn>

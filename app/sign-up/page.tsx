@@ -1,25 +1,64 @@
-// /app/signup/page.tsx
 "use client";
 
 import { useState } from "react";
-import { useAuth } from "@clerk/nextjs";
+import { useAuth, useSignUp } from "@clerk/nextjs";
 import { signInWithCustomToken } from "firebase/auth";
-import { auth } from "@/config/firebaseConfig";
+import { auth, db } from "@/config/firebaseConfig";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 
 const SignUpPage: React.FC = () => {
   const { getToken } = useAuth();
+  const { isLoaded, signUp } = useSignUp();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [username, setUsername] = useState("");
   const [error, setError] = useState("");
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      // Use Clerk to sign up the user and get the token
+      if (!isLoaded) return;
+
+      // Use Clerk to sign up the user
+      await signUp.create({
+        emailAddress: email,
+        password,
+        username,
+      });
+
+      // Clerk should handle the token internally after sign-up
       const token = await getToken({ template: "integration_firebase" });
       if (token) {
         // Sign in with Firebase using the custom token
         const userCredential = await signInWithCustomToken(auth, token);
+
+        // Add or update the user in Firestore
+        if (userCredential.user) {
+          const userRef = doc(db, "USERS", userCredential.user.uid);
+
+          const userData = {
+            user_info: {
+              user_name: username,
+              user_email: email,
+              user_photo_url: userCredential.user.photoURL,
+              user_nationality: "", // Add more fields as needed
+              user_birthdate: "", // Add more fields as needed
+            },
+            preferences: {
+              allergens: [], // Add more fields as needed
+              dietary_restrictions: [], // Add more fields as needed
+              likes_spicy: "",
+              vegetarian: "",
+              vegan: "",
+              favorite_cuisines: [],
+            },
+            created_at: serverTimestamp(),
+            updated_at: serverTimestamp(),
+          };
+
+          await setDoc(userRef, userData, { merge: true });
+        }
+
         console.log("Sign-up successful:", userCredential.user);
       }
     } catch (error) {
@@ -34,6 +73,22 @@ const SignUpPage: React.FC = () => {
         <h2 className="text-3xl font-bold text-white mb-6">Sign Up</h2>
         {error && <p className="text-red-500 mb-4">{error}</p>}
         <form onSubmit={handleSignUp}>
+          <div className="mb-4">
+            <label
+              htmlFor="username"
+              className="block text-gray-300 font-bold mb-2"
+            >
+              Username
+            </label>
+            <input
+              type="text"
+              id="username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="w-full px-3 py-2 bg-gray-700 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
+            />
+          </div>
           <div className="mb-4">
             <label
               htmlFor="email"

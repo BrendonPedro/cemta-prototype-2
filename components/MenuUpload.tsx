@@ -1,4 +1,3 @@
-// /app/components/MenuUpload.tsx
 "use client";
 
 import React, { useState } from "react";

@@ -1,4 +1,3 @@
-// app/api/upload-to-gcs/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { unlabeledBucket } from '@/config/googleCloudConfig';
 import admin from '@/config/firebaseAdmin';

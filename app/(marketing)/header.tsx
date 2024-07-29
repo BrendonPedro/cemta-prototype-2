@@ -6,7 +6,7 @@ import {
   ClerkLoading,
   SignedIn,
   SignedOut,
-SignInButton,
+  SignInButton,
   UserButton,
 } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
@@ -16,17 +16,17 @@ export const Header = () => {
     <header className="h-20 w-full border-b-2 border-slate-300 px-4 bg-slate-100">
       <div className="lg:max-w-screen-lg mx-auto flex items-center justify-between h-full">
         <div className="pt-8 pl-4 pb-7 flex items-center gap-x-3">
-             <Image
-              src="/cemta_logo_idea2.svg"
-              height={100}
-              width={100}
-              alt="Mascot"
-            />
-            <Link href="/">
-              <h1 className="text-2xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-customTeal to-customBlack hover:animate-pulse tracking-wide">
-                CEMTA
-              </h1>
-            </Link> 
+          <Image
+            src="/cemta_logo_idea2.svg"
+            height={100}
+            width={100}
+            alt="Mascot"
+          />
+          <Link href="/">
+            <h1 className="text-2xl font-extrabold bg-clip-text text-transparent bg-gradient-to-r from-customTeal to-customBlack hover:animate-pulse tracking-wide">
+              CEMTA
+            </h1>
+          </Link>
           <Button size="sm" variant="ghostTeal">
             <Link href="/">Home</Link>
           </Button>
@@ -34,7 +34,7 @@ export const Header = () => {
             <Link href="/findRestaurants">Restaurants</Link>
           </Button>
           <Button size="sm" variant="ghostTeal">
-            <Link href="/">Validators</Link>
+            <Link href="/dashboards">Dashboard</Link>
           </Button>
           <Button size="sm" variant="ghostTeal">
             <Link href="/">Cemta Team</Link>
@@ -54,14 +54,10 @@ export const Header = () => {
         </ClerkLoading>
         <ClerkLoaded>
           <SignedIn>
-            <UserButton afterSignOutUrl="/" />
+            <UserButton />
           </SignedIn>
           <SignedOut>
-            <SignInButton
-              mode="modal"
-              afterSignInUrl="/dashboards"
-              afterSignUpUrl="/dashboards"
-            >
+            <SignInButton>
               <Button size="lg" variant="default">
                 Login
               </Button>
