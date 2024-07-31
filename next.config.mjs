@@ -1,20 +1,26 @@
-
 /** @type {import('next').NextConfig} */
-const nextConfig = {images: {
+const nextConfig = {
+  images: {
     remotePatterns: [
       {
         protocol: 'https',
         hostname: 'images.unsplash.com',
-    },
-            {
+      },
+      {
         protocol: 'https',
         hostname: 'firebasestorage.googleapis.com',
       },
+      {
+        protocol: 'https',
+        hostname: 'storage.googleapis.com',
+      },
     ],
-},
+  },
 };
 
 export default nextConfig;
+
+
 
 // next.config.js
 // module.exports = {

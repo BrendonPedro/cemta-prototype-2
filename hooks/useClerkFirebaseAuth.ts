@@ -1,3 +1,4 @@
+// 
 import { useEffect, useState } from 'react';
 import { useAuth, useUser } from '@clerk/nextjs';
 import { initializeApp, FirebaseApp } from 'firebase/app';
@@ -43,14 +44,10 @@ const useClerkFirebaseAuth = () => {
   const [firebaseApp, setFirebaseApp] = useState<FirebaseApp | null>(null);
 
   useEffect(() => {
-    const initializeFirebase = async () => {
-      if (!firebaseApp) {
-        const app = initializeApp(firebaseConfig);
-        setFirebaseApp(app);
-      }
-    };
-
-    initializeFirebase();
+    if (!firebaseApp) {
+      const app = initializeApp(firebaseConfig);
+      setFirebaseApp(app);
+    }
   }, [firebaseApp]);
 
   useEffect(() => {

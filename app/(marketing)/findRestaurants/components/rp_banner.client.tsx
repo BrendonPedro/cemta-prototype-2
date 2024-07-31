@@ -6,33 +6,42 @@ import { MouseEventHandler } from 'react';
 
 const RestaurantPartner_Banner = ({
   handleOnClick,
+  handleOnClickPartners,
   buttonText,
+  buttonTextPartners,
 }: {
   handleOnClick: MouseEventHandler<HTMLButtonElement> | undefined;
+  handleOnClickPartners: MouseEventHandler<HTMLButtonElement> | undefined;
   buttonText: string;
+  buttonTextPartners: string;
 }) => {
   return (
     <div className="mb-12 grid lg:mb-24 lg:grid-cols-2">
       <div className="z-20 flex flex-col px-2 md:pt-12">
-        <h1 className="my-2 flex-wrap text-5xl font-extrabold">
+        <h1 className="mt-2 my-5 flex-wrap text-6xl font-extrabold">
           <span className="pr-2 text-teal-600">Find</span>
           <span className="text-gray-900">Restaurants</span>
         </h1>
         <p className="font-aleo text-xl font-semibold text-gray-900 md:mt-1 lg:text-2xl">
           Enjoy exclusive offers and discover new favorites at our partner
-          restaurants!
+          restaurants
         </p>
-        <div className="mt-5">
-          <Button variant="cemta" onClick={handleOnClick}>{buttonText}</Button>
+        <div className="pt-5 flex items-center gap-x-10">
+          <Button variant="nextButton" onClick={handleOnClick}>
+            {buttonText}
+          </Button>
+          <Button variant="nextButton" onClick={handleOnClickPartners}>
+            {buttonTextPartners}
+          </Button>
         </div>
-        {/* <p className="text-xs text-zinc-950-600 md:mt-1 ml-5 dark:text-gray-400 font-medium">
+        {/* <p className=" flex-wrap text-xs text-zinc-950-600 md:mt-1 ml-5 dark:text-gray-400 font-medium">
           A tick indicates a CEMTA partnership ✔
         </p> */}
       </div>
-      <div className="absolute top-2 z-10 md:top-0 md:mt-12 md:pl-10 md:pt-0 lg:right-1/4 lg:flex lg:pl-20">
+      <div className="absolute top-2 z-10 md:top-12 md:mt-12 md:pl-10 md:pt-0 lg:right-1/4 lg:flex lg:pl-20">
         <Image
           src="/static/hero-image2.png"
-          width={600}
+          width={800}
           height={500}
           alt="hero image"
           priority={true}
@@ -40,7 +49,7 @@ const RestaurantPartner_Banner = ({
       </div>
     </div>
   );
-}
+};
 
 export default RestaurantPartner_Banner;
 

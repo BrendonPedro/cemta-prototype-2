@@ -1,11 +1,10 @@
-
 // Clerk integration
 import type { Metadata } from "next";
 import { Nunito } from "next/font/google";
-import { ClerkProvider } from '@clerk/nextjs';
+import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 
-const font = Nunito({ subsets: ["latin"] });
+const font = Nunito({ subsets: ["latin"], weight: "800" });
 
 export const metadata: Metadata = {
   title: "CEMTA",
@@ -20,7 +19,7 @@ export default function RootLayout({
   return (
     <ClerkProvider>
       <html lang="en">
-        <body className={font.className}>{children}</body>
+        <body className={`${font.className} font-fallback`}>{children}</body>
       </html>
     </ClerkProvider>
   );

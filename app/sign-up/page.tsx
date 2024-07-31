@@ -2,9 +2,15 @@
 
 import { useState } from "react";
 import { useAuth, useSignUp } from "@clerk/nextjs";
-import { signInWithCustomToken } from "firebase/auth";
-import { auth, db } from "@/config/firebaseConfig";
-import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { signInWithCustomToken, getAuth } from "firebase/auth";
+import { initializeApp, getApp, getApps } from "firebase/app";
+import { getFirestore, doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { firebaseConfig } from "@/config/firebaseConfig";
+
+// Initialize Firebase app
+if (getApps().length === 0) {
+  initializeApp(firebaseConfig);
+}
 
 const SignUpPage: React.FC = () => {
   const { getToken } = useAuth();
@@ -30,17 +36,19 @@ const SignUpPage: React.FC = () => {
       const token = await getToken({ template: "integration_firebase" });
       if (token) {
         // Sign in with Firebase using the custom token
+        const auth = getAuth();
         const userCredential = await signInWithCustomToken(auth, token);
 
         // Add or update the user in Firestore
         if (userCredential.user) {
+          const db = getFirestore();
           const userRef = doc(db, "USERS", userCredential.user.uid);
 
           const userData = {
             user_info: {
               user_name: username,
               user_email: email,
-              user_photo_url: userCredential.user.photoURL,
+              user_photo_url: userCredential.user.photoURL || "",
               user_nationality: "", // Add more fields as needed
               user_birthdate: "", // Add more fields as needed
             },

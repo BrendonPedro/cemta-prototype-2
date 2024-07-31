@@ -1,7 +1,8 @@
+
 import React from "react";
 import MenuUpload from "@/components/MenuUpload";
 
-const DashboardPage = () => {
+const MenuAnalyzerPage = () => {
   return (
     <div>
       <MenuUpload />
@@ -9,4 +10,7 @@ const DashboardPage = () => {
   );
 };
 
-export default DashboardPage;
+export default MenuAnalyzerPage;
+
+
+

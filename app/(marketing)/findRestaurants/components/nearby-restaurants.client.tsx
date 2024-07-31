@@ -10,7 +10,10 @@ export default function NearbyRestaurantPartners() {
     
     const handleOnClick = () => {
         handleTrackLocation();
-    };
+     };
+    const handleOnClickPartners = () => {
+      handleTrackLocation();
+    }; 
     
     return (
       <div>
@@ -19,11 +22,14 @@ export default function NearbyRestaurantPartners() {
           buttonText={
             isFindingLocation ? "Locating" : "View restuarants nearby"
           }
+          handleOnClickPartners={handleOnClickPartners}
+          buttonTextPartners={
+            isFindingLocation ? "Locating" : "View Partners nearby"
+          }
         />
-        {locationErrorMsg && <p>Error: {locationErrorMsg}</p>}
-
-        <div className="mt-20">
-          <h2 className="mt-8 pb-8 text-3xl font-bold text-black">
+        {locationErrorMsg && <p>Error: {locationErrorMsg}</p>},
+        <div className="mt-2">
+          <h2 className="mt-2 pb-8 text-3xl font-bold text-black">
             Restaurants Near Me 🍽
           </h2>
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 md:gap-2 lg:grid-cols-3 lg:gap-6">

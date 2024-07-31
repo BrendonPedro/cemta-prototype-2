@@ -26,6 +26,7 @@ const db = getFirestore(firebaseApp);
 export default function Home() {
   const { firebaseUser } = useClerkFirebaseAuth();
   const [username, setUsername] = useState<string | null>(null);
+  const [animatedUsername, setAnimatedUsername] = useState<string>("");
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -35,13 +36,26 @@ export default function Home() {
 
         if (userSnapshot.exists()) {
           const userData = userSnapshot.data();
-          setUsername(userData.user_info.user_name);
+          setUsername(userData?.user_info?.user_name || null);
         }
       }
     };
 
     fetchUserData();
   }, [firebaseUser]);
+
+  useEffect(() => {
+    if (username) {
+      let index = 0;
+      const interval = setInterval(() => {
+        setAnimatedUsername((prev) => prev + username[index]);
+        index++;
+        if (index === username.length) {
+          clearInterval(interval);
+        }
+      }, 3000 / username.length); // Animate over 3 seconds
+    }
+  }, [username]);
 
   return (
     <div className="relative max-w-[1600px] mx-auto flex-1 w-full flex flex-col lg:flex-row items-center justify-center p-4 gap-2 overflow-hidden">
@@ -58,7 +72,7 @@ export default function Home() {
         <h1 className="font-bold text-center sm:text-5xl xl:text-9xl bg-clip-text text-transparent bg-gradient-to-r from-customTeal to-customBlack hover:animate-pulse">
           CEMTA
         </h1>
-        <p className="text-xl lg:text-2xl font-bold text-black max-w-[480px] text-center">
+        <p className="text-xl lg:text-3xl font-bold text-black max-w-[580px] text-center">
           <em>Revolutionizing the Dining Experience</em>
         </p>
 
@@ -80,12 +94,12 @@ export default function Home() {
               </SignInButton>
             </SignedOut>
             <SignedIn>
-              <Button size="lg" variant="cemta" className="w-full" asChild>
+              <Button size="lg" variant="nextButton" className="w-full" asChild>
                 <Link href="/dashboards">Continue to Dashboard</Link>
               </Button>
               {username && (
-                <div className="text-sm lg:text-lg font-bold text-black max-w-[480px] text-center">
-                  Welcome <em>{username}</em>
+                <div className="mt-1 text-sm lg:text-lg font-bold text-teal-800 max-w-[480px] flex-wrap welcome-message">
+                  Welcome {username}
                 </div>
               )}
             </SignedIn>

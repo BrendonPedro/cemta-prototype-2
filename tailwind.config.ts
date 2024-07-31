@@ -4,10 +4,10 @@ import type { Config } from "tailwindcss"
 const config = {
   darkMode: ["class"],
   content: [
-    './pages/**/*.{ts,tsx}',
-    './components/**/*.{ts,tsx}',
-    './app/**/*.{ts,tsx}',
-    './src/**/*.{ts,tsx}',
+    './pages/**/*.{js, jsx, ts,tsx}',
+    './components/**/*.{js, jsx, ts,tsx}',
+    './app/**/*.{js, jsx, ts,tsx}',
+    './src/**/*.{js, jsx, ts,tsx}',
 	],
   prefix: "",
   theme: {
@@ -86,7 +86,7 @@ const config = {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         'spin-slow': 'spin 8s linear infinite',
-        'ping-slow': 'ping 45s linear',
+        'ping-slow': 'ping 10s linear',
       },
     },
   },

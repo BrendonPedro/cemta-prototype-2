@@ -1,39 +1,79 @@
 "use client";
 
-import React, { useState } from "react";
-import { useAuth } from "@clerk/nextjs";
+import React, { useState, useEffect } from "react";
 import Image from "next/image";
+import { useAuth } from "@clerk/nextjs";
+import { getAuth, signInWithCustomToken } from "firebase/auth";
+import { firebaseConfig } from "@/config/firebaseConfig";
+import { initializeApp, getApp, getApps } from "firebase/app";
 import { Button } from "@/components/ui/button";
 
-const MenuUpload: React.FC = () => {
+// Initialize Firebase app
+if (getApps().length === 0) {
+  initializeApp(firebaseConfig);
+}
+
+const MenuUpload = () => {
   const [file, setFile] = useState<File | null>(null);
-  const [loading, setLoading] = useState<boolean>(false);
-  const [menuImageUrl, setMenuImageUrl] = useState<string>("");
+  const [loading, setLoading] = useState(false);
+  const [menuImageUrl, setMenuImageUrl] = useState<string | null>(null);
   const [documentAiResults, setDocumentAiResults] = useState<any>(null);
   const { getToken } = useAuth();
 
-  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files?.[0]) {
-      setFile(event.target.files[0]);
-      setDocumentAiResults(null);
+  useEffect(() => {
+    const authenticateWithFirebase = async () => {
+      try {
+        const customToken = await getToken({
+          template: "integration_firebase",
+        });
+        console.log("Retrieved custom token from Clerk:", customToken); // Log the token
+
+        if (!customToken) {
+          throw new Error("Authentication failed. Could not get custom token");
+        }
+
+        const auth = getAuth();
+        const userCredential = await signInWithCustomToken(auth, customToken);
+        console.log("Firebase Authentication Successful");
+
+        const idToken = await userCredential.user.getIdToken();
+        console.log("ID Token obtained:", idToken);
+      } catch (error) {
+        console.error("Firebase Authentication Failed", error);
+      }
+    };
+
+    authenticateWithFirebase();
+  }, [getToken]);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files?.[0]) {
+      setFile(e.target.files[0]);
     }
   };
 
   const handleUploadAndProcess = async () => {
     if (!file) return;
+
     setLoading(true);
     try {
-      // Get Clerk token for authentication
-      const token = await getToken();
+      const customToken = await getToken({ template: "integration_firebase" });
+      console.log("Token for upload:", customToken); // Log the token for upload
+      if (!customToken) {
+        throw new Error("Authentication failed. Could not get custom token");
+      }
 
-      // Upload to Google Cloud Storage
+      const auth = getAuth();
+      const userCredential = await signInWithCustomToken(auth, customToken);
+      const idToken = await userCredential.user.getIdToken();
+
       const formData = new FormData();
       formData.append("file", file);
 
       const uploadResponse = await fetch("/api/upload-to-gcs", {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${idToken}`,
         },
         body: formData,
       });
@@ -45,12 +85,11 @@ const MenuUpload: React.FC = () => {
       const { url } = await uploadResponse.json();
       setMenuImageUrl(url);
 
-      // Process with Document AI
       const processResponse = await fetch("/api/process-document-ai", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${idToken}`,
         },
         body: JSON.stringify({ imageUrl: url }),
       });
@@ -72,7 +111,6 @@ const MenuUpload: React.FC = () => {
   const renderDocumentAiResults = () => {
     if (!documentAiResults) return null;
 
-    // Adjust this based on your actual Document AI schema
     return (
       <div className="mt-6">
         <h2 className="text-2xl font-bold mb-4">Document AI Results</h2>
@@ -121,13 +159,15 @@ const MenuUpload: React.FC = () => {
       {menuImageUrl && (
         <div className="mt-6">
           <h2 className="text-2xl font-bold mb-4">Uploaded Menu Image</h2>
-          <Image
-            src={menuImageUrl}
-            alt="Menu"
-            width={1000}
-            height={500}
-            className="max-w-full h-auto rounded-md"
-          />
+          {menuImageUrl && (
+            <Image
+              src={menuImageUrl}
+              alt="Menu"
+              width={1000}
+              height={500}
+              className="max-w-full h-auto rounded-md"
+            />
+          )}
         </div>
       )}
 
@@ -137,6 +177,202 @@ const MenuUpload: React.FC = () => {
 };
 
 export default MenuUpload;
+
+// "use client";
+
+// import React, { useState } from "react";
+// import { useAuth } from "@clerk/nextjs";
+// import Image from "next/image";
+// import { Button } from "@/components/ui/button";
+
+// const MenuUpload: React.FC = () => {
+//   const [file, setFile] = useState<File | null>(null);
+//   const [loading, setLoading] = useState<boolean>(false);
+//   const [menuImageUrl, setMenuImageUrl] = useState<string>("");
+//   const [documentAiResults, setDocumentAiResults] = useState<any>(null);
+//   const { getToken } = useAuth();
+
+//   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+//     if (event.target.files?.[0]) {
+//       setFile(event.target.files[0]);
+//       setDocumentAiResults(null);
+//     }
+//   };
+
+//   const handleUploadAndProcess = async () => {
+//   if (!file) return;
+//   setLoading(true);
+//   try {
+//     // Get Clerk token for authentication
+//     const token = await getToken();
+
+//     if (!token) {
+//       throw new Error("No token found");
+//     }
+
+//     console.log("Token:", token); // Add this line to debug
+
+//     // Upload to Google Cloud Storage
+//     const formData = new FormData();
+//     formData.append("file", file);
+
+//     const uploadResponse = await fetch("/api/upload-to-gcs", {
+//       method: "POST",
+//       headers: {
+//         Authorization: `Bearer ${token}`,
+//       },
+//       body: formData,
+//     });
+
+//     if (!uploadResponse.ok) {
+//       throw new Error("Failed to upload to Google Cloud Storage");
+//     }
+
+//     const { url } = await uploadResponse.json();
+//     setMenuImageUrl(url);
+
+//     // Process with Document AI
+//     const processResponse = await fetch("/api/process-document-ai", {
+//       method: "POST",
+//       headers: {
+//         "Content-Type": "application/json",
+//         Authorization: `Bearer ${token}`,
+//       },
+//       body: JSON.stringify({ imageUrl: url }),
+//     });
+
+//     if (!processResponse.ok) {
+//       throw new Error("Failed to process with Document AI");
+//     }
+
+//     const result = await processResponse.json();
+//     setDocumentAiResults(result);
+//   } catch (error) {
+//     console.error("Upload or processing failed", error);
+//   } finally {
+//     setLoading(false);
+//     setFile(null);
+//   }
+// };
+
+//   // const handleUploadAndProcess = async () => {
+//   //   if (!file) return;
+//   //   setLoading(true);
+//   //   try {
+//   //     // Get Clerk token for authentication
+//   //     const token = await getToken();
+
+//   //     // Upload to Google Cloud Storage
+//   //     const formData = new FormData();
+//   //     formData.append("file", file);
+
+//   //     const uploadResponse = await fetch("/api/upload-to-gcs", {
+//   //       method: "POST",
+//   //       headers: {
+//   //         Authorization: `Bearer ${token}`,
+//   //       },
+//   //       body: formData,
+//   //     });
+
+//   //     if (!uploadResponse.ok) {
+//   //       throw new Error("Failed to upload to Google Cloud Storage");
+//   //     }
+
+//   //     const { url } = await uploadResponse.json();
+//   //     setMenuImageUrl(url);
+
+//   //     // Process with Document AI
+//   //     const processResponse = await fetch("/api/process-document-ai", {
+//   //       method: "POST",
+//   //       headers: {
+//   //         "Content-Type": "application/json",
+//   //         Authorization: `Bearer ${token}`,
+//   //       },
+//   //       body: JSON.stringify({ imageUrl: url }),
+//   //     });
+
+//   //     if (!processResponse.ok) {
+//   //       throw new Error("Failed to process with Document AI");
+//   //     }
+
+//   //     const result = await processResponse.json();
+//   //     setDocumentAiResults(result);
+//   //   } catch (error) {
+//   //     console.error("Upload or processing failed", error);
+//   //   } finally {
+//   //     setLoading(false);
+//   //     setFile(null);
+//   //   }
+//   // };
+
+//   const renderDocumentAiResults = () => {
+//     if (!documentAiResults) return null;
+
+//     // Adjust this based on your actual Document AI schema
+//     return (
+//       <div className="mt-6">
+//         <h2 className="text-2xl font-bold mb-4">Document AI Results</h2>
+//         <div className="bg-gray-100 rounded-md p-4">
+//           {documentAiResults.menuItems?.map((item: any, index: number) => (
+//             <div key={index} className="mb-2">
+//               <strong>{item.name}</strong>: ${item.price}
+//               {item.description && (
+//                 <p className="text-sm">{item.description}</p>
+//               )}
+//             </div>
+//           ))}
+//         </div>
+//       </div>
+//     );
+//   };
+
+//   return (
+//     <div className="max-w-5xl mx-auto p-6">
+//       <h1 className="my-2 flex-wrap text-5xl font-extrabold">
+//         <span className="pr-2 text-teal-600">Menu</span>
+//         <span className="text-teal-950">Analyzer</span>
+//       </h1>
+//       <div className="rounded-lg shadow-md p-6">
+//         <div className="mb-4">
+//           <label
+//             htmlFor="menuFile"
+//             className="block text-gray-700 font-bold mb-2"
+//           >
+//             Upload Menu Image
+//           </label>
+//           <input
+//             type="file"
+//             id="menuFile"
+//             accept="image/*"
+//             onChange={handleFileChange}
+//             disabled={loading}
+//             className="border rounded-md py-2 px-3 w-full"
+//           />
+//         </div>
+//         <Button onClick={handleUploadAndProcess} disabled={!file || loading}>
+//           {loading ? "Processing..." : "Upload and Process"}
+//         </Button>
+//       </div>
+
+//       {menuImageUrl && (
+//         <div className="mt-6">
+//           <h2 className="text-2xl font-bold mb-4">Uploaded Menu Image</h2>
+//           <Image
+//             src={menuImageUrl}
+//             alt="Menu"
+//             width={1000}
+//             height={500}
+//             className="max-w-full h-auto rounded-md"
+//           />
+//         </div>
+//       )}
+
+//       {renderDocumentAiResults()}
+//     </div>
+//   );
+// };
+
+// export default MenuUpload;
 
 // Previous Code with OCR & Translate Button ---
 
