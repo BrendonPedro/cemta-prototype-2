@@ -17,6 +17,7 @@ import useClerkFirebaseAuth from "@/hooks/useClerkFirebaseAuth";
 import { getFirestore, doc, getDoc } from "firebase/firestore";
 import { firebaseConfig } from "@/config/firebaseConfig";
 import { initializeApp, getApps, getApp } from "firebase/app";
+import DynamicWelcomeMessage from "@/components/dynamicWelcomeMessage";
 
 const firebaseApp = !getApps().length
   ? initializeApp(firebaseConfig)
@@ -26,7 +27,6 @@ const db = getFirestore(firebaseApp);
 export default function Home() {
   const { firebaseUser } = useClerkFirebaseAuth();
   const [username, setUsername] = useState<string | null>(null);
-  const [animatedUsername, setAnimatedUsername] = useState<string>("");
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -43,19 +43,6 @@ export default function Home() {
 
     fetchUserData();
   }, [firebaseUser]);
-
-  useEffect(() => {
-    if (username) {
-      let index = 0;
-      const interval = setInterval(() => {
-        setAnimatedUsername((prev) => prev + username[index]);
-        index++;
-        if (index === username.length) {
-          clearInterval(interval);
-        }
-      }, 3000 / username.length); // Animate over 3 seconds
-    }
-  }, [username]);
 
   return (
     <div className="relative max-w-[1600px] mx-auto flex-1 w-full flex flex-col lg:flex-row items-center justify-center p-4 gap-2 overflow-hidden">
@@ -94,14 +81,10 @@ export default function Home() {
               </SignInButton>
             </SignedOut>
             <SignedIn>
-              <Button size="lg" variant="nextButton" className="w-full" asChild>
+              <Button size="lg" variant="nextButton" className="w-full py-6" asChild>
                 <Link href="/dashboards">Continue to Dashboard</Link>
               </Button>
-              {username && (
-                <div className="mt-1 text-sm lg:text-lg font-bold text-teal-800 max-w-[480px] flex-wrap welcome-message">
-                  Welcome {username}
-                </div>
-              )}
+              {username && <DynamicWelcomeMessage username={username} />}
             </SignedIn>
           </ClerkLoaded>
         </div>

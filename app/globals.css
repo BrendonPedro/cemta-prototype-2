@@ -90,22 +90,12 @@ body {
   display: inline-block;
 }
 
-@keyframes typing {
-  from {
-    width: 0;
-  }
-  to {
-    width: 100%;
-  }
-}
-
 .welcome-message {
-  font-size: 2rem; /* Adjust as necessary */
+  font-size: 1.2rem; /* Adjust as necessary */
   color: #008080; /* Custom Teal */
   white-space: nowrap;
   overflow: hidden;
-  border-right: 1px solid; /* Cursor effect */
-  animation: typing 4s steps(30, end), blink-caret 0.75s step-end infinite;
+  border-right: 0.15em solid; /* Cursor effect */
 }
 
 @keyframes blink-caret {
@@ -115,6 +105,10 @@ body {
   50% {
     border-color: #008080; /* Custom Teal */
   }
+}
+
+.typing {
+  animation: blink-caret 0.75s step-end infinite;
 }
 /* 
 @tailwind base;
