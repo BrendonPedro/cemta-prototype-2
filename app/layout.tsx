@@ -1,10 +1,10 @@
 // Clerk integration
 import type { Metadata } from "next";
-import { Nunito } from "next/font/google";
+import { Anuphan } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 
-const font = Nunito({ subsets: ["latin"], weight: "800" });
+const font = Anuphan({ subsets: ["latin"], weight: "700" });
 
 export const metadata: Metadata = {
   title: "CEMTA",

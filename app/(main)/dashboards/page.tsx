@@ -1,10 +1,19 @@
+'use client';
+
 import React from "react";
-import MenuUpload from "@/components/MenuUpload";
+import DocumentAiResultsDisplay from "@/components/DocumentAiResultsDisplay";
+import { useAuth } from "@clerk/nextjs";
 
 const DashboardPage = () => {
+  const { userId } = useAuth();
+
+  if (!userId) {
+    return <div>Loading...</div>; // Or some loading spinner
+  }
+
   return (
     <div>
-      <MenuUpload />
+      <DocumentAiResultsDisplay userId={userId} />
     </div>
   );
 };

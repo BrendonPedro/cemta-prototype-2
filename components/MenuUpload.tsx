@@ -1,12 +1,25 @@
-"use client";
+'use client';
 
 import React, { useState, useEffect } from "react";
 import Image from "next/image";
 import { useAuth } from "@clerk/nextjs";
 import { getAuth, signInWithCustomToken } from "firebase/auth";
 import { firebaseConfig } from "@/config/firebaseConfig";
-import { initializeApp, getApp, getApps } from "firebase/app";
+import { initializeApp, getApps } from "firebase/app";
 import { Button } from "@/components/ui/button";
+import DocumentAiResultsDisplay from "./DocumentAiResultsDisplay"; // Import the new component
+import { saveDocumentAiResults } from "../app/services/firebaseFirestore";
+
+// Define the types for Document AI results
+interface MenuItem {
+  name: string;
+  price: string;
+  description?: string;
+}
+
+interface DocumentAiResult {
+  menuItems: MenuItem[];
+}
 
 // Initialize Firebase app
 if (getApps().length === 0) {
@@ -17,8 +30,7 @@ const MenuUpload = () => {
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
   const [menuImageUrl, setMenuImageUrl] = useState<string | null>(null);
-  const [documentAiResults, setDocumentAiResults] = useState<any>(null);
-  const { getToken } = useAuth();
+  const { getToken, userId } = useAuth();
 
   useEffect(() => {
     const authenticateWithFirebase = async () => {
@@ -26,8 +38,6 @@ const MenuUpload = () => {
         const customToken = await getToken({
           template: "integration_firebase",
         });
-        console.log("Retrieved custom token from Clerk:", customToken); // Log the token
-
         if (!customToken) {
           throw new Error("Authentication failed. Could not get custom token");
         }
@@ -58,7 +68,6 @@ const MenuUpload = () => {
     setLoading(true);
     try {
       const customToken = await getToken({ template: "integration_firebase" });
-      console.log("Token for upload:", customToken); // Log the token for upload
       if (!customToken) {
         throw new Error("Authentication failed. Could not get custom token");
       }
@@ -91,41 +100,23 @@ const MenuUpload = () => {
           "Content-Type": "application/json",
           Authorization: `Bearer ${idToken}`,
         },
-        body: JSON.stringify({ imageUrl: url }),
+        body: JSON.stringify({ imageUrl: url, userId }),
       });
 
       if (!processResponse.ok) {
         throw new Error("Failed to process with Document AI");
       }
 
-      const result = await processResponse.json();
-      setDocumentAiResults(result);
+      const result: DocumentAiResult = await processResponse.json();
+
+      // Store results in Firestore
+      await saveDocumentAiResults(userCredential.user.uid, url, result);
     } catch (error) {
       console.error("Upload or processing failed", error);
     } finally {
       setLoading(false);
       setFile(null);
     }
-  };
-
-  const renderDocumentAiResults = () => {
-    if (!documentAiResults) return null;
-
-    return (
-      <div className="mt-6">
-        <h2 className="text-2xl font-bold mb-4">Document AI Results</h2>
-        <div className="bg-gray-100 rounded-md p-4">
-          {documentAiResults.menuItems?.map((item: any, index: number) => (
-            <div key={index} className="mb-2">
-              <strong>{item.name}</strong>: ${item.price}
-              {item.description && (
-                <p className="text-sm">{item.description}</p>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-    );
   };
 
   return (
@@ -159,19 +150,17 @@ const MenuUpload = () => {
       {menuImageUrl && (
         <div className="mt-6">
           <h2 className="text-2xl font-bold mb-4">Uploaded Menu Image</h2>
-          {menuImageUrl && (
-            <Image
-              src={menuImageUrl}
-              alt="Menu"
-              width={500}
-              height={500}
-              className="max-w-full h-auto rounded-md"
-            />
-          )}
+          <Image
+            src={menuImageUrl}
+            alt="Menu"
+            width={500}
+            height={500}
+            className="max-w-full h-auto rounded-md"
+          />
         </div>
       )}
 
-      {renderDocumentAiResults()}
+      <DocumentAiResultsDisplay userId={userId as string} />
     </div>
   );
 };
@@ -195,7 +184,6 @@ export default MenuUpload;
 //   initializeApp(firebaseConfig);
 // }
 // The code initializes the Firebase app using the provided configuration. It checks if an app instance already exists
-
 
 // **Component Definition**
 
@@ -309,7 +297,6 @@ export default MenuUpload;
 // It uploads the file to Google Cloud Storage.
 // It processes the uploaded file with Document AI and sets the results in the state.
 
-
 // **Rendering the Component**
 
 // const renderDocumentAiResults = () => {
@@ -381,7 +368,6 @@ export default MenuUpload;
 // renderDocumentAiResults function: This renders the results from Document AI if available.
 // return statement: This renders the main component structure, including the file input, upload button, uploaded image, and Document AI results.
 
-
 // **Packages Used**
 // react: A JavaScript library for building user interfaces.
 // next/image: A Next.js component for optimized image handling.
@@ -396,11 +382,6 @@ export default MenuUpload;
 // The image file is uploaded to Google Cloud Storage.
 // The uploaded image URL is processed using Google Cloud's Document AI.
 // The results from Document AI are displayed in the UI.
-
-
-
-
-
 
 //OLD CODE WITH OCR AND TRANSLATE API COMPONETS WE QUERY FROM
 

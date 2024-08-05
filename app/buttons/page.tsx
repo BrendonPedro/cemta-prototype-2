@@ -20,6 +20,7 @@ const ButtonsPage = () => {
       <Button variant="sidebar">Sidebar</Button>
       <Button variant="sidebarOutline">Sidebar Outline</Button>
       <Button variant="nextButton">Next Button</Button>
+      <Button variant="nextButton2">Next Button2</Button>
     </div>
   );
 };

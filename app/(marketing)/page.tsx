@@ -70,7 +70,7 @@ export default function Home() {
           <ClerkLoaded>
             <SignedOut>
               <SignUpButton>
-                <Button size="lg" variant="cemta" className="w-full">
+                <Button size="sm" variant="cemta" className="w-full">
                   Get Started
                 </Button>
               </SignUpButton>

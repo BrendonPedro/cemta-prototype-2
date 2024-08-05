@@ -62,11 +62,13 @@
 //   }
 // }
 
+// app/api/process-document-ai/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleAuth } from 'google-auth-library';
-import { documentAiClient, labeledBucket } from '@/config/googleCloudConfig';
+import { labeledBucket } from '@/config/googleCloudConfig';
 import admin from '@/config/firebaseAdmin';
 import fetch from 'node-fetch';
+import saveDocumentAiResults from '../../services/firebaseFirestore'
 
 const processorEndpoint = 'https://us-documentai.googleapis.com/v1/projects/500843166981/locations/us/processors/9a89a0ae110dcf9e:process';
 
@@ -126,6 +128,12 @@ export async function POST(req: NextRequest) {
 
     const result = await response.json() as DocumentAIResponse;
 
+    // Filter out the 'pageAnchor' field from the results and format the data
+    const filteredResults = result.document.entities.map((entity:any) => {
+      const { pageAnchor, ...rest } = entity;
+      return rest;
+    });
+
     console.log('Saving result to labeled bucket...');
     const labeledFile = labeledBucket.file(`labeled_${new Date().toISOString()}.json`);
     await labeledFile.save(JSON.stringify(result.document), {
@@ -133,10 +141,16 @@ export async function POST(req: NextRequest) {
     });
 
     const publicUrl = `https://storage.googleapis.com/${labeledBucket.name}/${labeledFile.name}`;
+
+    console.log('Saving result to Firestore...');
+    const userId = 'user_2juPeshG9jlgucL1z3bsdgDDhOa'; // Replace with actual user ID
+    await saveDocumentAiResults(userId, imageUrl, filteredResults);
+
     console.log('Processing completed successfully');
-    return NextResponse.json({ document: result.document, labeledUrl: publicUrl }, { status: 200 });
+    return NextResponse.json({ document: filteredResults, labeledUrl: publicUrl }, { status: 200 });
   } catch (error) {
     console.error('Internal server error:', error);
     return NextResponse.json({ message: 'Internal server error', error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }
+
