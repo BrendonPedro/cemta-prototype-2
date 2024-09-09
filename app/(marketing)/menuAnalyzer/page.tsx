@@ -1,16 +1,12 @@
-
 import React from "react";
-import MenuUpload from "@/components/MenuUpload";
+import MenuAnalyzer from "@/components/MenuAnalyzer";
 
 const MenuAnalyzerPage = () => {
   return (
     <div>
-      <MenuUpload />
+      <MenuAnalyzer />
     </div>
   );
 };
 
 export default MenuAnalyzerPage;
-
-
-

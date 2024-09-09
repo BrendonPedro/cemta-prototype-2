@@ -52,7 +52,7 @@ export default function Home() {
           width={1600}
           height={1600}
           alt="cemta logo"
-          className="animate-ping-slow"
+          className=""
         />
       </div>
       <div className="relative z-10 flex flex-col items-center gap-y-8">

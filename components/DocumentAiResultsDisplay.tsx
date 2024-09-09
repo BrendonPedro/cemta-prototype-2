@@ -1,51 +1,54 @@
-import React, { useEffect, useState } from "react";
-import { getFirestore, doc, getDoc } from "firebase/firestore";
-import { initializeApp, getApps } from "firebase/app";
-import { firebaseConfig } from "@/config/firebaseConfig";
+import React, { useState, useEffect } from "react";
+import { Menu, MenuItem } from "@/types/menuTypes";
+import { getDocumentAiResults } from "@/app/services/firebaseFirestore"; // You'll need to create this function
 
-interface MenuItem {
-  name: string;
-  price: string;
-  description?: string;
+interface DocumentAiResultsDisplayProps {
+  userId: string;
 }
 
-interface DocumentAiResult {
-  menuItems: MenuItem[];
-}
-
-if (getApps().length === 0) {
-  initializeApp(firebaseConfig);
-}
-
-const DocumentAiResultsDisplay = ({ userId }: { userId: string }) => {
-  const [results, setResults] = useState<DocumentAiResult | null>(null);
+const DocumentAiResultsDisplay: React.FC<DocumentAiResultsDisplayProps> = ({ userId }) => {
+  const [menu, setMenu] = useState<Menu | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    const fetchResults = async () => {
-      const db = getFirestore();
-      const userRef = doc(db, "menus", userId);
-      const userDoc = await getDoc(userRef);
-
-      if (userDoc.exists()) {
-        setResults(userDoc.data()?.documentAiResults);
+    const fetchMenu = async () => {
+      try {
+        const fetchedMenu = await getDocumentAiResults(userId);
+        setMenu(fetchedMenu);
+      } catch (err) {
+        setError("Failed to fetch menu data");
+        console.error(err);
+      } finally {
+        setLoading(false);
       }
     };
 
-    fetchResults();
+    fetchMenu();
   }, [userId]);
 
-  if (!results) {
-    return <div>Loading...</div>;
+  if (loading) {
+    return <div>Loading menu data...</div>;
+  }
+
+  if (error) {
+    return <div>Error: {error}</div>;
+  }
+
+  if (!menu || !menu.items || menu.items.length === 0) {
+    return <div>No menu items found.</div>;
   }
 
   return (
     <div className="mt-6">
-      <h2 className="text-2xl font-bold mb-4">Document AI Results</h2>
+      <h2 className="text-2xl font-bold mb-4">Menu Items</h2>
       <div className="bg-gray-100 rounded-md p-4">
-        {results.menuItems?.map((item, index) => (
-          <div key={index} className="mb-2">
-            <strong>{item.name}</strong>: ${item.price}
-            {item.description && <p className="text-sm">{item.description}</p>}
+        {menu.items.map((item: MenuItem, index: number) => (
+          <div key={index} className="mb-4 p-2 bg-white rounded shadow">
+            <h3 className="text-lg font-semibold">{item.name}</h3>
+            <p className="text-green-600 font-medium">${typeof item.price === 'number' ? item.price.toFixed(2) : item.price}</p>
+            {item.description && <p className="text-sm text-gray-600">{item.description}</p>}
+            {item.category && <p className="text-xs text-gray-500 mt-1">Category: {item.category}</p>}
           </div>
         ))}
       </div>

@@ -98,18 +98,13 @@ import admin from '@/config/firebaseAdmin';
 import { DecodedIdToken } from 'firebase-admin/auth';
 import Busboy from 'busboy';
 
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-};
-
 export async function POST(req: NextRequest) {
   return new Promise<NextResponse>(async (resolve, reject) => {
     try {
       // Authentication
       const authHeader = req.headers.get('authorization');
       if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        console.error('Missing or invalid authorization header');
         return resolve(NextResponse.json({ message: 'Unauthorized' }, { status: 401 }));
       }
 
@@ -193,6 +188,7 @@ function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return String(error);
 }
+
 
 
 

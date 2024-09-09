@@ -1,74 +1,10 @@
-// // /app/api/process-document-ai/route.ts
-// import { NextRequest, NextResponse } from 'next/server';
-// import { documentAiClient, labeledBucket } from '@/config/googleCloudConfig';
-// import admin from '@/config/firebaseAdmin';
-// import fetch from 'node-fetch';
-
-// const processorEndpoint = 'https://us-documentai.googleapis.com/v1/projects/500843166981/locations/us/processors/9a89a0ae110dcf9e:process';
-
-// export async function POST(req: NextRequest) {
-//   try {
-//     const { imageUrl } = await req.json();
-//     if (!imageUrl) {
-//       return NextResponse.json({ message: 'Image URL is required' }, { status: 400 });
-//     }
-
-//     const authHeader = req.headers.get('authorization');
-//     if (!authHeader) {
-//       return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
-//     }
-
-//     const token = authHeader.split(' ')[1];
-//     if (!token) {
-//       return NextResponse.json({ message: 'Unauthorized' }, { status: 401 });
-//     }
-
-//     await admin.auth().verifyIdToken(token);
-
-//     // Get the content of the image from the URL
-//     const imageBuffer = await fetch(imageUrl).then((res) => res.arrayBuffer());
-
-//     // Convert the image buffer to a base64 encoded string
-//     const imageBase64 = Buffer.from(imageBuffer).toString('base64');
-
-//     // Prepare the request payload for Document AI
-//     const requestPayload = {
-//       rawDocument: {
-//         content: imageBase64,
-//         mimeType: 'image/jpeg',
-//       },
-//     };
-
-//     // Make the prediction request to Document AI
-//     const [result] = await documentAiClient.processDocument({
-//       name: processorEndpoint,
-//       rawDocument: {
-//         content: imageBase64,
-//         mimeType: 'image/jpeg',
-//       },
-//     });
-
-//     // Save the result to the labeled bucket
-//     const labeledFile = labeledBucket.file(`labeled_${new Date().toISOString()}.json`);
-//     await labeledFile.save(JSON.stringify(result.document), {
-//       resumable: false,
-//     });
-
-//     const publicUrl = `https://storage.googleapis.com/${labeledBucket.name}/${labeledFile.name}`;
-//     return NextResponse.json({ document: result.document, labeledUrl: publicUrl }, { status: 200 });
-//   } catch (error) {
-//     console.error('Internal server error:', error);
-//     return NextResponse.json({ message: 'Internal server error', error }, { status: 500 });
-//   }
-// }
-
 // app/api/process-document-ai/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleAuth } from 'google-auth-library';
 import { labeledBucket } from '@/config/googleCloudConfig';
-import admin from '@/config/firebaseAdmin';
 import fetch from 'node-fetch';
-import saveDocumentAiResults from '../../services/firebaseFirestore'
+import { saveDocumentAiResults } from '../../services/firebaseFirestore';
+import { Menu } from '@/types/menuTypes';
 
 const processorEndpoint = 'https://us-documentai.googleapis.com/v1/projects/500843166981/locations/us/processors/9a89a0ae110dcf9e:process';
 
@@ -78,9 +14,9 @@ interface DocumentAIResponse {
 
 export async function POST(req: NextRequest) {
   try {
-    const { imageUrl } = await req.json();
-    if (!imageUrl) {
-      return NextResponse.json({ message: 'Image URL is required' }, { status: 400 });
+    const { imageUrl, userId } = await req.json();
+    if (!imageUrl || !userId) {
+      return NextResponse.json({ message: 'Image URL and userId are required' }, { status: 400 });
     }
 
     console.log('Processing image:', imageUrl);
@@ -128,29 +64,37 @@ export async function POST(req: NextRequest) {
 
     const result = await response.json() as DocumentAIResponse;
 
-    // Filter out the 'pageAnchor' field from the results and format the data
-    const filteredResults = result.document.entities.map((entity:any) => {
-      const { pageAnchor, ...rest } = entity;
-      return rest;
-    });
+    // Process the Document AI result and create a Menu object
+    const menu: Menu = processDocumentAIResult(result.document);
 
     console.log('Saving result to labeled bucket...');
     const labeledFile = labeledBucket.file(`labeled_${new Date().toISOString()}.json`);
-    await labeledFile.save(JSON.stringify(result.document), {
+    await labeledFile.save(JSON.stringify(menu), {
       resumable: false,
     });
 
     const publicUrl = `https://storage.googleapis.com/${labeledBucket.name}/${labeledFile.name}`;
 
     console.log('Saving result to Firestore...');
-    const userId = 'user_2juPeshG9jlgucL1z3bsdgDDhOa'; // Replace with actual user ID
-    await saveDocumentAiResults(userId, imageUrl, filteredResults);
+    await saveDocumentAiResults(userId, imageUrl, menu);
 
     console.log('Processing completed successfully');
-    return NextResponse.json({ document: filteredResults, labeledUrl: publicUrl }, { status: 200 });
+    return NextResponse.json({ menu, labeledUrl: publicUrl }, { status: 200 });
   } catch (error) {
     console.error('Internal server error:', error);
     return NextResponse.json({ message: 'Internal server error', error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
 }
 
+function processDocumentAIResult(document: any): Menu {
+  // Implement the logic to convert Document AI result to Menu object
+  // This is a placeholder implementation, adjust according to your Document AI output
+  const menu: Menu = {
+    items: document.entities.map((entity: any) => ({
+      name: entity.mentionText,
+      price: parseFloat(entity.properties.find((prop: any) => prop.type === 'price')?.mentionText || '0'),
+      description: entity.properties.find((prop: any) => prop.type === 'description')?.mentionText,
+    })),
+  };
+  return menu;
+}
