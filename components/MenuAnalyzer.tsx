@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Image from "next/image";
 import { useAuth as useClerkAuth } from "@clerk/nextjs";
 import MenuUpload from "./MenuUpload";
@@ -8,46 +8,76 @@ import ProcessingButtons from "./ProcessingButtons";
 import DocumentAiResultsDisplay from "./DocumentAiResultsDisplay";
 import VertexAiResultsDisplay from "./vertexAiResultsDisplay";
 import { AuthProvider, useAuth } from "./AuthProvider";
+import {
+  checkExistingMenus,
+  getMenuCount,
+} from "@/app/services/firebaseFirestore";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Input } from "@/components/ui/input";
+import { Spinner } from "@/components/ui/spinner";
 
 type ProcessType = "none" | "documentAI" | "vertexAI";
 
-const MenuAnalyzerContent = () => {
+const MAX_MENUS_PER_USER = 50;
+
+const MenuAnalyzer = () => {
   const { userId } = useClerkAuth();
   const { firebaseToken } = useAuth();
   const [menuImageUrl, setMenuImageUrl] = useState<string | null>(null);
-  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
-  const [menuName, setMenuName] = useState<string>("");
   const [processType, setProcessType] = useState<ProcessType>("none");
   const [isProcessing, setIsProcessing] = useState(false);
-  const [latestProcessingId, setLatestProcessingId] = useState<string | null>(
-    null
-  );
-  const [error, setError] = useState<string | null>(null);
-   const [debugInfo, setDebugInfo] = useState<any>(null);
+  const [latestVertexProcessingId, setLatestVertexProcessingId] = useState<
+    string | null
+  >(null);
+  const [menuName, setMenuName] = useState<string>("");
+  const [alert, setAlert] = useState<{
+    type: "default" | "destructive";
+    message: string;
+  } | null>(null);
+  const [menuCount, setMenuCount] = useState(0);
 
-  const handleUpload = (uploadedUrl: string, previewUrl: string) => {
-    setMenuImageUrl(uploadedUrl);
-    setPreviewImageUrl(previewUrl);
-    setMenuName(uploadedUrl.split("/").pop() || "Untitled Menu");
+  useEffect(() => {
+    if (userId) {
+      getMenuCount(userId).then(setMenuCount);
+    }
+  }, [userId]);
+
+  const handleUpload = async (url: string, fileName: string) => {
+    setMenuImageUrl(url);
     setProcessType("none");
-    setLatestProcessingId(null);
-    setError(null);
+    setLatestVertexProcessingId(null);
+
+    const generatedName = `${
+      fileName.split(".")[0]
+    }_${new Date().toISOString()}`;
+    setMenuName(generatedName);
+
+    if (userId) {
+      const existingMenus = await checkExistingMenus(userId, fileName);
+      if (existingMenus.length > 0) {
+        setAlert({
+          type: "default",
+          message: `Similar menu(s) found: ${existingMenus.join(
+            ", "
+          )}. Consider updating an existing menu instead of creating a new one.`,
+        });
+      } else {
+        setAlert(null);
+      }
+    }
   };
 
   const handleProcessing = async (type: "documentAI" | "vertexAI") => {
-    if (!firebaseToken || !menuImageUrl || !userId || !menuName) {
-      setError(
-        "Missing required information. Please ensure image is uploaded and try again."
-      );
+    if (!firebaseToken || !menuImageUrl || !menuName) return;
+    if (menuCount >= MAX_MENUS_PER_USER) {
+      setAlert({
+        type: "destructive",
+        message: `You have reached the maximum limit of ${MAX_MENUS_PER_USER} menus. Please delete or update an existing menu.`,
+      });
       return;
     }
 
     setIsProcessing(true);
     setProcessType(type);
-    setError(null);
-    setDebugInfo(null);
 
     try {
       const endpoint =
@@ -61,97 +91,88 @@ const MenuAnalyzerContent = () => {
         body: JSON.stringify({ imageUrl: menuImageUrl, userId, menuName }),
       });
 
-      const result = await response.json();
-      console.log(`${type} processing result:`, result);
-      setDebugInfo(result);
-
       if (!response.ok) {
-        throw new Error(result.message || `Failed to process with ${type}`);
+        throw new Error(`Failed to process with ${type}`);
       }
 
-      if (type === "vertexAI") {
-        if (result.menuData && Object.keys(result.menuData).length > 0) {
-          setLatestProcessingId(result.processingId);
-        } else {
-          setError(
-            result.message ||
-              "No menu data found in the results. The AI might not have detected any menu items."
-          );
-        }
+      const result = await response.json();
+      console.log(`${type} processing result:`, result);
+
+      if (type === "vertexAI" && result.processingId) {
+        setLatestVertexProcessingId(result.processingId);
+        setMenuCount((prevCount) => prevCount + 1);
       }
     } catch (error) {
       console.error(`${type} processing failed`, error);
-      setError(
-        error instanceof Error ? error.message : "An unknown error occurred"
-      );
+      setProcessType("none");
     } finally {
       setIsProcessing(false);
     }
   };
 
   return (
-    <div className="max-w-7xl mx-auto p-6">
-      <h1 className="text-3xl font-bold mb-6">Menu Analyzer</h1>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div>
-          <MenuUpload onUpload={handleUpload} />
-          {menuImageUrl && (
-            <div className="mt-4">
-              <Input
-                type="text"
-                placeholder="Enter menu name"
-                value={menuName}
-                onChange={(e) => setMenuName(e.target.value)}
-                className="mb-2"
-              />
+    <AuthProvider>
+      <div className="max-w-7xl mx-auto p-6">
+        <h1 className="text-3xl font-bold mb-6">Menu Analyzer</h1>
+        {alert && (
+          <Alert variant={alert.type}>
+            <AlertTitle>
+              {alert.type === "destructive" ? "Error" : "Notice"}
+            </AlertTitle>
+            <AlertDescription>{alert.message}</AlertDescription>
+          </Alert>
+        )}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div>
+            <MenuUpload onUpload={handleUpload} />
+            {menuImageUrl && (
               <ProcessingButtons
                 onProcess={handleProcessing}
                 isProcessing={isProcessing}
               />
-            </div>
-          )}
-        </div>
-        <div>
-          {error ? (
-            <Alert variant="destructive">
-              <AlertTitle>Error</AlertTitle>
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          ) : processType === "none" && previewImageUrl ? (
-            <div>
-              <h2 className="text-xl font-semibold mb-2">Uploaded Image</h2>
-              <Image
-                src={previewImageUrl}
-                alt="Uploaded Menu"
-                width={500}
-                height={500}
-                className="max-w-full h-auto rounded-md"
+            )}
+          </div>
+          <div>
+            {!menuImageUrl && (
+              <div className="flex justify-center items-center h-96">
+                <p className="text-gray-500">
+                  Choose a menu to preview, upload it when chosen, and then
+                  select a processing request.
+                </p>
+              </div>
+            )}
+            {isProcessing && (
+              <div className="flex justify-center items-center h-96">
+                <Spinner className="h-8 w-8 text-blue-500" />
+                <span className="ml-2">Processing menu, please wait...</span>
+              </div>
+            )}
+            {!isProcessing && processType === "none" && menuImageUrl && (
+              <div>
+                <h2 className="text-xl font-semibold mb-2">Uploaded Image</h2>
+                <Image
+                  src={menuImageUrl}
+                  alt="Uploaded Menu"
+                  width={500}
+                  height={500}
+                  className="max-w-full h-auto rounded-md"
+                />
+              </div>
+            )}
+            {!isProcessing && processType === "documentAI" && (
+              <DocumentAiResultsDisplay userId={userId as string} />
+            )}
+            {!isProcessing && processType === "vertexAI" && (
+              <VertexAiResultsDisplay
+                userId={userId as string}
+                latestProcessingId={latestVertexProcessingId}
               />
-            </div>
-          ) : processType === "documentAI" ? (
-            <DocumentAiResultsDisplay userId={userId as string} />
-          ) : processType === "vertexAI" && latestProcessingId ? (
-            <VertexAiResultsDisplay
-              userId={userId as string}
-              latestProcessingId={latestProcessingId}
-            />
-          ) : null}
-          {debugInfo && (
-        <div className="mt-6 p-4 bg-gray-100 rounded">
-          <h3 className="text-lg font-semibold mb-2">Debug Information:</h3>
-          <pre className="whitespace-pre-wrap">{JSON.stringify(debugInfo, null, 2)}</pre>
-        </div>
-      )}
-    </div>
+            )}
+          </div>
         </div>
       </div>
+    </AuthProvider>
   );
-}; 
-
-const MenuAnalyzer = () => (
-  <AuthProvider>
-    <MenuAnalyzerContent />
-  </AuthProvider>
-);
+};
 
 export default MenuAnalyzer;
