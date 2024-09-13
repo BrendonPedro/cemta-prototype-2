@@ -1,5 +1,11 @@
 import React, { useState, useEffect } from "react";
 import {
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsibleContent,
+} from "@/components/ui/collapsible";
+import { ChevronDown, ChevronUp } from "lucide-react";
+import {
   getVertexAiResults,
   updateVertexAiResults,
   getVertexAiHistory,
@@ -100,6 +106,7 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
   const [showFullMenu, setShowFullMenu] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [isRestaurantInfoOpen, setIsRestaurantInfoOpen] = useState(false);
 
   useEffect(() => {
     const fetchResults = async () => {
@@ -237,24 +244,30 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
     return total.toFixed(2);
   };
 
-  const renderRestaurantInfo = (info: RestaurantInfo) => (
-    <Card className="mb-4">
-      <CardHeader>
-        <CardTitle>Restaurant Information</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {Object.entries(info).map(([key, value]) => (
-          <p key={key}>
-            <strong>{key.replace(/_/g, " ")}:</strong>{" "}
-            {typeof value === "object" && value !== null
-              ? `${value.original || ""} ${value.english ? `(${value.english})` : ""
-              }`
-              : value || "N/A"}
-          </p>
-        ))}
-      </CardContent>
-    </Card>
-  );
+ const renderRestaurantInfo = (info: RestaurantInfo) => (
+   <Collapsible
+     open={isRestaurantInfoOpen}
+     onOpenChange={setIsRestaurantInfoOpen}
+     className="w-full"
+   >
+     <CollapsibleTrigger className="flex items-center justify-between w-full p-4 bg-gray-100 hover:bg-gray-200 transition-colors">
+       <h3 className="text-lg font-semibold">Restaurant Information</h3>
+       {isRestaurantInfoOpen ? <ChevronUp /> : <ChevronDown />}
+     </CollapsibleTrigger>
+     <CollapsibleContent className="p-4 border border-t-0 border-gray-200">
+       {Object.entries(info).map(([key, value]) => (
+         <p key={key} className="mb-2">
+           <strong>{key.replace(/_/g, " ")}:</strong>{" "}
+           {typeof value === "object" && value !== null
+             ? `${value.original || ""} ${
+                 value.english ? `(${value.english})` : ""
+               }`
+             : value || "N/A"}
+         </p>
+       ))}
+     </CollapsibleContent>
+   </Collapsible>
+ );
 
 
   const renderMenuItem = (
@@ -548,43 +561,44 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
             </label>
           </div>
 
-          {renderRestaurantInfo(menuData.restaurant_info)}
+ {renderRestaurantInfo(menuData.restaurant_info)}
 
-          {showFullMenu ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Original Name</TableHead>
-                  <TableHead>Pinyin</TableHead>
-                  <TableHead>English Name</TableHead>
-                  <TableHead>Prices</TableHead>
-                  <TableHead>Attributes</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead>Upgrades</TableHead>
-                  <TableHead>Notes</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {menuData.categories.flatMap((category, categoryIndex) =>
-                  category.items.map((item, itemIndex) =>
-                    renderMenuItem(item, categoryIndex, itemIndex, `${category.name.original} (${category.name.english})`)
-                  )
-                )}
-              </TableBody>
-            </Table>
-          ) : (
-            <Tabs defaultValue={menuData.categories[0].name.original}>
-              <TabsList>
-                {menuData.categories.map((category) => (
-                  <TabsTrigger
-                    key={category.name.original}
-                    value={category.name.original}
-                  >
-                    {category.name.original} ({category.name.english})
-                  </TabsTrigger>
-                ))}
-              </TabsList>
+          {menuData.categories.length > 0 ? (
+            showFullMenu ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Category</TableHead>
+                    <TableHead>Original Name</TableHead>
+                    <TableHead>Pinyin</TableHead>
+                    <TableHead>English Name</TableHead>
+                    <TableHead>Prices</TableHead>
+                    <TableHead>Attributes</TableHead>
+                    <TableHead>Description</TableHead>
+                    <TableHead>Upgrades</TableHead>
+                    <TableHead>Notes</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {menuData.categories.flatMap((category, categoryIndex) =>
+                    category.items.map((item, itemIndex) =>
+                      renderMenuItem(item, categoryIndex, itemIndex, `${category.name.original} ${category.name.english ? `(${category.name.english})` : ''}`)
+                    )
+                  )}
+                </TableBody>
+              </Table>
+            ) : (
+              <Tabs defaultValue={menuData.categories[0].name.original}>
+                <TabsList>
+                  {menuData.categories.map((category) => (
+                    <TabsTrigger
+                      key={category.name.original}
+                      value={category.name.original}
+                    >
+                      {category.name.original} {category.name.english ? `(${category.name.english})` : ''}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
               {menuData.categories.map((category, categoryIndex) => (
                 <TabsContent
                   key={category.name.original}
@@ -612,6 +626,9 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
                 </TabsContent>
               ))}
             </Tabs>
+            )
+          ) : (
+            <p>No categories</p>
           )}
 
           <div className="text-right font-bold">
