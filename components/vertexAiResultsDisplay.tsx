@@ -237,33 +237,36 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
     return total.toFixed(2);
   };
 
-const renderRestaurantInfo = (info: RestaurantInfo) => (
-  <Card className="mb-4">
-    <CardHeader>
-      <CardTitle>Restaurant Information</CardTitle>
-    </CardHeader>
-    <CardContent>
-      {Object.entries(info).map(([key, value]) => (
-        <p key={key}>
-          <strong>{key.replace(/_/g, " ")}:</strong>{" "}
-          {typeof value === "object" && value !== null
-            ? `${value.original || ""} ${
-                value.english ? `(${value.english})` : ""
+  const renderRestaurantInfo = (info: RestaurantInfo) => (
+    <Card className="mb-4">
+      <CardHeader>
+        <CardTitle>Restaurant Information</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {Object.entries(info).map(([key, value]) => (
+          <p key={key}>
+            <strong>{key.replace(/_/g, " ")}:</strong>{" "}
+            {typeof value === "object" && value !== null
+              ? `${value.original || ""} ${value.english ? `(${value.english})` : ""
               }`
-            : value || "N/A"}
-        </p>
-      ))}
-    </CardContent>
-  </Card>
-);
+              : value || "N/A"}
+          </p>
+        ))}
+      </CardContent>
+    </Card>
+  );
 
 
   const renderMenuItem = (
     item: MenuItem,
     categoryIndex: number,
-    itemIndex: number
+    itemIndex: number,
+    categoryName?: string
   ) => (
-    <>
+    <TableRow key={`${categoryName || ''}-${itemIndex}`}>
+      {showFullMenu && categoryName && (
+        <TableCell>{categoryName}</TableCell>
+      )}
       <TableCell>
         {isEditing ? (
           <Input
@@ -405,7 +408,7 @@ const renderRestaurantInfo = (info: RestaurantInfo) => (
         ) : (
           <>
             {item.popular && "⭐ Popular "}
-            {item.chef_recommended && "👨‍🍳 Chef&apos;s Recommendation "}
+            {item.chef_recommended && "👨‍🍳 Chef's Recommendation "}
             {item.spice_level && `🌶️`.repeat(parseInt(item.spice_level))}
             {item.allergy_alert && "⚠️ " + item.allergy_alert}
           </>
@@ -467,7 +470,7 @@ const renderRestaurantInfo = (info: RestaurantInfo) => (
           item.notes
         )}
       </TableCell>
-    </>
+    </TableRow>
   );
 
   if (isLoading) {
@@ -545,73 +548,71 @@ const renderRestaurantInfo = (info: RestaurantInfo) => (
             </label>
           </div>
 
-          <div>
-            <h3 className="text-lg font-semibold mb-2">Filter Categories:</h3>
-            <div className="flex flex-wrap gap-2">
-              {menuData.categories.map((category) => (
-                <div
-                  key={category.name.original}
-                  className="flex items-center space-x-2"
-                >
-                  <Checkbox
-                    id={`category-${category.name.original}`}
-                    checked={selectedCategories.includes(
-                      category.name.original
-                    )}
-                    onCheckedChange={() =>
-                      toggleCategory(category.name.original)
-                    }
-                  />
-                  <label htmlFor={`category-${category.name.original}`}>
+          {renderRestaurantInfo(menuData.restaurant_info)}
+
+          {showFullMenu ? (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Category</TableHead>
+                  <TableHead>Original Name</TableHead>
+                  <TableHead>Pinyin</TableHead>
+                  <TableHead>English Name</TableHead>
+                  <TableHead>Prices</TableHead>
+                  <TableHead>Attributes</TableHead>
+                  <TableHead>Description</TableHead>
+                  <TableHead>Upgrades</TableHead>
+                  <TableHead>Notes</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {menuData.categories.flatMap((category, categoryIndex) =>
+                  category.items.map((item, itemIndex) =>
+                    renderMenuItem(item, categoryIndex, itemIndex, `${category.name.original} (${category.name.english})`)
+                  )
+                )}
+              </TableBody>
+            </Table>
+          ) : (
+            <Tabs defaultValue={menuData.categories[0].name.original}>
+              <TabsList>
+                {menuData.categories.map((category) => (
+                  <TabsTrigger
+                    key={category.name.original}
+                    value={category.name.original}
+                  >
                     {category.name.original} ({category.name.english})
-                  </label>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* {renderRestaurantInfo(menuData.restaurant_info)} */}
-
-          <Tabs defaultValue={menuData.categories[0].name.original}>
-            <TabsList>
-              {menuData.categories.map((category) => (
-                <TabsTrigger
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+              {menuData.categories.map((category, categoryIndex) => (
+                <TabsContent
                   key={category.name.original}
                   value={category.name.original}
                 >
-                  {category.name.original} ({category.name.english})
-                </TabsTrigger>
-              ))}
-            </TabsList>
-            {menuData.categories.map((category, categoryIndex) => (
-              <TabsContent
-                key={category.name.original}
-                value={category.name.original}
-              >
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Original Name</TableHead>
-                      <TableHead>Pinyin</TableHead>
-                      <TableHead>English Name</TableHead>
-                      <TableHead>Prices</TableHead>
-                      <TableHead>Attributes</TableHead>
-                      <TableHead>Description</TableHead>
-                      <TableHead>Upgrades</TableHead>
-                      <TableHead>Notes</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {category.items.map((item, itemIndex) => (
-                      <TableRow key={`${category.name.original}-${itemIndex}`}>
-                        {renderMenuItem(item, categoryIndex, itemIndex)}
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Original Name</TableHead>
+                        <TableHead>Pinyin</TableHead>
+                        <TableHead>English Name</TableHead>
+                        <TableHead>Prices</TableHead>
+                        <TableHead>Attributes</TableHead>
+                        <TableHead>Description</TableHead>
+                        <TableHead>Upgrades</TableHead>
+                        <TableHead>Notes</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </TabsContent>
-            ))}
-          </Tabs>
+                    </TableHeader>
+                    <TableBody>
+                      {category.items.map((item, itemIndex) =>
+                        renderMenuItem(item, categoryIndex, itemIndex)
+                      )}
+                    </TableBody>
+                  </Table>
+                </TabsContent>
+              ))}
+            </Tabs>
+          )}
 
           <div className="text-right font-bold">
             Total for selected items: ${calculateTotal()}

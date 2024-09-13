@@ -6,7 +6,7 @@ import { saveVertexAiResults } from '@/app/services/firebaseFirestore';
 
 // Initialize Vertex AI
 const projectId = 'cemta-prototype-2';
-const location = 'asia-east1';
+const location = 'us-central1';
 const modelId = 'gemini-1.5-pro-001';
 
 // A retry mechanism for transient errors
