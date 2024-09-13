@@ -45,50 +45,50 @@ export default function Home() {
   }, [firebaseUser]);
 
   return (
-    <div className="relative max-w-[1600px] mx-auto flex-1 w-full flex flex-col lg:flex-row items-center justify-center p-4 gap-2 overflow-hidden">
-      <div className="absolute inset-0 flex items-center justify-center opacity-10 pointer-events-none">
-        <Image
-          src="/cemta_logo_idea1.svg"
-          width={1600}
-          height={1600}
-          alt="cemta logo"
-          className=""
-        />
-      </div>
-      <div className="relative z-10 flex flex-col items-center gap-y-8">
-        <h1 className="font-bold text-center sm:text-5xl xl:text-9xl bg-clip-text text-transparent bg-gradient-to-r from-customTeal to-customBlack hover:animate-pulse">
+    <div className="flex flex-col items-center justify-center h-full">
+      <div className="text-center mb-12">
+        <h1 className="cemta-title font-bold text-6xl md:text-9xl bg-clip-text text-transparent bg-gradient-to-r from-customTeal to-customBlack">
           CEMTA
         </h1>
-        <p className="text-xl lg:text-3xl font-bold text-black max-w-[580px] text-center">
+        <p className="text-xl md:text-3xl font-bold text-gray-700 mt-4 max-w-2xl mx-auto">
           <em>Revolutionizing the Dining Experience</em>
         </p>
-
-        <div className="flex flex-col items-center gap-y-3 max-w-[330px] w-full">
-          <ClerkLoading>
-            <Loader className="h-5 w-5 text-muted-foreground animate-spin" />
-          </ClerkLoading>
-          <ClerkLoaded>
-            <SignedOut>
-              <SignUpButton>
-                <Button size="sm" variant="cemta" className="w-full">
-                  Get Started
-                </Button>
-              </SignUpButton>
-              <SignInButton>
-                <Button size="lg" variant="ghostTeal" className="w-full">
-                  I already have an account
-                </Button>
-              </SignInButton>
-            </SignedOut>
-            <SignedIn>
-              <Button size="lg" variant="nextButton" className="w-full py-6" asChild>
-                <Link href="/dashboards">Continue to Dashboard</Link>
-              </Button>
-              {username && <DynamicWelcomeMessage username={username} />}
-            </SignedIn>
-          </ClerkLoaded>
-        </div>
       </div>
+
+      <div className="flex flex-col items-center gap-y-6 max-w-md w-full bg-transparent p-8 rounded-lg">
+        <ClerkLoading>
+          <Loader className="h-8 w-8 text-customTeal animate-spin" />
+        </ClerkLoading>
+        <ClerkLoaded>
+          <SignedOut>
+            <SignUpButton>
+              <Button size="lg" variant="nextButton" className="w-auto">
+                Get Started
+              </Button>
+            </SignUpButton>
+            <SignInButton>
+              <Button
+                size="lg"
+                variant="nextButton2"
+                className="w-auto"
+              >
+                I already have an account
+              </Button>
+            </SignInButton>
+          </SignedOut>
+          <SignedIn>
+            <Button size="lg" variant="nextButton2" className="w-full" asChild>
+              <Link href="/dashboards">Continue to Dashboard</Link>
+            </Button>
+          </SignedIn>
+        </ClerkLoaded>
+      </div>
+
+      {username && (
+        <div className="mt-8 text-center">
+          <DynamicWelcomeMessage username={username} />
+        </div>
+      )}
     </div>
   );
 }

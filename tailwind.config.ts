@@ -20,8 +20,10 @@ const config = {
     },
     extend: {
       colors: {
-        customTeal: '#008080',
-        customBlack: '#000000',
+        customTeal: '#008080', //'#00BFBF' Adjust accordingly 
+        customTeal2: '#00BFBF', //'#00BFBF' Adjust accordingly 
+        customBlack: '#000000', //'#333333' Adjust accordingly
+        customBlack2: '#333333', //'#333333' Adjust accordingly
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",

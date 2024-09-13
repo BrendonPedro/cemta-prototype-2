@@ -60,7 +60,7 @@ export async function getMenuCount(userId: string): Promise<number> {
   return querySnapshot.size;
 }
 
-export async function saveVertexAiResults(userId: string, ocrText: string, menuName: string) {
+export async function saveVertexAiResults(userId: string, menuData: any, menuName: string) {
   const userRef = doc(db, "users", userId);
   const resultsRef = doc(collection(userRef, "vertexAiResults"));
   
@@ -75,7 +75,7 @@ export async function saveVertexAiResults(userId: string, ocrText: string, menuN
     
     // Now save the Vertex AI results
     await setDoc(resultsRef, {
-      ocrText,
+      menuData: JSON.stringify(menuData), // Stringify the menuData
       menuName,
       timestamp: new Date().toISOString(),
     });
@@ -96,11 +96,22 @@ export async function getVertexAiResults(userId: string, processingId: string) {
   const docSnap = await getDoc(resultsRef);
 
   if (docSnap.exists()) {
-    return docSnap.data();
+    const data = docSnap.data();
+    return {
+      ...data,
+      menuData: JSON.parse(data.menuData), // Parse the stringified menuData
+    };
   } else {
     console.log('No such document!');
     return null;
   }
+}
+
+export async function updateVertexAiResults(userId: string, processingId: string, menuData: any) {
+  const userRef = doc(db, "users", userId);
+  const resultsRef = doc(userRef, "vertexAiResults", processingId);
+  
+  await updateDoc(resultsRef, { menuData });
 }
 
 export async function getVertexAiHistory(userId: string) {
@@ -114,12 +125,5 @@ export async function getVertexAiHistory(userId: string) {
     menuName: doc.data().menuName,
     timestamp: doc.data().timestamp,
   }));
-}
-
-export async function updateVertexAiResults(userId: string, processingId: string, ocrText: string) {
-  const userRef = doc(db, "users", userId);
-  const resultsRef = doc(userRef, "vertexAiResults", processingId);
-  
-  await updateDoc(resultsRef, { ocrText });
 }
 

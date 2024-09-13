@@ -2,9 +2,10 @@ import React, { useState } from "react";
 import Image from "next/image";
 import { useAuth } from "./AuthProvider";
 import { Button } from "@/components/ui/button";
+import { Loader2 } from "lucide-react";
 
 interface MenuUploadProps {
-  onUpload: (uploadedUrl: string, previewUrl: string) => void;
+  onUpload: (uploadedUrl: string, previewUrl: string, fileName: string) => void;
 }
 
 const MenuUpload: React.FC<MenuUploadProps> = ({ onUpload }) => {
@@ -44,7 +45,7 @@ const MenuUpload: React.FC<MenuUploadProps> = ({ onUpload }) => {
       }
 
       const { url } = await response.json();
-      onUpload(url, previewUrl!);
+      onUpload(url, previewUrl!, file.name);
       setUploadSuccess(true);
     } catch (error) {
       console.error("Upload failed", error);
@@ -78,8 +79,20 @@ const MenuUpload: React.FC<MenuUploadProps> = ({ onUpload }) => {
           />
         </div>
       )}
-      <Button onClick={handleUpload} disabled={!file || loading}>
-        {loading ? "Uploading..." : "Upload Menu Image"}
+      <Button
+        onClick={handleUpload}
+        disabled={!file || loading}
+        className="w-full"
+        variant="nextButton3"
+      >
+        {loading ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Uploading...
+          </>
+        ) : (
+          "Upload Menu Image"
+        )}
       </Button>
       {uploadSuccess && (
         <div className="mt-4 p-4 bg-green-100 text-green-700 rounded-md">

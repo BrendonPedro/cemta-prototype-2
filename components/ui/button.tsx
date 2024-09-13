@@ -44,15 +44,30 @@ const buttonVariants = cva(
 
         cemta:
           "bg-teal-500 text-white hover:bg-teal-500/90 border-teal-600 border-b-4 active:border-b-0",
-        cemtaOutline: "bg-teal-500/15 text-teal-500 border-teal-300 border-2 hover:bg-teal-500/20 transition-none",
+        cemtaOutline:
+          "bg-teal-500/15 text-teal-500 border-teal-300 border-2 hover:bg-teal-500/20 transition-none",
 
         nextButton:
-          "relative overflow-visible rounded-full hover:-translate-y-1 px-12 shadow-xl bg-background/30 after:content-[''] after:absolute after:rounded-full after:inset-0 after:bg-background/40 after:z-[-1] after:transition after:!duration-500 hover:after:scale-150 hover:after:opacity-",
-        
+          "relative overflow-visible rounded-full hover:-translate-y-1 px-12 shadow-xl bg-background/20 after:content-[''] after:absolute after:rounded-full after:inset-0 after:bg-background/40 after:z-[-1] after:transition after:!duration-500 hover:after:scale-150 hover:after:opacity-",
+
         nextButton2:
-        "relative overflow-visible rounded-full hover:-translate-y-1 px-12 shadow-xl bg-background/30 after:content-[''] after:absolute after:rounded-full after:inset-0 after:bg-background/40 after:z-[-1] after:transition after:!duration-500 hover:after:scale-150 hover:after:opacity-",
+          "relative overflow-visible rounded-full hover:-translate-y-1 px-12 shadow-xl bg-customTeal text-white after:content-[''] after:absolute after:rounded-full after:inset-0 after:bg-customTeal/60 after:z-[-1] after:transition after:!duration-500 hover:after:scale-150 hover:after:opacity-0",
+
+        default2: "bg-primary text-primary-foreground hover:bg-primary/90",
+        destructive2:
+          "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+        outline2:
+          "border border-input hover:bg-accent hover:text-accent-foreground",
+        secondary2:
+          "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+        ghost2: "hover:bg-accent hover:text-accent-foreground",
+        link2: "underline-offset-4 hover:underline text-primary",
+        cemta2:
+          "bg-gradient-to-r from-primary to-secondary text-white hover:opacity-90",
+        nextButton3:
+          "relative overflow-visible rounded-full hover:-translate-y-1 px-12 shadow-xl bg-customTeal2 text-white after:content-[''] after:absolute after:rounded-full after:inset-0 after:bg-customTeal2/60 after:z-[-1] after:transition after:!duration-500 hover:after:scale-150 hover:after:opacity-0",
       },
-    
+
       size: {
         default: "h-11 px-4 py-2",
         sm: "h-9 px-3",
