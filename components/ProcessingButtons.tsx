@@ -5,19 +5,21 @@ import { Loader2 } from "lucide-react";
 interface ProcessingButtonsProps {
   onProcess: () => void;
   isProcessing: boolean;
+  isDisabled: boolean;
 }
 
 const ProcessingButtons: React.FC<ProcessingButtonsProps> = ({
   onProcess,
   isProcessing,
+  isDisabled,
 }) => {
   return (
-    <div className="mt-4">
+    <div className="inline-flex items-center w-full">
       <Button
         onClick={onProcess}
-        disabled={isProcessing}
-        className="w-full"
+        disabled={isProcessing || isDisabled}
         variant="nextButton2"
+        className="w-full"
       >
         {isProcessing ? (
           <>

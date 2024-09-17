@@ -83,12 +83,17 @@ const config = {
           from: { height: "var(--radix-accordion-content-height)" },
           to: { height: "0" },
         },
+        "shine": {
+          '0%': { transform: 'translateX(-100%) rotate(10deg)' },
+          '100%': { transform: 'translateX(100%) rotate(10deg)' }
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         'spin-slow': 'spin 8s linear infinite',
         'ping-slow': 'ping 10s linear',
+        'shine': 'shine 10s infinite',
       },
     },
   },

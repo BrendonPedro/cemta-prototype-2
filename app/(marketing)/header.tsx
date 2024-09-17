@@ -37,10 +37,10 @@ export const Header = () => {
             <Link href="/dashboards">Dashboard</Link>
           </Button>
           <Button size="sm" variant="ghostTeal">
-            <Link href="/">Cemta Team</Link>
+            <Link href="/cemtaTeam">Cemta Team</Link>
           </Button>
           <Button size="sm" variant="ghostTeal">
-            <Link href="/">About</Link>
+            <Link href="/about">About</Link>
           </Button>
           <Button size="sm" variant="ghostTeal">
             <Link href="/">Contact</Link>

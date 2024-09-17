@@ -151,8 +151,9 @@ const ocrRequest = {
 
     // Save the results and get the processing ID
 let processingId;
-try {
-  processingId = await saveVertexAiResults(userId, parsedOcrText, menuName);
+    try {
+  const restaurantName = parsedOcrText.restaurant_info?.name?.original || menuName;
+  processingId = await saveVertexAiResults(userId, parsedOcrText, menuName, restaurantName);
 } catch (saveError) {
   console.error('Error saving Vertex AI results:', saveError);
   return NextResponse.json({ message: 'Error saving Vertex AI results', error: saveError instanceof Error ? saveError.message : String(saveError) }, { status: 500 });

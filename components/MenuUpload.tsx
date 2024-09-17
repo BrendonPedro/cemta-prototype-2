@@ -1,14 +1,23 @@
+'use client';
+
 import React, { useState } from "react";
 import Image from "next/image";
 import { useAuth } from "./AuthProvider";
 import { Button } from "@/components/ui/button";
-import { Loader2 } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Info } from "lucide-react";
 
 interface MenuUploadProps {
   onUpload: (uploadedUrl: string, previewUrl: string, fileName: string) => void;
+  onFileChange: () => void;
 }
 
-const MenuUpload: React.FC<MenuUploadProps> = ({ onUpload }) => {
+const MenuUpload: React.FC<MenuUploadProps> = ({ onUpload, onFileChange }) => {
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -21,6 +30,7 @@ const MenuUpload: React.FC<MenuUploadProps> = ({ onUpload }) => {
       setFile(selectedFile);
       setPreviewUrl(URL.createObjectURL(selectedFile));
       setUploadSuccess(false);
+      onFileChange();
     }
   };
 
@@ -45,7 +55,7 @@ const MenuUpload: React.FC<MenuUploadProps> = ({ onUpload }) => {
       }
 
       const { url } = await response.json();
-      onUpload(url, previewUrl!, file.name);
+      onUpload(url, previewUrl!, file.name); // Pass file.name as the third argument
       setUploadSuccess(true);
     } catch (error) {
       console.error("Upload failed", error);
@@ -79,21 +89,28 @@ const MenuUpload: React.FC<MenuUploadProps> = ({ onUpload }) => {
           />
         </div>
       )}
-      <Button
-        onClick={handleUpload}
-        disabled={!file || loading}
-        className="w-full"
-        variant="nextButton3"
-      >
-        {loading ? (
-          <>
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            Uploading...
-          </>
-        ) : (
-          "Upload Menu Image"
-        )}
-      </Button>
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex items-center w-full">
+              <Button
+                onClick={handleUpload}
+                disabled={!file || loading || uploadSuccess}
+                variant="nextButton3"
+                className="w-full"
+              >
+                {loading ? "Uploading..." : "Upload Menu Image"}
+              </Button>
+              {uploadSuccess && <Info className="ml-2 h-4 w-4 text-blue-500" />}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>
+            {uploadSuccess
+              ? "Image uploaded successfully. Choose a new file to upload again."
+              : "Select a file to upload"}
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
       {uploadSuccess && (
         <div className="mt-4 p-4 bg-green-100 text-green-700 rounded-md">
           Upload successful! You can now process the image.

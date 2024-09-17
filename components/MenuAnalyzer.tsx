@@ -1,8 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from "react";
-import Image from "next/image";
 import { useAuth as useClerkAuth } from "@clerk/nextjs";
+import Image from "next/image";
 import MenuUpload from "./MenuUpload";
 import ProcessingButtons from "./ProcessingButtons";
 import VertexAiResultsDisplay from "./vertexAiResultsDisplay";
@@ -10,11 +10,17 @@ import { AuthProvider, useAuth } from "./AuthProvider";
 import {
   checkExistingMenus,
   getMenuCount,
-  saveVertexAiResults,
 } from "@/app/services/firebaseFirestore";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Spinner } from "@/components/ui/spinner";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { Info } from "lucide-react";
 
 const MAX_MENUS_PER_USER = 100;
 
@@ -24,6 +30,7 @@ const MenuAnalyzer = () => {
   const [menuImageUrl, setMenuImageUrl] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isProcessed, setIsProcessed] = useState(false);
   const [latestVertexProcessingId, setLatestVertexProcessingId] = useState<
     string | null
   >(null);
@@ -48,6 +55,7 @@ const MenuAnalyzer = () => {
     setMenuImageUrl(uploadedUrl);
     setPreviewUrl(preview);
     setLatestVertexProcessingId(null);
+    setIsProcessed(false);
 
     const generatedName = `${
       fileName.split(".")[0]
@@ -67,6 +75,10 @@ const MenuAnalyzer = () => {
         setAlert(null);
       }
     }
+  };
+
+  const handleFileChange = () => {
+    setIsProcessed(false);
   };
 
   const handleProcessing = async () => {
@@ -116,71 +128,89 @@ const MenuAnalyzer = () => {
     }
   };
 
-  return (
-    <AuthProvider>
-      <div className="grid md:grid-cols-2 gap-8">
-        <Card>
-          <CardContent className="p-6">
-            <h2 className="text-2xl font-semibold mb-4">Upload Menu</h2>
-            <MenuUpload onUpload={handleUpload} />
-            {menuImageUrl && (
-              <ProcessingButtons
-                onProcess={handleProcessing}
-                isProcessing={isProcessing}
+return (
+  <AuthProvider>
+    <div className="grid md:grid-cols-2 gap-8">
+      <Card>
+        <CardContent className="p-6">
+          <h2 className="text-2xl font-semibold mb-4">Upload Menu</h2>
+          <MenuUpload onUpload={handleUpload} onFileChange={handleFileChange} />
+          {menuImageUrl && (
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className="inline-flex items-center mt-4 w-full">
+                    <ProcessingButtons
+                      onProcess={handleProcessing}
+                      isProcessing={isProcessing}
+                      isDisabled={isProcessed}
+                    />
+                    {isProcessed && (
+                      <Info className="ml-2 h-4 w-4 text-blue-500" />
+                    )}
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {isProcessed
+                    ? "Menu has been processed. Upload a new image to process again."
+                    : "Process the uploaded menu image"}
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          )}
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent className="p-6">
+          <h2 className="text-2xl font-semibold mb-4">Menu Preview</h2>
+          {!previewUrl && (
+            <div className="flex justify-center items-center h-64 bg-muted rounded-lg">
+              <p className="text-muted-foreground">
+                Upload a menu to preview and process
+              </p>
+            </div>
+          )}
+          {isProcessing && (
+            <div className="flex justify-center items-center h-64">
+              <Spinner className="h-8 w-8 text-primary" />
+              <span className="ml-2">Processing menu, please wait...</span>
+            </div>
+          )}
+          {!isProcessing && previewUrl && (
+            <div>
+              <Image
+                src={previewUrl}
+                alt="Uploaded Menu"
+                width={500}
+                height={500}
+                layout="responsive"
+                objectFit="contain"
               />
-            )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6">
-            <h2 className="text-2xl font-semibold mb-4">Menu Preview</h2>
-            {!previewUrl && (
-              <div className="flex justify-center items-center h-64 bg-muted rounded-lg">
-                <p className="text-muted-foreground">
-                  Upload a menu to preview and process
-                </p>
-              </div>
-            )}
-            {isProcessing && (
-              <div className="flex justify-center items-center h-64">
-                <Spinner className="h-8 w-8 text-primary" />
-                <span className="ml-2">Processing menu, please wait...</span>
-              </div>
-            )}
-            {!isProcessing && previewUrl && (
-              <div>
-                <Image
-                  src={previewUrl}
-                  alt="Uploaded Menu"
-                  width={500}
-                  height={500}
-                  className="max-w-full h-auto rounded-lg"
-                />
-              </div>
-            )}
-          </CardContent>
-        </Card>
-        {alert && (
-          <div className="md:col-span-2">
-            <Alert variant={alert.type}>
-              <AlertTitle>
-                {alert.type === "destructive" ? "Error" : "Notice"}
-              </AlertTitle>
-              <AlertDescription>{alert.message}</AlertDescription>
-            </Alert>
-          </div>
-        )}
-        {!isProcessing && latestVertexProcessingId && (
-          <div className="md:col-span-2">
-            <VertexAiResultsDisplay
-              userId={userId as string}
-              latestProcessingId={latestVertexProcessingId}
-            />
-          </div>
-        )}
-      </div>
-    </AuthProvider>
-  );
+            </div>
+          )}
+        </CardContent>
+      </Card>
+      {alert && (
+        <div className="md:col-span-2">
+          <Alert variant={alert.type}>
+            <AlertTitle>
+              {alert.type === "destructive" ? "Error" : "Notice"}
+            </AlertTitle>
+            <AlertDescription>{alert.message}</AlertDescription>
+          </Alert>
+        </div>
+      )}
+      {!isProcessing && latestVertexProcessingId && (
+        <div className="md:col-span-2">
+          <VertexAiResultsDisplay
+            userId={userId as string}
+            latestProcessingId={latestVertexProcessingId}
+          />
+        </div>
+      )}
+    </div>
+  </AuthProvider>
+);
 };
 
 export default MenuAnalyzer;

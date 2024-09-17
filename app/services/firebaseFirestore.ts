@@ -60,9 +60,20 @@ export async function getMenuCount(userId: string): Promise<number> {
   return querySnapshot.size;
 }
 
-export async function saveVertexAiResults(userId: string, menuData: any, menuName: string) {
+
+// Add this new function to get menu count for a specific restaurant
+export async function getMenuCountForRestaurant(userId: string, restaurantId: string): Promise<number> {
   const userRef = doc(db, "users", userId);
-  const resultsRef = doc(collection(userRef, "vertexAiResults"));
+  const menuRef = doc(userRef, "vertexAiResults", restaurantId);
+  const menuDoc = await getDoc(menuRef);
+
+  return menuDoc.exists() ? 1 : 0;
+}
+
+// Modify the saveVertexAiResults function to use restaurantId
+export async function saveVertexAiResults(userId: string, menuData: any, restaurantId: string, restaurantName: string) {
+  const userRef = doc(db, "users", userId);
+  const resultsRef = doc(userRef, "vertexAiResults", restaurantId);
   
   try {
     // Check if the user document exists
@@ -76,19 +87,20 @@ export async function saveVertexAiResults(userId: string, menuData: any, menuNam
     // Now save the Vertex AI results
     await setDoc(resultsRef, {
       menuData: JSON.stringify(menuData), // Stringify the menuData
-      menuName,
+      restaurantName,
       timestamp: new Date().toISOString(),
     });
 
     // Update the user's latest processing ID
-    await updateDoc(userRef, { latestVertexAiProcessingId: resultsRef.id });
+    await updateDoc(userRef, { latestVertexAiProcessingId: restaurantId });
 
-    return resultsRef.id; // Return the new processing ID
+    return restaurantId; // Return the restaurant ID
   } catch (error) {
     console.error("Error saving Vertex AI results:", error);
     throw error;
   }
 }
+
 
 export async function getVertexAiResults(userId: string, processingId: string) {
   const userRef = doc(db, "users", userId);
@@ -127,3 +139,23 @@ export async function getVertexAiHistory(userId: string) {
   }));
 }
 
+// Added this function to get menus for multiple restaurants
+export async function getMenusForRestaurants(userId: string, restaurantIds: string[]) {
+  const userRef = doc(db, "users", userId);
+  const menus = await Promise.all(
+    restaurantIds.map(async (id) => {
+      const menuRef = doc(userRef, "vertexAiResults", id);
+      const menuDoc = await getDoc(menuRef);
+      if (menuDoc.exists()) {
+        const data = menuDoc.data();
+        return {
+          id,
+          menuData: JSON.parse(data.menuData),
+          restaurantName: data.restaurantName,
+        };
+      }
+      return null;
+    })
+  );
+  return menus.filter((menu): menu is NonNullable<typeof menu> => menu !== null);
+}
