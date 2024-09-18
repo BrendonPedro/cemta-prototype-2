@@ -101,7 +101,7 @@ const ocrRequest = {
                 },
                 "popular": false,
                 "chef_recommended": false,
-                "spice_level": "",
+                "spice_level": false,
                 "allergy_alert": "",
                 "upgrades": [
                   {

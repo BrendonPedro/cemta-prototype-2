@@ -173,7 +173,7 @@ return (
           {isProcessing && (
             <div className="flex justify-center items-center h-64">
               <Spinner className="h-8 w-8 text-primary" />
-              <span className="ml-2">Processing menu, please wait...</span>
+              <span className="ml-2">Processing menu, please wait... This may take up to a minute</span>
             </div>
           )}
           {!isProcessing && previewUrl && (
