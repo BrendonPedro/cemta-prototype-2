@@ -16,8 +16,8 @@ const MarketingLayout = ({ children }: Props) => {
           <Image
             src="/cemta_logo_idea1.svg"
             alt="CEMTA logo"
-            layout="fill"
-            objectFit="cover"
+            fill
+            style={{ objectFit: "cover" }}
             quality={100}
           />
         </div>
