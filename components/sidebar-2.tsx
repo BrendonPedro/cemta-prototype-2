@@ -13,7 +13,7 @@ type Props = {
   className?: string;
 };
 
-export const Sidebar = ({ className }: Props) => {
+export const Sidebar2 = ({ className }: Props) => {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
 
   const toggleDropdown = () => {

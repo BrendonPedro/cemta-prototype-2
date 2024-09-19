@@ -1,4 +1,3 @@
-// 
 import { useEffect, useState } from 'react';
 import { useAuth, useUser } from '@clerk/nextjs';
 import { initializeApp, FirebaseApp } from 'firebase/app';
@@ -13,6 +12,7 @@ interface UserData {
     user_photo_url: string;
     user_nationality: string;
     user_birthdate: string;
+    role: 'user' | 'admin' | 'restaurant-partner' | 'validator';
   };
   preferences: {
     allergens: string[];
@@ -35,6 +35,7 @@ interface PublicUserMetadata {
   vegetarian?: string;
   vegan?: string;
   favoriteCuisines?: string[];
+  role?: 'user' | 'admin' | 'restaurant-partner' | 'validator';
 }
 
 const useClerkFirebaseAuth = () => {
@@ -42,6 +43,7 @@ const useClerkFirebaseAuth = () => {
   const { user } = useUser();
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [firebaseApp, setFirebaseApp] = useState<FirebaseApp | null>(null);
+  const [userRole, setUserRole] = useState<'user' | 'admin' | 'restaurant-partner' | 'validator'>('user');
 
   useEffect(() => {
     if (!firebaseApp) {
@@ -66,6 +68,9 @@ const useClerkFirebaseAuth = () => {
             const userSnapshot = await getDoc(userRef);
             const publicMetadata = user.publicMetadata as PublicUserMetadata;
             
+            const role = publicMetadata.role || 'user';
+            setUserRole(role);
+
             let userData: UserData = {
               user_info: {
                 user_name: user.username,
@@ -73,6 +78,7 @@ const useClerkFirebaseAuth = () => {
                 user_photo_url: user.imageUrl,
                 user_nationality: publicMetadata.nationality || '',
                 user_birthdate: publicMetadata.birthdate || '',
+                role: role,
               },
               preferences: {
                 allergens: publicMetadata.allergens || [],
@@ -96,13 +102,14 @@ const useClerkFirebaseAuth = () => {
         }
       } else {
         setFirebaseUser(null);
+        setUserRole('user');
       }
     };
 
     signInWithClerk();
   }, [getToken, isSignedIn, firebaseApp, user]);
 
-  return { firebaseUser };
+  return { firebaseUser, userRole };
 };
 
 export default useClerkFirebaseAuth;

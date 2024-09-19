@@ -1,5 +1,5 @@
 import React from "react";
-import MenuAnalyzer from "@/components/MenuAnalyzer";
+import MenuAnalyzer from "@/app/shared/components/MenuAnalyzer";
 
 const MenuAnalyzerPage = () => {
   return (

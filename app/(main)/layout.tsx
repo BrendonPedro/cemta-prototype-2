@@ -1,21 +1,31 @@
-import { Sidebar } from "@/components/sidebar";
-import { MobileHeader } from "@/components/mobile-header";
+"use client";
+
+import React from "react";
+import { useAuth } from "@/components/AuthProvider";
+import DashboardLayout, {
+  DashboardLayoutProps,
+} from "@/app/shared/layouts/DashboardLayout";
 
 type Props = {
   children: React.ReactNode;
 };
 
 const MainLayout = ({ children }: Props) => {
+  const { firebaseToken, loading, error } = useAuth();
+
+  // Determine user role (you might need to adjust this based on your auth logic)
+  const userRole: DashboardLayoutProps["userRole"] = "user"; // Default to 'user', adjust as needed
+
+  const sidebarItems = [
+    { name: "Find Restaurants", href: "/dashboards/user/find-restaurants" },
+    { name: "My Favorites", href: "/dashboards/user/favorites" },
+    { name: "Recent Views", href: "/dashboards/user/recent-views" },
+  ];
+
   return (
-    <>
-      <MobileHeader />
-      <Sidebar className="hidden lg:flex" />
-      <main className="lg:pl-[256px] min-h-screen pt-[50px] lg:pt-0 flex flex-col">
-        <div className="bg-gradient-to-r from-teal-200 to-teal-300 tracking-wide flex-1 w-full overflow-x-auto">
-          {children}
-        </div>
-      </main>
-    </>
+    <DashboardLayout sidebarItems={sidebarItems} userRole={userRole}>
+      {children}
+    </DashboardLayout>
   );
 };
 
