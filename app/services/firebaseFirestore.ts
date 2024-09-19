@@ -150,7 +150,7 @@ export async function getRestaurantDetails(placeId: string): Promise<{ rating: n
     const data = docSnap.data();
     const currentTime = Date.now();
     const cacheTime = data.cachedAt?.toMillis() || 0;
-    const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+    const CACHE_DURATION = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
 
     if (currentTime - cacheTime < CACHE_DURATION) {
       return { rating: data.rating, address: data.address };

@@ -238,6 +238,7 @@ export default function FindRestaurantsAndMenus() {
         setIsLoading(false);
       }
     );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, firebaseToken, authLoading]);
 
   const handleRefreshLocation = () => {
