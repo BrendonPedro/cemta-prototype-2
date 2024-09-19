@@ -1,12 +1,16 @@
 "use client";
 
 import React, { createContext, useContext, useEffect, useState } from "react";
-import { useAuth as useClerkAuth } from "@clerk/nextjs";
+import {
+  useAuth as useClerkAuth,
+  useUser as useClerkUser,
+} from "@clerk/nextjs"; // Correctly use useUser
 import { getAuth, signInWithCustomToken } from "firebase/auth";
 import { initializeApp, getApps } from "firebase/app";
+import { getFirestore, doc, getDoc } from "firebase/firestore";
 import { firebaseConfig } from "@/config/firebaseConfig";
 
-// Initialize Firebase app if not already initialized
+// Initialize Firebase if not already initialized
 if (getApps().length === 0) {
   initializeApp(firebaseConfig);
 }
@@ -15,6 +19,7 @@ interface AuthContextType {
   firebaseToken: string | null;
   loading: boolean;
   error: string | null;
+  userRole: "user" | "partner" | "validator" | "admin" | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -25,10 +30,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [firebaseToken, setFirebaseToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const { getToken } = useClerkAuth();
+  const [userRole, setUserRole] = useState<
+    "user" | "partner" | "validator" | "admin" | null
+  >(null);
+  const { getToken } = useClerkAuth(); // Use this for token management
+  const { user } = useClerkUser(); // Use useUser to access the user object
 
   useEffect(() => {
     const authenticateWithFirebase = async () => {
+      setLoading(true);
       try {
         const customToken = await getToken({
           template: "integration_firebase",
@@ -41,7 +51,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         const userCredential = await signInWithCustomToken(auth, customToken);
         const idToken = await userCredential.user.getIdToken();
         setFirebaseToken(idToken);
-        console.log("Firebase Authentication Successful");
+
+        // Fetch user role from Firestore
+        if (user) {
+          const db = getFirestore();
+          const userRef = doc(db, "users", user.id); // Correct access to user.id from useUser
+          const userSnap = await getDoc(userRef);
+          if (userSnap.exists()) {
+            setUserRole(userSnap.data()?.role || "user"); // Default to "user" if no role is found
+          }
+        }
       } catch (error) {
         console.error("Firebase Authentication Failed", error);
         setError("Failed to authenticate with Firebase");
@@ -51,10 +70,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     };
 
     authenticateWithFirebase();
-  }, [getToken]);
+  }, [getToken, user]);
 
   return (
-    <AuthContext.Provider value={{ firebaseToken, loading, error }}>
+    <AuthContext.Provider value={{ firebaseToken, loading, error, userRole }}>
       {children}
     </AuthContext.Provider>
   );

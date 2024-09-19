@@ -12,7 +12,7 @@ interface UserData {
     user_photo_url: string;
     user_nationality: string;
     user_birthdate: string;
-    role: 'user' | 'admin' | 'restaurant-partner' | 'validator';
+    role: 'user' | 'admin' | 'partner' | 'validator';
   };
   preferences: {
     allergens: string[];
@@ -35,7 +35,7 @@ interface PublicUserMetadata {
   vegetarian?: string;
   vegan?: string;
   favoriteCuisines?: string[];
-  role?: 'user' | 'admin' | 'restaurant-partner' | 'validator';
+  role?: 'user' | 'admin' | 'partner' | 'validator';
 }
 
 const useClerkFirebaseAuth = () => {
@@ -43,8 +43,11 @@ const useClerkFirebaseAuth = () => {
   const { user } = useUser();
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [firebaseApp, setFirebaseApp] = useState<FirebaseApp | null>(null);
-  const [userRole, setUserRole] = useState<'user' | 'admin' | 'restaurant-partner' | 'validator'>('user');
+  const [userRole, setUserRole] = useState<'user' | 'admin' | 'partner' | 'validator'>('user');
+  const [loading, setLoading] = useState<boolean>(true); // Add a loading state
+  const [error, setError] = useState<string | null>(null); // Add an error state
 
+  // Initialize Firebase only once
   useEffect(() => {
     if (!firebaseApp) {
       const app = initializeApp(firebaseConfig);
@@ -52,13 +55,16 @@ const useClerkFirebaseAuth = () => {
     }
   }, [firebaseApp]);
 
+  // Authenticate with Clerk and Firebase
   useEffect(() => {
     const signInWithClerk = async () => {
+      setLoading(true); // Set loading to true at the start
+
       if (isSignedIn && user) {
-        const token = await getToken({ template: 'integration_firebase' });
-        if (token && firebaseApp) {
-          const auth = getAuth(firebaseApp);
-          try {
+        try {
+          const token = await getToken({ template: 'integration_firebase' });
+          if (token && firebaseApp) {
+            const auth = getAuth(firebaseApp);
             const userCredential = await signInWithCustomToken(auth, token);
             setFirebaseUser(userCredential.user);
 
@@ -67,10 +73,12 @@ const useClerkFirebaseAuth = () => {
 
             const userSnapshot = await getDoc(userRef);
             const publicMetadata = user.publicMetadata as PublicUserMetadata;
-            
+
+            // Set user role from publicMetadata
             const role = publicMetadata.role || 'user';
             setUserRole(role);
 
+            // Prepare userData for Firestore
             let userData: UserData = {
               user_info: {
                 user_name: user.username,
@@ -91,25 +99,30 @@ const useClerkFirebaseAuth = () => {
               updated_at: serverTimestamp(),
             };
 
+            // If the user is new, set created_at
             if (!userSnapshot.exists()) {
               userData.created_at = serverTimestamp();
             }
 
+            // Save user data to Firestore
             await setDoc(userRef, userData, { merge: true });
-          } catch (error) {
-            console.error('Error signing in with custom token:', error);
           }
+        } catch (error) {
+          console.error('Error signing in with custom token:', error);
+          setError('Firebase authentication failed. Please try again.'); // Set error message
         }
       } else {
         setFirebaseUser(null);
         setUserRole('user');
       }
+
+      setLoading(false); // Set loading to false once the process is complete
     };
 
     signInWithClerk();
   }, [getToken, isSignedIn, firebaseApp, user]);
 
-  return { firebaseUser, userRole };
+  return { firebaseUser, userRole, loading, error }; // Return loading and error state
 };
 
 export default useClerkFirebaseAuth;

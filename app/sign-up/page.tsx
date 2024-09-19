@@ -1,23 +1,25 @@
 "use client";
 
 import { useState } from "react";
-import { useAuth, useSignUp } from "@clerk/nextjs";
-import { signInWithCustomToken, getAuth } from "firebase/auth";
-import { initializeApp, getApp, getApps } from "firebase/app";
+import { useSignUp, useUser } from "@clerk/nextjs";
 import { getFirestore, doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { useRouter } from "next/navigation";
+import { initializeApp, getApp, getApps } from "firebase/app";
 import { firebaseConfig } from "@/config/firebaseConfig";
 
-// Initialize Firebase app
+// Initialize Firebase if not already initialized
 if (getApps().length === 0) {
   initializeApp(firebaseConfig);
 }
 
 const SignUpPage: React.FC = () => {
-  const { getToken } = useAuth();
-  const { isLoaded, signUp } = useSignUp();
+  const { isLoaded, signUp, setActive } = useSignUp();
+  const { user, isSignedIn } = useUser();
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [username, setUsername] = useState("");
+  const [role, setRole] = useState<"user" | "partner" | "validator">("user"); // Admin not included here
   const [error, setError] = useState("");
 
   const handleSignUp = async (e: React.FormEvent) => {
@@ -25,116 +27,129 @@ const SignUpPage: React.FC = () => {
     try {
       if (!isLoaded) return;
 
-      // Use Clerk to sign up the user
       await signUp.create({
         emailAddress: email,
         password,
         username,
       });
 
-      // Clerk should handle the token internally after sign-up
-      const token = await getToken({ template: "integration_firebase" });
-      if (token) {
-        // Sign in with Firebase using the custom token
-        const auth = getAuth();
-        const userCredential = await signInWithCustomToken(auth, token);
+      await signUp.prepareEmailAddressVerification({ strategy: "email_code" });
 
-        // Add or update the user in Firestore
-        if (userCredential.user) {
-          const db = getFirestore();
-          const userRef = doc(db, "USERS", userCredential.user.uid);
+      await setActive({ session: signUp.createdSessionId });
 
-          const userData = {
-            user_info: {
-              user_name: username,
-              user_email: email,
-              user_photo_url: userCredential.user.photoURL || "",
-              user_nationality: "", // Add more fields as needed
-              user_birthdate: "", // Add more fields as needed
-            },
-            preferences: {
-              allergens: [], // Add more fields as needed
-              dietary_restrictions: [], // Add more fields as needed
-              likes_spicy: "",
-              vegetarian: "",
-              vegan: "",
-              favorite_cuisines: [],
-            },
-            created_at: serverTimestamp(),
-            updated_at: serverTimestamp(),
-          };
-
-          await setDoc(userRef, userData, { merge: true });
-        }
-
-        console.log("Sign-up successful:", userCredential.user);
+      while (!isSignedIn || !user) {
+        await new Promise((resolve) => setTimeout(resolve, 100));
       }
+
+      const db = getFirestore();
+      const userRef = doc(db, "users", user.id);
+
+      await setDoc(userRef, {
+        user_info: {
+          user_name: username,
+          user_email: email,
+          role: role,
+        },
+        created_at: serverTimestamp(),
+        updated_at: serverTimestamp(),
+      });
+
+      router.push("/dashboards");
     } catch (error) {
       setError("Sign-up failed. Please try again.");
-      console.error("Sign-up error:", error);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 flex justify-center items-center">
-      <div className="w-full max-w-md bg-gray-800 p-8 rounded-lg shadow-lg">
-        <h2 className="text-3xl font-bold text-white mb-6">Sign Up</h2>
-        {error && <p className="text-red-500 mb-4">{error}</p>}
-        <form onSubmit={handleSignUp}>
-          <div className="mb-4">
-            <label
-              htmlFor="username"
-              className="block text-gray-300 font-bold mb-2"
-            >
-              Username
-            </label>
-            <input
-              type="text"
-              id="username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              className="w-full px-3 py-2 bg-gray-700 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            />
-          </div>
-          <div className="mb-4">
-            <label
-              htmlFor="email"
-              className="block text-gray-300 font-bold mb-2"
-            >
-              Email
-            </label>
-            <input
-              type="email"
-              id="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full px-3 py-2 bg-gray-700 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            />
-          </div>
-          <div className="mb-6">
-            <label
-              htmlFor="password"
-              className="block text-gray-300 font-bold mb-2"
-            >
-              Password
-            </label>
-            <input
-              type="password"
-              id="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-3 py-2 bg-gray-700 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-              required
-            />
-          </div>
-          <button
-            type="submit"
-            className="w-full py-2 px-4 bg-blue-600 text-white font-bold rounded-md hover:bg-blue-700 transition-colors duration-300"
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-teal-50 to-white py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-md w-full space-y-8">
+        <div>
+          <h2 className="mt-6 text-center text-3xl font-extrabold text-gray-900">
+            Sign Up for CEMTA
+          </h2>
+        </div>
+        {error && (
+          <div
+            className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative"
+            role="alert"
           >
-            Sign Up
-          </button>
+            <span className="block sm:inline">{error}</span>
+          </div>
+        )}
+        <form className="mt-8 space-y-6" onSubmit={handleSignUp}>
+          <input type="hidden" name="remember" defaultValue="true" />
+          <div className="rounded-md shadow-sm -space-y-px">
+            <div>
+              <input
+                id="email-address"
+                name="email"
+                type="email"
+                autoComplete="email"
+                required
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-t-md focus:outline-none focus:ring-teal-500 focus:border-teal-500 focus:z-10 sm:text-sm"
+                placeholder="Email address"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
+            <div>
+              <input
+                id="password"
+                name="password"
+                type="password"
+                autoComplete="new-password"
+                required
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 focus:outline-none focus:ring-teal-500 focus:border-teal-500 focus:z-10 sm:text-sm"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
+            <div>
+              <input
+                id="username"
+                name="username"
+                type="text"
+                autoComplete="username"
+                required
+                className="appearance-none rounded-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-b-md focus:outline-none focus:ring-teal-500 focus:border-teal-500 focus:z-10 sm:text-sm"
+                placeholder="Username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label
+              htmlFor="role"
+              className="block text-sm font-medium text-gray-700"
+            >
+              Role
+            </label>
+            <select
+              id="role"
+              name="role"
+              className="mt-1 block w-full pl-3 pr-10 py-2 text-base border-gray-300 focus:outline-none focus:ring-teal-500 focus:border-teal-500 sm:text-sm rounded-md"
+              value={role}
+              onChange={(e) =>
+                setRole(e.target.value as "user" | "partner" | "validator")
+              }
+            >
+              <option value="user">User</option>
+              <option value="partner">Partner</option>
+              <option value="validator">Validator</option>
+            </select>
+          </div>
+
+          <div>
+            <button
+              type="submit"
+              className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-teal-600 hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500"
+            >
+              Sign Up
+            </button>
+          </div>
         </form>
       </div>
     </div>
@@ -142,17 +157,3 @@ const SignUpPage: React.FC = () => {
 };
 
 export default SignUpPage;
-
-//What's happening above:
-
-//const handleSignUp = async (e: React.FormEvent) => {: This is the declaration of an asynchronous function named handleSignUp that takes an event parameter e of type React.FormEvent.The async keyword allows the use of the await keyword within the function to handle asynchronous operations.
-// e.preventDefault();: This line prevents the default behavior of the form submission, which is to reload the page. By calling preventDefault(), we can handle the form submission programmatically.
-// try {: This starts a try block, which is used to catch any errors that might occur during the sign-up process.
-// await createUserWithEmailAndPassword(auth, email, password);: This line is the core of the sign-up functionality. It uses the createUserWithEmailAndPassword function from the Firebase Authentication SDK to create a new user account with the provided email and password. The auth instance is imported from the firebase_config.ts file and represents the Firebase Authentication instance for your project. The await keyword is used to wait for the asynchronous operation to complete before moving to the next line.
-// console.log('Sign-up successful');: This line will be executed if the sign-up process is successful. In a real-world application, you might want to redirect the user to a different page or display a success message.
-// } catch (error) {: This is the catch block, which will be executed if an error occurs during the sign-up process.
-// setError('Sign-up failed. Please try again.');: This line sets the error state with a message indicating that the sign-up failed. This error message will be displayed on the page.
-// console.error('Sign-up error:', error);: This line logs the error object to the console for debugging purposes.
-// }: This closes the catch block.
-// };: This closes the handleSignUp function.
-// In summary, the handleSignUp function is an asynchronous function that handles the sign-up process using the Firebase Authentication SDK. When the form is submitted, it prevents the default behavior, and then it tries to create a new user account with the provided email and password using the createUserWithEmailAndPassword function. If the sign-up is successful, a success message is logged to the console. If an error occurs during the sign-up process, the error state is set with an error message, and the error object is logged to the console for debugging purposes.

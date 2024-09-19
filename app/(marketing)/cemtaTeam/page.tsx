@@ -33,7 +33,7 @@ const TeamMember = ({ name, image }: { name: string; image: string }) => (
       </div>
     </div>
     <motion.div
-      className="absolute -inset-0.5 bg-gradient-to-r from-primary to-secondary rounded-lg opacity-0 group-hover:opacity-50 blur"
+      className="absolute -inset-0.5 bg-transparent rounded-lg opacity-0 group-hover:opacity-50 blur"
       initial={false}
       animate={{ opacity: 0 }}
       whileHover={{ opacity: 0.5 }}
@@ -189,11 +189,11 @@ export default function CemtaTeamPage() {
               bg-clip-text text-transparent bg-gradient-to-r from-customTeal to-customBlack font-bold relative z-10
               before:content-[''] before:absolute before:inset-0
               before:bg-gradient-to-br before:from-transparent before:via-white before:to-transparent
-              before:opacity-30
+              before:opacity-0
               after:content-[''] after:absolute after:inset-0
               after:bg-gradient-to-br after:from-transparent after:via-white after:to-transparent
               after:opacity-0 after:transition-opacity after:duration-1000
-              ${isHovered ? "after:opacity-30" : ""}
+              ${isHovered ? "after:opacity-10" : ""}
             `}
               >
                 AI

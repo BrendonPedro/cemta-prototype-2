@@ -19,6 +19,11 @@ import { GoogleMap, useJsApiLoader, Marker } from "@react-google-maps/api";
 import {
   getMenuCountForRestaurant,
   saveVertexAiResults,
+  getCachedRestaurantDetails,
+  saveRestaurantDetails,
+  getCachedRestaurantsForLocation,
+  saveCachedRestaurantsForLocation,
+  
 } from "@/app/services/firebaseFirestore";
 import {
   Tooltip,
@@ -80,6 +85,12 @@ const taiwanCounties = [
   "Lienchiang County",
 ];
 
+// Moved this outside of the component to stabilize it as a reference and prevent the state from rerendering when the restaurants already exist in firestore (using caching to prevent costly api calls)
+const determineCounty = (location: string): string => {
+  if (location.includes("Zhunan")) return "Miaoli County"; //Add more conditions for counties 
+  return "Unknown County";
+};
+
 export default function FindRestaurantsAndMenus() {
   const { userId } = useClerkAuth();
   const { firebaseToken, loading: authLoading, error: authError } = useAuth();
@@ -92,74 +103,126 @@ export default function FindRestaurantsAndMenus() {
   const [menuCountFilter, setMenuCountFilter] = useState("all");
   const [ratingFilter, setRatingFilter] = useState("all");
   const [center, setCenter] = useState({ lat: 0, lng: 0 });
+  const [pinLocation, setPinLocation] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [currentPage, setCurrentPage] = useState(0); // Pagination state
+  const [currentPage, setCurrentPage] = useState(0);
   const [focusedRestaurant, setFocusedRestaurant] = useState<Restaurant | null>(
     null
-  ); // Focused restaurant on map click
+  );
 
   const { isLoaded } = useJsApiLoader({
     id: "google-map-script",
     googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!,
   });
 
-  const fetchNearbyRestaurants = useCallback(
-    async (lat: number, lng: number) => {
-      setIsLoading(true);
-      setIsRefreshing(true);
-      setError(null);
-      try {
-        const response = await fetch(
-          `/api/nearby-restaurants?lat=${lat}&lng=${lng}&limit=20`
-        );
-        if (!response.ok) {
-          const errorText = await response.text();
-          throw new Error(
-            `Failed to fetch nearby restaurants: ${response.status} ${response.statusText}. ${errorText}`
-          );
-        }
-        const data = await response.json();
+ const fetchNearbyRestaurants = useCallback(
+   async (lat: number, lng: number) => {
+     if (!userId) return; // Ensure userId is available
 
-        const restaurantsWithDetails = await Promise.all(
-          data.restaurants.map(async (r: any) => {
-            const menuCount = await getMenuCountForRestaurant(userId!, r.id);
-            const county = determineCounty(r.address);
-            return {
-              id: r.id,
-              name: r.name,
-              menuCount,
-              address: r.address,
-              county,
-              latitude: r.latitude,
-              longitude: r.longitude,
-              rating: r.rating || 0, // Rating added
-            };
-          })
-        );
+     setIsLoading(true);
+     setIsRefreshing(true);
+     setError(null);
 
-        setRestaurants(restaurantsWithDetails);
-        setFilteredRestaurants(restaurantsWithDetails.slice(0, 10)); // Show top 10 initially
-        setCenter({ lat, lng });
-      } catch (err) {
-        setError(
-          `Failed to fetch restaurants: ${
-            err instanceof Error ? err.message : String(err)
-          }`
-        );
-      } finally {
-        setIsLoading(false);
-        setIsRefreshing(false);
-      }
-    },
-    [userId]
-  );
+     try {
+       // First, check if nearby restaurants are cached for this location
+       const cachedRestaurants = await getCachedRestaurantsForLocation(
+         lat,
+         lng
+       );
 
-  const determineCounty = (location: string): string => {
-    if (location.includes("Zhunan")) return "Miaoli County";
-    return "Unknown County";
-  };
+       let restaurantsData;
+
+       if (cachedRestaurants) {
+         // Use cached data
+         restaurantsData = cachedRestaurants;
+       } else {
+         // Fetch from backend
+         const response = await fetch(
+           `/api/nearby-restaurants?lat=${lat}&lng=${lng}&limit=20`
+         );
+         if (!response.ok) {
+           const errorText = await response.text();
+           throw new Error(
+             `Failed to fetch nearby restaurants: ${response.status} ${response.statusText}. ${errorText}`
+           );
+         }
+
+         const data = await response.json();
+         restaurantsData = data.restaurants;
+
+         // Save to cache for future use
+         await saveCachedRestaurantsForLocation(lat, lng, restaurantsData);
+       }
+
+       // Fetch restaurants' details, checking global Firestore for cached results
+       const restaurantsWithDetails = await Promise.all(
+         restaurantsData.map(async (r: any) => {
+           // Check if restaurant details exist in the global Firestore collection
+           const cachedRestaurant = await getCachedRestaurantDetails(r.id);
+
+           if (cachedRestaurant) {
+             // Use cached data if it exists
+             return {
+               id: r.id,
+               name: cachedRestaurant.name,
+               menuCount: await getMenuCountForRestaurant(userId!, r.id),
+               address: cachedRestaurant.address,
+               county: determineCounty(cachedRestaurant.address),
+               latitude: r.latitude,
+               longitude: r.longitude,
+               rating: cachedRestaurant.rating, // Use cached rating
+             };
+           } else {
+             // Use data from the API response
+             const rating = r.rating || 0;
+             const address = r.address || r.vicinity || "Unknown address"; // Use 'vicinity' if 'address' is not available
+
+             // Save new restaurant details globally in Firestore
+             await saveRestaurantDetails(r.id, r.name, rating, address);
+
+             return {
+               id: r.id,
+               name: r.name,
+               menuCount: await getMenuCountForRestaurant(userId!, r.id),
+               address: address,
+               county: determineCounty(address),
+               latitude: r.latitude,
+               longitude: r.longitude,
+               rating, // Use newly fetched rating
+             };
+           }
+         })
+       );
+
+       setRestaurants(restaurantsWithDetails);
+       setFilteredRestaurants(restaurantsWithDetails.slice(0, 10)); // Show top 10 initially
+       setCenter({ lat, lng });
+     } catch (err) {
+       setError(
+         `Failed to fetch restaurants: ${
+           err instanceof Error ? err.message : String(err)
+         }`
+       );
+     } finally {
+       setIsLoading(false);
+       setIsRefreshing(false);
+     }
+   },
+   [userId] // Ensure only necessary dependencies are included
+ );
+
+
+
+//within component causes rerendering and repeated api calls
+  // const determineCounty = (location: string): string => {
+  //   if (location.includes("Zhunan")) return "Miaoli County";
+  //   return "Unknown County";
+  // };
 
   useEffect(() => {
     if (authLoading || !firebaseToken || !userId) return;
@@ -175,7 +238,7 @@ export default function FindRestaurantsAndMenus() {
         setIsLoading(false);
       }
     );
-  }, [userId, firebaseToken, authLoading, fetchNearbyRestaurants]);
+  }, [userId, firebaseToken, authLoading]);
 
   const handleRefreshLocation = () => {
     navigator.geolocation.getCurrentPosition(
@@ -191,8 +254,15 @@ export default function FindRestaurantsAndMenus() {
     );
   };
 
-  const handlePinLocation = (lat: number, lng: number) => {
-    fetchNearbyRestaurants(lat, lng); // Fetch restaurants based on pin
+  // Handle user clicking on the map to drop a pin and fetch nearby restaurants
+  const handleMapClick = (event: google.maps.MapMouseEvent) => {
+    const clickedLatLng = event.latLng;
+    if (clickedLatLng) {
+      const lat = clickedLatLng.lat();
+      const lng = clickedLatLng.lng();
+      setPinLocation({ lat, lng });
+      fetchNearbyRestaurants(lat, lng); // Fetch restaurants for the clicked pin location
+    }
   };
 
   const handleRequestMenu = async (
@@ -305,6 +375,32 @@ export default function FindRestaurantsAndMenus() {
               <span className="text-customTeal">Nearby Restaurants</span>
             </motion.span>
           </CardTitle>
+          {/* Refresh Location Button */}
+          <div className="flex justify-between items-center mb-4">
+            <Button
+              onClick={handleRefreshLocation}
+              className="bg-customTeal hover:bg-customTeal/90 text-white"
+              disabled={isRefreshing}
+            >
+              <RefreshCw
+                className={`mr-2 h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`}
+              />
+              {isRefreshing ? "Refreshing..." : "Refresh Location"}
+            </Button>
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger>
+                  <Info className="h-5 w-5 text-customTeal" />
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>
+                    Refreshes restaurants based on
+                    your current GPS location.
+                  </p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+          </div>
         </CardHeader>
         <CardContent>
           {/* Search bar for county */}
@@ -508,6 +604,7 @@ export default function FindRestaurantsAndMenus() {
                     : center
                 }
                 zoom={focusedRestaurant ? 16 : 14}
+                onClick={handleMapClick} // Enable clicking to place a pin and fetch restaurants
               >
                 {focusedRestaurant ? (
                   <Marker

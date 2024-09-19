@@ -4,6 +4,8 @@ import { doc, setDoc, getDoc, updateDoc, collection, query, where, orderBy, limi
 import { db } from "@/config/firebaseConfig";
 import { Menu } from "@/types/menuTypes";
 
+const RESTAURANT_DETAILS_COLLECTION = "restaurantDetails";
+
 export async function saveDocumentAiResults(userId: string, imageUrl: string, menu: Menu) {
   const userRef = doc(db, "users", userId);
   const resultsRef = doc(userRef, "documentAiResults", new Date().toISOString());
@@ -137,6 +139,97 @@ export async function getVertexAiHistory(userId: string) {
     menuName: doc.data().menuName,
     timestamp: doc.data().timestamp,
   }));
+}
+
+// New: Function to get restaurant details from Firestore
+export async function getRestaurantDetails(placeId: string): Promise<{ rating: number; address: string } | null> {
+  const restaurantRef = doc(db, RESTAURANT_DETAILS_COLLECTION, placeId);
+  const docSnap = await getDoc(restaurantRef);
+
+  if (docSnap.exists()) {
+    const data = docSnap.data();
+    const currentTime = Date.now();
+    const cacheTime = data.cachedAt?.toMillis() || 0;
+    const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+
+    if (currentTime - cacheTime < CACHE_DURATION) {
+      return { rating: data.rating, address: data.address };
+    }
+  }
+
+  return null;
+}
+
+// New: Function to set restaurant details in Firestore
+export async function setRestaurantDetails(placeId: string, rating: number, address: string) {
+  const restaurantRef = doc(db, RESTAURANT_DETAILS_COLLECTION, placeId);
+  await setDoc(restaurantRef, {
+    rating,
+    address,
+    cachedAt: new Date(), // Timestamp when data was cached
+  });
+}
+
+// Save restaurant details (rating and address) in Firestore
+export async function saveRestaurantDetails(restaurantId: string, name: string, rating: number, address: string) {
+  const restaurantRef = doc(db, "restaurants", restaurantId);
+
+  await setDoc(restaurantRef, {
+    name,
+    rating,
+    address,
+    timestamp: new Date().toISOString(),
+  });
+}
+
+
+// Get cached restaurant details from Firestore
+export async function getCachedRestaurantDetails(restaurantId: string) {
+  const restaurantRef = doc(db, "restaurants", restaurantId);
+
+  const docSnap = await getDoc(restaurantRef);
+
+  if (docSnap.exists()) {
+    return docSnap.data();
+  } else {
+    return null;
+  }
+}
+
+function getLocationCacheKey(lat: number, lng: number): string {
+  // Round the coordinates to 3 decimal places to group nearby locations
+  return `${lat.toFixed(3)}_${lng.toFixed(3)}`;
+}
+
+export async function getCachedRestaurantsForLocation(lat: number, lng: number) {
+  const locationKey = getLocationCacheKey(lat, lng);
+  const cacheRef = doc(db, "locationCaches", locationKey);
+  const docSnap = await getDoc(cacheRef);
+
+ if (docSnap.exists()) {
+    const data = docSnap.data();
+    const cacheTime = data.cachedAt?.toMillis() || 0;
+    const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
+
+    if (Date.now() - cacheTime < CACHE_DURATION) {
+      return data.restaurants;
+    }
+  }
+  return null;
+}
+
+export async function saveCachedRestaurantsForLocation(
+  lat: number,
+  lng: number,
+  restaurants: any[]
+) {
+  const locationKey = getLocationCacheKey(lat, lng);
+  const cacheRef = doc(db, "locationCaches", locationKey);
+
+  await setDoc(cacheRef, {
+    restaurants,
+    cachedAt: new Date(),
+  });
 }
 
 // Added this function to get menus for multiple restaurants

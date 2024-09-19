@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server'; 
 import { Client, PlaceType1, PlacesNearbyRanking } from '@googlemaps/google-maps-services-js';
 
 export async function GET(request: Request) {
@@ -27,6 +27,7 @@ export async function GET(request: Request) {
         rankby: PlacesNearbyRanking.distance,
         type: PlaceType1.restaurant,
         key: apiKey,
+        // Removed the 'fields' parameter
       },
     });
 
@@ -40,10 +41,10 @@ export async function GET(request: Request) {
     const nearbyRestaurants = response.data.results.slice(0, parseInt(limit)).map(place => ({
       id: place.place_id,
       name: place.name,
-      address: place.vicinity,
+      address: place.vicinity, // Use 'vicinity' as the address
       latitude: place.geometry?.location.lat,
       longitude: place.geometry?.location.lng,
-      rating: place.rating || 0, // Added rating here with a fallback to 0
+      rating: place.rating || 0, // Use rating if available, default to 0
     }));
 
     console.log(`Returning ${nearbyRestaurants.length} restaurants`);
