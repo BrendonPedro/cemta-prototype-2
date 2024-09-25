@@ -252,3 +252,62 @@ export async function getMenusForRestaurants(userId: string, restaurantIds: stri
   );
   return menus.filter((menu): menu is NonNullable<typeof menu> => menu !== null);
 }
+
+// New functions for role management
+
+export async function requestRoleChange(userId: string, requestedRole: 'partner' | 'validator') {
+  const userRef = doc(db, "users", userId);
+  await updateDoc(userRef, {
+    'user_info.roleRequest': {
+      requestedRole,
+      status: 'pending'
+    }
+  });
+}
+
+export async function getRoleRequests() {
+  const usersRef = collection(db, "users");
+  const q = query(usersRef, where("user_info.roleRequest.status", "==", "pending"));
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map(doc => ({
+    id: doc.id,
+    ...doc.data().user_info
+  }));
+}
+
+export async function updateRoleRequest(userId: string, approved: boolean) {
+  const userRef = doc(db, "users", userId);
+  const userDoc = await getDoc(userRef);
+  
+  if (userDoc.exists()) {
+    const userData = userDoc.data();
+    const requestedRole = userData.user_info?.roleRequest?.requestedRole;
+    
+    if (approved && requestedRole) {
+      await updateDoc(userRef, {
+        'user_info.role': requestedRole,
+        'user_info.roleRequest': {
+          requestedRole: null,
+          status: 'approved'
+        }
+      });
+    } else {
+      await updateDoc(userRef, {
+        'user_info.roleRequest': {
+          requestedRole: null,
+          status: 'rejected'
+        }
+      });
+    }
+  }
+}
+
+export async function getUserRole(userId: string) {
+  const userRef = doc(db, "users", userId);
+  const userDoc = await getDoc(userRef);
+  
+  if (userDoc.exists()) {
+    return userDoc.data().user_info?.role || 'user';
+  }
+  return 'user';
+}

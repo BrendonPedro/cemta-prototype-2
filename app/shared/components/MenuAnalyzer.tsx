@@ -1,3 +1,5 @@
+// components/MenuAnalyzer.tsx
+
 "use client";
 
 import React, { useState, useEffect } from "react";
@@ -22,7 +24,7 @@ import {
 } from "@/components/ui/tooltip";
 import { Info } from "lucide-react";
 
-const MAX_MENUS_PER_USER = 100;
+const MAX_MENUS_PER_USER = 150;
 
 const MenuAnalyzer = () => {
   const { userId } = useClerkAuth();
@@ -105,7 +107,8 @@ const MenuAnalyzer = () => {
       });
 
       if (!response.ok) {
-        throw new Error("Failed to process with Vertex AI");
+        const errorData = await response.json();
+        throw new Error(errorData.error || "Failed to process with Vertex AI");
       }
 
       const result = await response.json();
@@ -114,14 +117,17 @@ const MenuAnalyzer = () => {
       if (result.processingId) {
         setLatestVertexProcessingId(result.processingId);
         setMenuCount((prevCount) => prevCount + 1);
+        setIsProcessed(true);
       } else {
         throw new Error("No processing ID returned from Vertex AI");
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Vertex AI processing failed", error);
       setAlert({
         type: "destructive",
-        message: "Failed to process the menu. Please try again.",
+        message: `Failed to process the menu. ${
+          error.message || "Please try again."
+        }`,
       });
     } finally {
       setIsProcessing(false);
@@ -177,7 +183,7 @@ const MenuAnalyzer = () => {
               <div className="flex justify-center items-center h-64">
                 <Spinner className="h-8 w-8 text-primary" />
                 <span className="ml-2">
-                  Processing menu, please wait... This may take up to a minute
+                  Processing menu, please wait... 
                 </span>
               </div>
             )}

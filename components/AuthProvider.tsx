@@ -4,7 +4,7 @@ import React, { createContext, useContext, useEffect, useState } from "react";
 import {
   useAuth as useClerkAuth,
   useUser as useClerkUser,
-} from "@clerk/nextjs"; // Correctly use useUser
+} from "@clerk/nextjs";
 import { getAuth, signInWithCustomToken } from "firebase/auth";
 import { initializeApp, getApps } from "firebase/app";
 import { getFirestore, doc, getDoc } from "firebase/firestore";
@@ -15,11 +15,17 @@ if (getApps().length === 0) {
   initializeApp(firebaseConfig);
 }
 
+interface RoleRequest {
+  requestedRole: "partner" | "validator" | null;
+  status: "pending" | "approved" | "rejected" | null;
+}
+
 interface AuthContextType {
   firebaseToken: string | null;
   loading: boolean;
   error: string | null;
   userRole: "user" | "partner" | "validator" | "admin" | null;
+  roleRequest: RoleRequest | null;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -33,8 +39,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [userRole, setUserRole] = useState<
     "user" | "partner" | "validator" | "admin" | null
   >(null);
-  const { getToken } = useClerkAuth(); // Use this for token management
-  const { user } = useClerkUser(); // Use useUser to access the user object
+  const [roleRequest, setRoleRequest] = useState<RoleRequest | null>(null);
+  const { getToken } = useClerkAuth();
+  const { user } = useClerkUser();
 
   useEffect(() => {
     const authenticateWithFirebase = async () => {
@@ -52,13 +59,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         const idToken = await userCredential.user.getIdToken();
         setFirebaseToken(idToken);
 
-        // Fetch user role from Firestore
+        // Fetch user role and role request from Firestore
         if (user) {
           const db = getFirestore();
-          const userRef = doc(db, "users", user.id); // Correct access to user.id from useUser
+          const userRef = doc(db, "users", user.id);
           const userSnap = await getDoc(userRef);
           if (userSnap.exists()) {
-            setUserRole(userSnap.data()?.role || "user"); // Default to "user" if no role is found
+            const userData = userSnap.data();
+            setUserRole(userData.user_info?.role || "user");
+            setRoleRequest(userData.user_info?.roleRequest || null);
           }
         }
       } catch (error) {
@@ -73,7 +82,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   }, [getToken, user]);
 
   return (
-    <AuthContext.Provider value={{ firebaseToken, loading, error, userRole }}>
+    <AuthContext.Provider
+      value={{ firebaseToken, loading, error, userRole, roleRequest }}
+    >
       {children}
     </AuthContext.Provider>
   );

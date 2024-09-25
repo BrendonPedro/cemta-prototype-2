@@ -1,3 +1,5 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
 import { Loader } from "lucide-react";
@@ -8,10 +10,14 @@ import {
   SignedOut,
   SignInButton,
   UserButton,
+  useUser,
 } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
+import useClerkFirebaseAuth from "@/hooks/useClerkFirebaseAuth";
 
 export const Header = () => {
+  const { userRole } = useClerkFirebaseAuth();
+
   return (
     <header className="h-20 w-full border-b-2 border-slate-300 px-4 bg-slate-100">
       <div className="lg:max-w-screen-lg mx-auto flex items-center justify-between h-full">
@@ -54,7 +60,14 @@ export const Header = () => {
         </ClerkLoading>
         <ClerkLoaded>
           <SignedIn>
-            <UserButton />
+            <div className="flex items-center gap-x-2">
+              {userRole && (
+                <span className="text-sm text-customTeal capitalize">
+                  {userRole}
+                </span>
+              )}
+              <UserButton />
+            </div>
           </SignedIn>
           <SignedOut>
             <SignInButton>

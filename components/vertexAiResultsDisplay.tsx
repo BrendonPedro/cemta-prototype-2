@@ -1,3 +1,5 @@
+// components/vertexAiResultsDisplay.tsx
+
 import React, { useState, useEffect } from "react";
 import {
   Collapsible,
@@ -46,7 +48,7 @@ interface MenuItem {
   description: {
     original: string;
     english: string;
-  };
+  } | null;
   prices: {
     [key: string]: string;
   };
@@ -128,7 +130,9 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
           setEditedMenuData(results.menuData);
           setSelectedHistoryId(latestProcessingId);
           setSelectedCategories(
-            results.menuData.categories.map((cat: Category) => cat.name)
+            results.menuData.categories.map(
+              (cat: Category) => cat.name.original
+            )
           );
         } else {
           setError("No menu data found in the results.");
@@ -195,7 +199,7 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
         setMenuData(results.menuData);
         setEditedMenuData(results.menuData);
         setSelectedCategories(
-          results.menuData.categories.map((cat: Category) => cat.name)
+          results.menuData.categories.map((cat: Category) => cat.name.original)
         );
       }
     } catch (error) {
@@ -244,31 +248,30 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
     return total.toFixed(2);
   };
 
- const renderRestaurantInfo = (info: RestaurantInfo) => (
-   <Collapsible
-     open={isRestaurantInfoOpen}
-     onOpenChange={setIsRestaurantInfoOpen}
-     className="w-full"
-   >
-     <CollapsibleTrigger className="flex items-center justify-between w-full p-4 bg-gray-100 hover:bg-gray-200 transition-colors">
-       <h3 className="text-lg font-semibold">Restaurant Information</h3>
-       {isRestaurantInfoOpen ? <ChevronUp /> : <ChevronDown />}
-     </CollapsibleTrigger>
-     <CollapsibleContent className="p-4 border border-t-0 border-gray-200">
-       {Object.entries(info).map(([key, value]) => (
-         <p key={key} className="mb-2">
-           <strong>{key.replace(/_/g, " ")}:</strong>{" "}
-           {typeof value === "object" && value !== null
-             ? `${value.original || ""} ${
-                 value.english ? `(${value.english})` : ""
-               }`
-             : value || "N/A"}
-         </p>
-       ))}
-     </CollapsibleContent>
-   </Collapsible>
- );
-
+  const renderRestaurantInfo = (info: RestaurantInfo) => (
+    <Collapsible
+      open={isRestaurantInfoOpen}
+      onOpenChange={setIsRestaurantInfoOpen}
+      className="w-full"
+    >
+      <CollapsibleTrigger className="flex items-center justify-between w-full p-4 bg-gray-100 hover:bg-gray-200 transition-colors">
+        <h3 className="text-lg font-semibold">Restaurant Information</h3>
+        {isRestaurantInfoOpen ? <ChevronUp /> : <ChevronDown />}
+      </CollapsibleTrigger>
+      <CollapsibleContent className="p-4 border border-t-0 border-gray-200">
+        {Object.entries(info).map(([key, value]) => (
+          <p key={key} className="mb-2">
+            <strong>{key.replace(/_/g, " ")}:</strong>{" "}
+            {typeof value === "object" && value !== null
+              ? `${value.original || ""} ${
+                  (value as any).english ? `(${(value as any).english})` : ""
+                }`
+              : value || "N/A"}
+          </p>
+        ))}
+      </CollapsibleContent>
+    </Collapsible>
+  );
 
   const renderMenuItem = (
     item: MenuItem,
@@ -276,10 +279,8 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
     itemIndex: number,
     categoryName?: string
   ) => (
-    <TableRow key={`${categoryName || ''}-${itemIndex}`}>
-      {showFullMenu && categoryName && (
-        <TableCell>{categoryName}</TableCell>
-      )}
+    <TableRow key={`${categoryName || ""}-${itemIndex}`}>
+      {showFullMenu && categoryName && <TableCell>{categoryName}</TableCell>}
       <TableCell>
         {isEditing ? (
           <Input
@@ -390,7 +391,7 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
                 )
               }
             />{" "}
-            Chef&apos;s Recommendation
+            Chef Recommendation
             <br />
             <Input
               value={item.spice_level}
@@ -430,46 +431,53 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
       <TableCell>
         {isEditing ? (
           <Input
-            value={item.description.english}
+            value={item.description?.english || ""}
             onChange={(e) =>
               handleEdit(
                 categoryIndex,
                 itemIndex,
                 "description",
-                JSON.stringify({ ...item.description, english: e.target.value })
+                JSON.stringify({
+                  ...item.description,
+                  english: e.target.value,
+                })
               )
             }
           />
         ) : (
-          item.description.english
+          item.description?.english || ""
         )}
       </TableCell>
       <TableCell>
-        {item.upgrades.map((upgrade, index) => (
-          <div key={index}>
-            {isEditing ? (
-              <Input
-                value={`${upgrade.name}: ${upgrade.price}`}
-                onChange={(e) => {
-                  const [name, price] = e.target.value.split(":");
-                  const newUpgrades = [...item.upgrades];
-                  newUpgrades[index] = {
-                    name: name.trim(),
-                    price: price.trim(),
-                  };
-                  handleEdit(
-                    categoryIndex,
-                    itemIndex,
-                    "upgrades",
-                    JSON.stringify(newUpgrades)
-                  );
-                }}
-              />
-            ) : (
-              `${upgrade.name}: ${upgrade.price}`
-            )}
-          </div>
-        ))}
+        {item.upgrades && Array.isArray(item.upgrades) ? (
+          item.upgrades.map((upgrade, index) => (
+            <div key={index}>
+              {isEditing ? (
+                <Input
+                  value={`${upgrade.name}: ${upgrade.price}`}
+                  onChange={(e) => {
+                    const [name, price] = e.target.value.split(":");
+                    const newUpgrades = [...(item.upgrades || [])];
+                    newUpgrades[index] = {
+                      name: name.trim(),
+                      price: price.trim(),
+                    };
+                    handleEdit(
+                      categoryIndex,
+                      itemIndex,
+                      "upgrades",
+                      JSON.stringify(newUpgrades)
+                    );
+                  }}
+                />
+              ) : (
+                `${upgrade.name}: ${upgrade.price}`
+              )}
+            </div>
+          ))
+        ) : (
+          <div>No upgrades available</div>
+        )}
       </TableCell>
       <TableCell>
         {isEditing ? (
@@ -561,7 +569,7 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
             </label>
           </div>
 
- {renderRestaurantInfo(menuData.restaurant_info)}
+          {renderRestaurantInfo(menuData.restaurant_info)}
 
           {menuData.categories.length > 0 ? (
             showFullMenu ? (
@@ -582,55 +590,73 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
                 <TableBody>
                   {menuData.categories.flatMap((category, categoryIndex) =>
                     category.items.map((item, itemIndex) =>
-                      renderMenuItem(item, categoryIndex, itemIndex, `${category.name.original} ${category.name.english ? `(${category.name.english})` : ''}`)
+                      renderMenuItem(
+                        item,
+                        categoryIndex,
+                        itemIndex,
+                        `${category.name.original} ${
+                          category.name.english
+                            ? `(${category.name.english})`
+                            : ""
+                        }`
+                      )
                     )
                   )}
                 </TableBody>
               </Table>
             ) : (
-              <Tabs defaultValue={menuData.categories[0].name.original}>
-                <TabsList>
-                  {menuData.categories.map((category) => (
-                    <TabsTrigger
+              <div className="space-y-6">
+                <Tabs defaultValue={menuData.categories[0].name.original}>
+                  <TabsList className="flex flex-wrap gap-2 mb-6">
+                    {menuData.categories.map((category) => (
+                      <TabsTrigger
+                        key={category.name.original}
+                        value={category.name.original}
+                        className="px-3 py-2 text-sm whitespace-normal text-center h-auto"
+                      >
+                        <span className="block">{category.name.original}</span>
+                        {category.name.english && (
+                          <span className="block text-xs text-muted-foreground">
+                            ({category.name.english})
+                          </span>
+                        )}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
+                  {menuData.categories.map((category, categoryIndex) => (
+                    <TabsContent
                       key={category.name.original}
                       value={category.name.original}
                     >
-                      {category.name.original} {category.name.english ? `(${category.name.english})` : ''}
-                    </TabsTrigger>
+                      <div className="overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Original Name</TableHead>
+                              <TableHead>Pinyin</TableHead>
+                              <TableHead>English Name</TableHead>
+                              <TableHead>Prices</TableHead>
+                              <TableHead>Attributes</TableHead>
+                              <TableHead>Description</TableHead>
+                              <TableHead>Upgrades</TableHead>
+                              <TableHead>Notes</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {category.items.map((item, itemIndex) =>
+                              renderMenuItem(item, categoryIndex, itemIndex)
+                            )}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </TabsContent>
                   ))}
-                </TabsList>
-              {menuData.categories.map((category, categoryIndex) => (
-                <TabsContent
-                  key={category.name.original}
-                  value={category.name.original}
-                >
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Original Name</TableHead>
-                        <TableHead>Pinyin</TableHead>
-                        <TableHead>English Name</TableHead>
-                        <TableHead>Prices</TableHead>
-                        <TableHead>Attributes</TableHead>
-                        <TableHead>Description</TableHead>
-                        <TableHead>Upgrades</TableHead>
-                        <TableHead>Notes</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {category.items.map((item, itemIndex) =>
-                        renderMenuItem(item, categoryIndex, itemIndex)
-                      )}
-                    </TableBody>
-                  </Table>
-                </TabsContent>
-              ))}
-            </Tabs>
+                </Tabs>
+              </div>
             )
           ) : (
             <p>No categories</p>
           )}
-
           <div className="text-right font-bold">
             Total for selected items: ${calculateTotal()}
           </div>

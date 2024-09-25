@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import { VertexAI } from '@google-cloud/vertexai';
 import { GoogleAuth } from 'google-auth-library';
 import axios from 'axios';
+import sharp from 'sharp';
 import { saveVertexAiResults } from '@/app/services/firebaseFirestore';
 
 // Initialize Vertex AI
 const projectId = 'cemta-prototype-2';
 const location = 'us-central1';
-const modelId = 'gemini-1.5-pro-001';
+const modelId = 'gemini-1.5-pro-002';
 
 // A retry mechanism for transient errors
 const MAX_RETRIES = 3;
@@ -22,6 +23,16 @@ async function retryableRequest(fn: () => Promise<any>) {
       await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
     }
   }
+}
+
+// Utility function to convert image URL to base64 with optimization
+async function getBase64(url: string) {
+  const response = await axios.get(url, { responseType: 'arraybuffer' });
+  const optimizedImage = await sharp(response.data)
+    .resize({ width: 2048 }) // Adjust width as needed, increased for larger menus
+    .toFormat('png')
+    .toBuffer();
+  return optimizedImage.toString('base64');
 }
 
 export async function POST(req: NextRequest) {
@@ -47,7 +58,7 @@ export async function POST(req: NextRequest) {
     const client = await auth.getClient();
     const token = await client.getAccessToken();
 
-    // Convert the image URL to base64
+    // Convert the image URL to optimized base64
     const imageBase64 = await getBase64(imageUrl);
 
     const vertexAI = new VertexAI({ project: projectId, location });
@@ -56,71 +67,75 @@ export async function POST(req: NextRequest) {
     const generativeVisionModel = vertexAI.getGenerativeModel({ model: modelId });
 
     // Prepare the OCR request for Vertex AI
-const ocrRequest = {
-  contents: [{
-    role: 'user',
-    parts: [{
-      inlineData: {
-        data: imageBase64,
-        mimeType: 'image/png',
-      }
-    }, {
-      text: `Analyze the menu image and output a JSON structure that includes all visible information. The JSON should have the following structure:
-
-      {
-        "restaurant_info": {
-          "name": {"original": "", "english": ""},
-          "address": {"original": "", "english": ""},
-          "operating_hours": "",
-          "phone_number": "",
-          "website": "",
-          "social_media": "",
-          "description": {"original": "", "english": ""},
-          "additional_notes": ""
-        },
-        "categories": [
-          {
-            "name": {"original": "", "pinyin": "", "english": ""},
-            "items": [
-              {
-                "name": {
-                  "original": "",
-                  "pinyin": "",
-                  "english": ""
-                },
-                "description": {
-                  "original": "",
-                  "english": ""
-                },
-                "prices": {
-                  "regular": "",
-                  "small": "",
-                  "medium": "",
-                  "large": "",
-                  "xl": ""
-                },
-                "popular": false,
-                "chef_recommended": false,
-                "spice_level": false,
-                "allergy_alert": "",
-                "upgrades": [
-                  {
-                    "name": "",
-                    "price": ""
-                  }
-                ],
-                "notes": ""
-              }
-            ]
+    const ocrRequest = {
+      contents: [{
+        role: 'user',
+        parts: [{
+          inlineData: {
+            data: imageBase64,
+            mimeType: 'image/png',
           }
-        ],
-        "other_info": ""
-      }
+        }, {
+          text: `Analyze the menu image and output a JSON structure that includes all visible information. The JSON should have the following structure:
 
-      Ensure all visible information is captured, including translations for category names and menu items. If a field is not applicable or not present in the image, leave it as an empty string or false for boolean values. For prices, only include fields that are actually present in the menu.`
-    }]
-  }]
-};
+          {
+            "restaurant_info": {
+              "name": {"original": "", "english": ""},
+              "address": {"original": "", "english": ""},
+              "operating_hours": "",
+              "phone_number": "",
+              "website": "",
+              "social_media": "",
+              "description": {"original": "", "english": ""},
+              "additional_notes": ""
+            },
+            "categories": [
+              {
+                "name": {"original": "", "pinyin": "", "english": ""},
+                "items": [
+                  {
+                    "name": {
+                      "original": "",
+                      "pinyin": "",
+                      "english": ""
+                    },
+                    "description": {
+                      "original": "",
+                      "english": ""
+                    },
+                    "prices": {
+                      "regular": "",
+                      "small": "",
+                      "medium": "",
+                      "large": "",
+                      "xl": ""
+                    },
+                    "popular": false,
+                    "chef_recommended": false,
+                    "spice_level": "",
+                    "allergy_alert": "",
+                    "upgrades": [
+                      {
+                        "name": "",
+                        "price": ""
+                      }
+                    ],
+                    "notes": ""
+                  }
+                ]
+              }
+            ],
+            "other_info": ""
+          }
+
+          Ensure all visible information is captured, including translations for category names and menu items. If a field is not applicable or not present in the image, leave it as an empty string or false for boolean values. For prices, only include fields that are actually present in the menu.`
+        }]
+      }],
+      parameters: {
+        maxOutputTokens: 8192, // Increased from default 4096
+        temperature: 0.2,
+      },
+    };
 
     // Send the OCR request to Vertex AI
     const response = await generativeVisionModel.generateContent(ocrRequest);
@@ -150,24 +165,18 @@ const ocrRequest = {
     }
 
     // Save the results and get the processing ID
-let processingId;
+    let processingId;
     try {
-  const restaurantName = parsedOcrText.restaurant_info?.name?.original || menuName;
-  processingId = await saveVertexAiResults(userId, parsedOcrText, menuName, restaurantName);
-} catch (saveError) {
-  console.error('Error saving Vertex AI results:', saveError);
-  return NextResponse.json({ message: 'Error saving Vertex AI results', error: saveError instanceof Error ? saveError.message : String(saveError) }, { status: 500 });
-}
+      const restaurantName = parsedOcrText.restaurant_info?.name?.original || menuName;
+      processingId = await saveVertexAiResults(userId, parsedOcrText, menuName, restaurantName);
+    } catch (saveError) {
+      console.error('Error saving Vertex AI results:', saveError);
+      return NextResponse.json({ message: 'Error saving Vertex AI results', error: saveError instanceof Error ? saveError.message : String(saveError) }, { status: 500 });
+    }
 
-return NextResponse.json({ ocrText: parsedOcrText, processingId }, { status: 200 });
+    return NextResponse.json({ ocrText: parsedOcrText, processingId }, { status: 200 });
   } catch (error) {
     console.error('Error performing OCR with Vertex AI:', error);
     return NextResponse.json({ message: 'Error performing OCR with Vertex AI', error: error instanceof Error ? error.message : String(error) }, { status: 500 });
   }
-}
-
-// Utility function to convert image URL to base64
-async function getBase64(url: string) {
-  const response = await axios.get(url, { responseType: 'arraybuffer' });
-  return Buffer.from(response.data).toString('base64');
 }

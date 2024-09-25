@@ -25,13 +25,13 @@ const firebaseApp = !getApps().length
 const db = getFirestore(firebaseApp);
 
 export default function Home() {
-  const { firebaseUser } = useClerkFirebaseAuth();
+  const { firebaseUser, userRole } = useClerkFirebaseAuth();
   const [username, setUsername] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchUserData = async () => {
       if (firebaseUser) {
-        const userRef = doc(db, "USERS", firebaseUser.uid);
+        const userRef = doc(db, "users", firebaseUser.uid);
         const userSnapshot = await getDoc(userRef);
 
         if (userSnapshot.exists()) {
@@ -67,18 +67,20 @@ export default function Home() {
               </Button>
             </SignUpButton>
             <SignInButton>
-              <Button
-                size="lg"
-                variant="nextButton2"
-                className="w-auto"
-              >
+              <Button size="lg" variant="nextButton2" className="w-auto">
                 I already have an account
               </Button>
             </SignInButton>
           </SignedOut>
           <SignedIn>
             <Button size="lg" variant="nextButton2" className="w-full" asChild>
-              <Link href="/dashboards">Continue to Dashboard</Link>
+              <Link
+                href={
+                  userRole === "admin" ? "/dashboards/admin" : "/dashboards"
+                }
+              >
+                Continue to {userRole === "admin" ? "Admin" : ""} Dashboard
+              </Link>
             </Button>
           </SignedIn>
         </ClerkLoaded>

@@ -54,6 +54,7 @@ function getSidebarItemsByRole(
       ];
     default:
       return [
+      { name: "Edit Profile", href: "/EditProfile" },
         { name: "Find Restaurants", href: "/dashboards/user/find-restaurants" },
         { name: "My Favorites", href: "/dashboards/user/favorites" },
         { name: "Menu Analyzer", href: "/menuAnalyzer" },

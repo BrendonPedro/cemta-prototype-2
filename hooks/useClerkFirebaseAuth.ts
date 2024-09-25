@@ -1,9 +1,16 @@
+'use client';
+
 import { useEffect, useState } from 'react';
 import { useAuth, useUser } from '@clerk/nextjs';
 import { initializeApp, FirebaseApp } from 'firebase/app';
 import { getAuth, signInWithCustomToken, User } from 'firebase/auth';
 import { getFirestore, doc, setDoc, serverTimestamp, getDoc, FieldValue, Timestamp } from 'firebase/firestore';
 import { firebaseConfig } from '@/config/firebaseConfig';
+
+interface RoleRequest {
+  requestedRole: 'partner' | 'validator' | null;
+  status: 'pending' | 'approved' | 'rejected' | null;
+}
 
 interface UserData {
   user_info: {
@@ -13,6 +20,7 @@ interface UserData {
     user_nationality: string;
     user_birthdate: string;
     role: 'user' | 'admin' | 'partner' | 'validator';
+    roleRequest?: RoleRequest | null;
   };
   preferences: {
     allergens: string[];
@@ -36,6 +44,7 @@ interface PublicUserMetadata {
   vegan?: string;
   favoriteCuisines?: string[];
   role?: 'user' | 'admin' | 'partner' | 'validator';
+  roleRequest?: RoleRequest | null;
 }
 
 const useClerkFirebaseAuth = () => {
@@ -44,8 +53,18 @@ const useClerkFirebaseAuth = () => {
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [firebaseApp, setFirebaseApp] = useState<FirebaseApp | null>(null);
   const [userRole, setUserRole] = useState<'user' | 'admin' | 'partner' | 'validator'>('user');
-  const [loading, setLoading] = useState<boolean>(true); // Add a loading state
-  const [error, setError] = useState<string | null>(null); // Add an error state
+  const [roleRequest, setRoleRequest] = useState<RoleRequest | null>(null);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+
+   const setUserRoleInFirestore = async (userId: string, role: 'user' | 'admin' | 'partner' | 'validator') => {
+    if (firebaseApp) {
+      const db = getFirestore(firebaseApp);
+      const userRef = doc(db, 'users', userId);
+      await setDoc(userRef, { 'user_info.role': role }, { merge: true });
+      setUserRole(role);
+    }
+  };
 
   // Initialize Firebase only once
   useEffect(() => {
@@ -56,9 +75,9 @@ const useClerkFirebaseAuth = () => {
   }, [firebaseApp]);
 
   // Authenticate with Clerk and Firebase
-  useEffect(() => {
+ useEffect(() => {
     const signInWithClerk = async () => {
-      setLoading(true); // Set loading to true at the start
+      setLoading(true);
 
       if (isSignedIn && user) {
         try {
@@ -69,16 +88,17 @@ const useClerkFirebaseAuth = () => {
             setFirebaseUser(userCredential.user);
 
             const db = getFirestore(firebaseApp);
-            const userRef = doc(db, 'USERS', userCredential.user.uid);
+            const userRef = doc(db, 'users', userCredential.user.uid);
 
             const userSnapshot = await getDoc(userRef);
             const publicMetadata = user.publicMetadata as PublicUserMetadata;
 
-            // Set user role from publicMetadata
             const role = publicMetadata.role || 'user';
             setUserRole(role);
 
-            // Prepare userData for Firestore
+            const roleRequestData = publicMetadata.roleRequest || null;
+            setRoleRequest(roleRequestData);
+
             let userData: UserData = {
               user_info: {
                 user_name: user.username,
@@ -87,6 +107,7 @@ const useClerkFirebaseAuth = () => {
                 user_nationality: publicMetadata.nationality || '',
                 user_birthdate: publicMetadata.birthdate || '',
                 role: role,
+                roleRequest: roleRequestData,
               },
               preferences: {
                 allergens: publicMetadata.allergens || [],
@@ -104,25 +125,26 @@ const useClerkFirebaseAuth = () => {
               userData.created_at = serverTimestamp();
             }
 
-            // Save user data to Firestore
+             // Save user data to Firestore
             await setDoc(userRef, userData, { merge: true });
           }
         } catch (error) {
           console.error('Error signing in with custom token:', error);
-          setError('Firebase authentication failed. Please try again.'); // Set error message
+          setError('Firebase authentication failed. Please try again.');
         }
       } else {
         setFirebaseUser(null);
         setUserRole('user');
+        setRoleRequest(null);
       }
 
-      setLoading(false); // Set loading to false once the process is complete
+      setLoading(false);
     };
 
     signInWithClerk();
   }, [getToken, isSignedIn, firebaseApp, user]);
 
-  return { firebaseUser, userRole, loading, error }; // Return loading and error state
+  return { firebaseUser, userRole, roleRequest, loading, error, setUserRoleInFirestore };
 };
 
 export default useClerkFirebaseAuth;
