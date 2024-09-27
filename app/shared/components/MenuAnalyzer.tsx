@@ -1,7 +1,3 @@
-// components/MenuAnalyzer.tsx
-
-"use client";
-
 import React, { useState, useEffect } from "react";
 import { useAuth as useClerkAuth } from "@clerk/nextjs";
 import Image from "next/image";
@@ -12,6 +8,7 @@ import { AuthProvider, useAuth } from "../../../components/AuthProvider";
 import {
   checkExistingMenus,
   getMenuCount,
+  getVertexAiResultsByRestaurant,
 } from "@/app/services/firebaseFirestore";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Spinner } from "@/components/ui/spinner";
@@ -22,7 +19,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Info } from "lucide-react";
+import { Info, AlertCircle, RefreshCw } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 const MAX_MENUS_PER_USER = 150;
 
@@ -40,8 +38,10 @@ const MenuAnalyzer = () => {
   const [alert, setAlert] = useState<{
     type: "default" | "destructive";
     message: string;
+    lastUpdated?: string;
   } | null>(null);
   const [menuCount, setMenuCount] = useState(0);
+  const [isCached, setIsCached] = useState(false);
 
   useEffect(() => {
     if (userId) {
@@ -58,6 +58,7 @@ const MenuAnalyzer = () => {
     setPreviewUrl(preview);
     setLatestVertexProcessingId(null);
     setIsProcessed(false);
+    setIsCached(false);
 
     const generatedName = `${
       fileName.split(".")[0]
@@ -81,11 +82,12 @@ const MenuAnalyzer = () => {
 
   const handleFileChange = () => {
     setIsProcessed(false);
+    setIsCached(false);
   };
 
-  const handleProcessing = async () => {
+  const handleProcessing = async (forceReprocess: boolean = false) => {
     if (!firebaseToken || !menuImageUrl || !menuName || !userId) return;
-    if (menuCount >= MAX_MENUS_PER_USER) {
+    if (menuCount >= MAX_MENUS_PER_USER && !forceReprocess) {
       setAlert({
         type: "destructive",
         message: `You have reached the maximum limit of ${MAX_MENUS_PER_USER} menus. Please delete or update an existing menu.`,
@@ -103,7 +105,12 @@ const MenuAnalyzer = () => {
           "Content-Type": "application/json",
           Authorization: `Bearer ${firebaseToken}`,
         },
-        body: JSON.stringify({ imageUrl: menuImageUrl, userId, menuName }),
+        body: JSON.stringify({
+          imageUrl: menuImageUrl,
+          userId,
+          menuName,
+          forceReprocess,
+        }),
       });
 
       if (!response.ok) {
@@ -116,8 +123,19 @@ const MenuAnalyzer = () => {
 
       if (result.processingId) {
         setLatestVertexProcessingId(result.processingId);
-        setMenuCount((prevCount) => prevCount + 1);
+        if (!result.cached) {
+          setMenuCount((prevCount) => prevCount + 1);
+        }
         setIsProcessed(true);
+        setIsCached(result.cached);
+
+        if (result.cached) {
+          setAlert({
+            type: "default",
+            message: "This menu has been retrieved from the cache.",
+            lastUpdated: new Date(result.timestamp).toLocaleString(),
+          });
+        }
       } else {
         throw new Error("No processing ID returned from Vertex AI");
       }
@@ -150,7 +168,7 @@ const MenuAnalyzer = () => {
                   <TooltipTrigger asChild>
                     <span className="inline-flex items-center mt-4 w-full">
                       <ProcessingButtons
-                        onProcess={handleProcessing}
+                        onProcess={() => handleProcessing(false)}
                         isProcessing={isProcessing}
                         isDisabled={isProcessed}
                       />
@@ -182,9 +200,7 @@ const MenuAnalyzer = () => {
             {isProcessing && (
               <div className="flex justify-center items-center h-64">
                 <Spinner className="h-8 w-8 text-primary" />
-                <span className="ml-2">
-                  Processing menu, please wait... 
-                </span>
+                <span className="ml-2">Processing menu, please wait...</span>
               </div>
             )}
             {!isProcessing && previewUrl && (
@@ -204,10 +220,25 @@ const MenuAnalyzer = () => {
         {alert && (
           <div className="md:col-span-2">
             <Alert variant={alert.type}>
+              <AlertCircle className="h-4 w-4" />
               <AlertTitle>
                 {alert.type === "destructive" ? "Error" : "Notice"}
               </AlertTitle>
-              <AlertDescription>{alert.message}</AlertDescription>
+              <AlertDescription>
+                {alert.message}
+                {alert.lastUpdated && <> Last updated: {alert.lastUpdated}</>}
+              </AlertDescription>
+              {isCached && (
+                <Button
+                  variant="cemta"
+                  size="sm"
+                  className="mt-2"
+                  onClick={() => handleProcessing(true)}
+                >
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Reprocess (Premium)
+                </Button>
+              )}
             </Alert>
           </div>
         )}
@@ -216,6 +247,7 @@ const MenuAnalyzer = () => {
             <VertexAiResultsDisplay
               userId={userId as string}
               latestProcessingId={latestVertexProcessingId}
+              isCached={isCached}
             />
           </div>
         )}

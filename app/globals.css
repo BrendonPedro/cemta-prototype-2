@@ -2,6 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Custom CSS to hide inactive TabsContent components */
+[data-state="inactive"][role="tabpanel"] {
+  display: none;
+}
+
 :root {
   --background: 210 40% 98%;
   --foreground: 222.2 47.4% 11.2%;
@@ -243,6 +248,8 @@
   top: 100px;
   left: 120px;
 }
+
+
 /* 
 @tailwind base;
 @tailwind components;

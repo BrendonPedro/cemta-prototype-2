@@ -73,36 +73,31 @@ export async function getMenuCountForRestaurant(userId: string, restaurantId: st
 }
 
 // Modify the saveVertexAiResults function to use restaurantId
-export async function saveVertexAiResults(userId: string, menuData: any, restaurantId: string, restaurantName: string) {
+export async function saveVertexAiResults(
+  userId: string, 
+  menuData: any, 
+  menuName: string, 
+  restaurantName: string
+) {
   const userRef = doc(db, "users", userId);
-  const resultsRef = doc(userRef, "vertexAiResults", restaurantId);
+  const resultsRef = doc(userRef, "vertexAiResults", menuName);
   
   try {
-    // Check if the user document exists
-    const userDoc = await getDoc(userRef);
-    
-    if (!userDoc.exists()) {
-      // If the user document doesn't exist, create it
-      await setDoc(userRef, { createdAt: new Date().toISOString() });
-    }
-    
-    // Now save the Vertex AI results
     await setDoc(resultsRef, {
-      menuData: JSON.stringify(menuData), // Stringify the menuData
+      menuData: JSON.stringify(menuData),
       restaurantName,
       timestamp: new Date().toISOString(),
-    });
+      cached: true,
+    }, { merge: true });
 
-    // Update the user's latest processing ID
-    await updateDoc(userRef, { latestVertexAiProcessingId: restaurantId });
+    await updateDoc(userRef, { latestVertexAiProcessingId: menuName });
 
-    return restaurantId; // Return the restaurant ID
+    return menuName;
   } catch (error) {
     console.error("Error saving Vertex AI results:", error);
     throw error;
   }
 }
-
 
 export async function getVertexAiResults(userId: string, processingId: string) {
   const userRef = doc(db, "users", userId);
@@ -113,10 +108,34 @@ export async function getVertexAiResults(userId: string, processingId: string) {
     const data = docSnap.data();
     return {
       ...data,
-      menuData: JSON.parse(data.menuData), // Parse the stringified menuData
+      menuData: JSON.parse(data.menuData),
+      cached: data.cached || false,
+      timestamp: data.timestamp || new Date().toISOString(),
     };
   } else {
     console.log('No such document!');
+    return null;
+  }
+}
+
+// New function to get menu data by restaurant name
+export async function getVertexAiResultsByRestaurant(userId: string, restaurantName: string) {
+  const userRef = doc(db, "users", userId);
+  const resultsCollection = collection(userRef, "vertexAiResults");
+  const q = query(resultsCollection, where("restaurantName", "==", restaurantName));
+  const querySnapshot = await getDocs(q);
+
+  if (!querySnapshot.empty) {
+    const docSnap = querySnapshot.docs[0];
+    const data = docSnap.data();
+    return {
+      ...data,
+      menuData: JSON.parse(data.menuData),
+      cached: data.cached || false,
+      processingId: docSnap.id,
+      timestamp: data.timestamp || new Date().toISOString(),
+    };
+  } else {
     return null;
   }
 }

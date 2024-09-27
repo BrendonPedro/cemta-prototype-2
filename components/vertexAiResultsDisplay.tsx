@@ -33,10 +33,14 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Progress } from "@/components/ui/progress";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AlertCircle, RefreshCw } from "lucide-react";
 
 interface VertexAiResultsDisplayProps {
   userId: string;
   latestProcessingId: string | null;
+  isCached: boolean;
 }
 
 interface MenuItem {
@@ -95,6 +99,7 @@ interface HistoryItem {
 const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
   userId,
   latestProcessingId,
+  isCached,
 }) => {
   const [menuData, setMenuData] = useState<MenuData | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -104,11 +109,17 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
     null
   );
   const [isLoading, setIsLoading] = useState(true);
+  const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [showFullMenu, setShowFullMenu] = useState(false);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [isRestaurantInfoOpen, setIsRestaurantInfoOpen] = useState(false);
+  const [alert, setAlert] = useState<{
+    type: "default" | "destructive";
+    message: string;
+  } | null>(null);
 
   useEffect(() => {
     const fetchResults = async () => {
@@ -129,11 +140,21 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
           setMenuData(results.menuData);
           setEditedMenuData(results.menuData);
           setSelectedHistoryId(latestProcessingId);
+          setLastUpdated(new Date(results.timestamp).toLocaleString());
           setSelectedCategories(
             results.menuData.categories.map(
               (cat: Category) => cat.name.original
             )
           );
+
+          // Display disclaimer if data is from cache
+          if (results.cached) {
+            setAlert({
+              type: "default",
+              message:
+                "This menu data was retrieved from the cache. If you believe the data is stale, you can reprocess it.",
+            });
+          }
         } else {
           setError("No menu data found in the results.");
         }
@@ -157,6 +178,11 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
     fetchResults();
     fetchHistory();
   }, [userId, latestProcessingId]);
+
+  const handleReprocess = () => {
+    // Implement reprocessing logic here
+    console.log("Reprocessing menu...");
+  };
 
   const handleEdit = (
     categoryIndex: number,
@@ -538,9 +564,28 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
   return (
     <Card className="w-full mt-6">
       <CardHeader>
-        <CardTitle>Vertex AI Results</CardTitle>
+        <CardTitle>Menu Analysis Results</CardTitle>
       </CardHeader>
       <CardContent>
+        {isCached && lastUpdated && (
+          <Alert variant="default" className="mb-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Cached Data</AlertTitle>
+            <AlertDescription>
+              This menu data was retrieved from the cache. Last updated:{" "}
+              {lastUpdated}
+              <Button
+                variant="cemta"
+                size="sm"
+                className="mt-2"
+                onClick={handleReprocess}
+              >
+                <RefreshCw className="mr-2 h-4 w-4" />
+                Reprocess (Premium)
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
         <div className="space-y-6">
           <Select
             onValueChange={handleHistorySelect}
