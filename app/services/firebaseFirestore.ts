@@ -3,6 +3,7 @@
 import { doc, setDoc, getDoc, updateDoc, collection, query, where, orderBy, limit, getDocs } from "firebase/firestore";
 import { db } from "@/config/firebaseConfig";
 import { Menu } from "@/types/menuTypes";
+import geohash from 'ngeohash';
 
 const RESTAURANT_DETAILS_COLLECTION = "restaurantDetails";
 
@@ -216,23 +217,29 @@ export async function getCachedRestaurantDetails(restaurantId: string) {
 }
 
 function getLocationCacheKey(lat: number, lng: number): string {
-  // Round the coordinates to 3 decimal places to group nearby locations
-  return `${lat.toFixed(3)}_${lng.toFixed(3)}`;
+  // Geohash with precision level 5 covers an area of ~4.9km x 4.9km
+  return geohash.encode(lat, lng, 5);
 }
 
 export async function getCachedRestaurantsForLocation(lat: number, lng: number) {
   const locationKey = getLocationCacheKey(lat, lng);
+  console.log(`Cache Key: ${locationKey}`);
   const cacheRef = doc(db, "locationCaches", locationKey);
   const docSnap = await getDoc(cacheRef);
 
- if (docSnap.exists()) {
+  if (docSnap.exists()) {
+    console.log('Cached data found for this location.');
     const data = docSnap.data();
     const cacheTime = data.cachedAt?.toMillis() || 0;
     const CACHE_DURATION = 24 * 60 * 60 * 1000; // 24 hours
 
     if (Date.now() - cacheTime < CACHE_DURATION) {
       return data.restaurants;
+    } else {
+      console.log('Cached data expired. Fetching new data.');
     }
+  } else {
+    console.log('No cached data for this location.');
   }
   return null;
 }

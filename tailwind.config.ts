@@ -24,6 +24,8 @@ const config = {
         customTeal2: '#00BFBF', //'#00BFBF' Adjust accordingly 
         customBlack: '#000000', //'#333333' Adjust accordingly
         customBlack2: '#333333', //'#333333' Adjust accordingly
+                customTealDark: '#2c7a7b',
+        customTealLight: '#81e6d9',
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",

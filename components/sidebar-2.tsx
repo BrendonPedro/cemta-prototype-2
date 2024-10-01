@@ -6,7 +6,7 @@ import { useState } from "react";
 import { ClerkLoading, ClerkLoaded, UserButton } from "@clerk/nextjs";
 import { Loader, ChevronDown, ChevronUp } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { SidebarItem } from "./sidebar-item";
+import { SidebarItem } from "./sidebar-item2";
 import { Button } from "@/components/ui/button";
 
 type Props = {

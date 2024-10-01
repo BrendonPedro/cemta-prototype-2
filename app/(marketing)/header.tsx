@@ -1,3 +1,5 @@
+// Header.tsx
+
 "use client";
 
 import Image from "next/image";
@@ -10,7 +12,6 @@ import {
   SignedOut,
   SignInButton,
   UserButton,
-  useUser,
 } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import useClerkFirebaseAuth from "@/hooks/useClerkFirebaseAuth";
@@ -33,25 +34,25 @@ export const Header = () => {
               CEMTA
             </h1>
           </Link>
-          <Button size="sm" variant="ghostTeal">
+          <Button size="sm" variant="ghostTeal" asChild>
             <Link href="/">Home</Link>
           </Button>
-          <Button size="sm" variant="ghostTeal">
+          <Button size="sm" variant="ghostTeal" asChild>
             <Link href="/findRestaurants">Restaurants</Link>
           </Button>
-          <Button size="sm" variant="ghostTeal">
+          <Button size="sm" variant="ghostTeal" asChild>
             <Link href="/dashboards">Dashboard</Link>
           </Button>
-          <Button size="sm" variant="ghostTeal">
+          <Button size="sm" variant="ghostTeal" asChild>
             <Link href="/cemtaTeam">Cemta Team</Link>
           </Button>
-          <Button size="sm" variant="ghostTeal">
+          <Button size="sm" variant="ghostTeal" asChild>
             <Link href="/about">About</Link>
           </Button>
-          <Button size="sm" variant="ghostTeal">
+          <Button size="sm" variant="ghostTeal" asChild>
             <Link href="/">Contact</Link>
           </Button>
-          <Button size="sm" variant="ghostTeal">
+          <Button size="sm" variant="ghostTeal" asChild>
             <Link href="/">FAQ</Link>
           </Button>
         </div>
@@ -66,11 +67,11 @@ export const Header = () => {
                   {userRole}
                 </span>
               )}
-              <UserButton />
+              <UserButton/>
             </div>
           </SignedIn>
           <SignedOut>
-            <SignInButton>
+            <SignInButton mode="modal">
               <Button size="lg" variant="default">
                 Login
               </Button>

@@ -120,44 +120,28 @@ export default function FindRestaurantsAndMenus() {
     googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!,
   });
 
- const fetchNearbyRestaurants = useCallback(
-   async (lat: number, lng: number) => {
-     if (!userId) return; // Ensure userId is available
+const fetchNearbyRestaurants = useCallback(
+  async (lat: number, lng: number) => {
+    if (!userId) return; // Ensure userId is available
 
-     setIsLoading(true);
-     setIsRefreshing(true);
-     setError(null);
+    setIsLoading(true);
+    setIsRefreshing(true);
+    setError(null);
 
-     try {
-       // First, check if nearby restaurants are cached for this location
-       const cachedRestaurants = await getCachedRestaurantsForLocation(
-         lat,
-         lng
-       );
+    try {
+      // Fetch from backend (caching is handled server-side)
+      const response = await fetch(
+        `/api/nearby-restaurants?lat=${lat}&lng=${lng}&limit=20`
+      );
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(
+          `Failed to fetch nearby restaurants: ${response.status} ${response.statusText}. ${errorText}`
+        );
+      }
 
-       let restaurantsData;
-
-       if (cachedRestaurants) {
-         // Use cached data
-         restaurantsData = cachedRestaurants;
-       } else {
-         // Fetch from backend
-         const response = await fetch(
-           `/api/nearby-restaurants?lat=${lat}&lng=${lng}&limit=20`
-         );
-         if (!response.ok) {
-           const errorText = await response.text();
-           throw new Error(
-             `Failed to fetch nearby restaurants: ${response.status} ${response.statusText}. ${errorText}`
-           );
-         }
-
-         const data = await response.json();
-         restaurantsData = data.restaurants;
-
-         // Save to cache for future use
-         await saveCachedRestaurantsForLocation(lat, lng, restaurantsData);
-       }
+      const data = await response.json();
+      const restaurantsData = data.restaurants;
 
        // Fetch restaurants' details, checking global Firestore for cached results
        const restaurantsWithDetails = await Promise.all(
@@ -377,7 +361,7 @@ export default function FindRestaurantsAndMenus() {
             </motion.span>
           </CardTitle>
           {/* Refresh Location Button */}
-          <div className="flex justify-between items-center mb-4">
+          <div className="flex justify-start items-center mb-4">
             <Button
               onClick={handleRefreshLocation}
               className="bg-customTeal hover:bg-customTeal/90 text-white"
@@ -391,12 +375,11 @@ export default function FindRestaurantsAndMenus() {
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger>
-                  <Info className="h-5 w-5 text-customTeal" />
+                  <Info className="ml-3 h-6 w-6 text-customTeal" />
                 </TooltipTrigger>
                 <TooltipContent>
                   <p>
-                    Refreshes restaurants based on
-                    your current GPS location.
+                    Refreshes restaurants based on your current GPS location.
                   </p>
                 </TooltipContent>
               </Tooltip>
@@ -448,7 +431,7 @@ export default function FindRestaurantsAndMenus() {
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </TableHead>
-                <TableHead className="text-customTeal w-1/6 text-left">
+                <TableHead className="text-customTeal w-1/6 text-center">
                   Menus
                   <DropdownMenu>
                     <DropdownMenuTrigger className="inline-flex items-center ml-2">
@@ -478,7 +461,7 @@ export default function FindRestaurantsAndMenus() {
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </TableHead>
-                <TableHead className="text-customTeal w-1/6 text-left">
+                <TableHead className="text-customTeal w-1/5 text-center">
                   Rating
                   <DropdownMenu>
                     <DropdownMenuTrigger className="inline-flex items-center ml-2">
@@ -500,7 +483,7 @@ export default function FindRestaurantsAndMenus() {
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </TableHead>
-                <TableHead className="text-customTeal w-1/6 text-left">
+                <TableHead className="text-customTeal w-1/6 text-center">
                   County
                   <DropdownMenu>
                     <DropdownMenuTrigger className="inline-flex items-center ml-2">
@@ -527,11 +510,37 @@ export default function FindRestaurantsAndMenus() {
               {filteredRestaurants.map((restaurant) => (
                 <TableRow
                   key={restaurant.id}
-                  className="hover:bg-gray-50 cursor-pointer"
+                  className="hover:bg-gray-100 cursor-pointer"
                   onClick={() => handleRestaurantClick(restaurant)} // Click to focus on a restaurant
                 >
-                  <TableCell className="w-2/5">{restaurant.name}</TableCell>
-                  <TableCell className="w-1/6">
+                  <TableCell className="w-2/5">
+                    <span
+                      className="cursor-pointer px-1 py-0.5 rounded transition duration-200
+             hover:font-bold hover:text-customTealDark"
+                    >
+                      {restaurant.name}
+                    </span>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <a
+                            href={`https://www.google.com/maps/search/?api=1&query=${restaurant.latitude},${restaurant.longitude}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="ml-4 group"
+                          >
+                            <MapPin className="inline h-4 w-4 text-gray-500 group-hover:text-teal-700 group-hover:scale-150 group-hover:shadow-lg transform transition duration-200" />
+                          </a>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>View on Google Maps</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </TableCell>
+
+                  <TableCell className="w-1/6 text-center">
                     {restaurant.menuCount > 0 ? (
                       <div className="flex items-center">
                         <Check className="mr-2 h-4 w-4 text-green-500" />
@@ -550,10 +559,12 @@ export default function FindRestaurantsAndMenus() {
                       </Button>
                     )}
                   </TableCell>
-                  <TableCell className="w-1/6">
+                  <TableCell className="w-1/6 text-center">
                     {restaurant.rating.toFixed(1)}
                   </TableCell>
-                  <TableCell className="w-1/6">{restaurant.county}</TableCell>
+                  <TableCell className="w-1/6 text-center">
+                    {restaurant.county}
+                  </TableCell>
                 </TableRow>
               ))}
             </TableBody>
@@ -634,6 +645,16 @@ export default function FindRestaurantsAndMenus() {
                   <span className="text-gray-700">
                     Address: {focusedRestaurant.address}
                   </span>
+                  <br />
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${focusedRestaurant.latitude},${focusedRestaurant.longitude}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-customTeal hover:underline flex items-center justify-center mt-2"
+                  >
+                    <MapPin className="mr-1 h-4 w-4" />
+                    View on Google Maps
+                  </a>
                 </div>
               )}
               <div className="mt-2 text-center text-sm text-gray-500">

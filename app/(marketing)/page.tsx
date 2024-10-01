@@ -1,7 +1,8 @@
+// app/page.tsx
+
 "use client";
 
 import { useEffect, useState } from "react";
-import Image from "next/image";
 import { Loader } from "lucide-react";
 import {
   ClerkLoaded,
@@ -13,10 +14,11 @@ import {
 } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import useClerkFirebaseAuth from "@/hooks/useClerkFirebaseAuth";
+import { useAuth } from "@/components/AuthProvider";
+import { getAuth } from "firebase/auth";
 import { getFirestore, doc, getDoc } from "firebase/firestore";
-import { firebaseConfig } from "@/config/firebaseConfig";
 import { initializeApp, getApps, getApp } from "firebase/app";
+import { firebaseConfig } from "@/config/firebaseConfig";
 import DynamicWelcomeMessage from "@/components/dynamicWelcomeMessage";
 
 const firebaseApp = !getApps().length
@@ -25,24 +27,36 @@ const firebaseApp = !getApps().length
 const db = getFirestore(firebaseApp);
 
 export default function Home() {
-  const { firebaseUser, userRole } = useClerkFirebaseAuth();
+  const { firebaseToken, userRole, loading } = useAuth();
   const [username, setUsername] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchUserData = async () => {
-      if (firebaseUser) {
-        const userRef = doc(db, "users", firebaseUser.uid);
-        const userSnapshot = await getDoc(userRef);
+      if (firebaseToken) {
+        const auth = getAuth();
+        const user = auth.currentUser;
+        if (user) {
+          const userRef = doc(db, "users", user.uid);
+          const userSnapshot = await getDoc(userRef);
 
-        if (userSnapshot.exists()) {
-          const userData = userSnapshot.data();
-          setUsername(userData?.user_info?.user_name || null);
+          if (userSnapshot.exists()) {
+            const userData = userSnapshot.data();
+            setUsername(userData?.user_info?.user_name || null);
+          }
         }
       }
     };
 
     fetchUserData();
-  }, [firebaseUser]);
+  }, [firebaseToken]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <Loader className="h-8 w-8 text-customTeal animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col items-center justify-center h-full">
@@ -61,12 +75,12 @@ export default function Home() {
         </ClerkLoading>
         <ClerkLoaded>
           <SignedOut>
-            <SignUpButton>
+            <SignUpButton mode="modal">
               <Button size="lg" variant="nextButton" className="w-auto">
                 Get Started
               </Button>
             </SignUpButton>
-            <SignInButton>
+            <SignInButton mode="modal">
               <Button size="lg" variant="nextButton2" className="w-auto">
                 I already have an account
               </Button>
@@ -76,10 +90,20 @@ export default function Home() {
             <Button size="lg" variant="nextButton2" className="w-full" asChild>
               <Link
                 href={
-                  userRole === "admin" ? "/dashboards/admin" : "/dashboards"
+                  userRole === "admin"
+                    ? "/dashboards/admin"
+                    : userRole === "partner"
+                    ? "/dashboards/partner"
+                    : userRole === "validator"
+                    ? "/dashboards/validator"
+                    : "/dashboards/user"
                 }
               >
-                Continue to {userRole === "admin" ? "Admin" : ""} Dashboard
+                Continue to{" "}
+                {userRole
+                  ? userRole.charAt(0).toUpperCase() + userRole.slice(1)
+                  : "User"}{" "}
+                Dashboard
               </Link>
             </Button>
           </SignedIn>

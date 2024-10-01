@@ -1,18 +1,14 @@
+// Sidebar.tsx
 "use client";
 
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { SidebarItem, UserRole } from "@/components/sidebarItems";
 
-interface SidebarItem {
-  name: string;
-  href: string;
-  icon?: React.ReactNode;
-}
-
-export interface SidebarProps {
+interface SidebarProps {
   items: SidebarItem[];
-  userRole: "user" | "partner" | "validator" | "admin";
+  userRole: UserRole;
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ items, userRole }) => {
@@ -33,8 +29,8 @@ const Sidebar: React.FC<SidebarProps> = ({ items, userRole }) => {
                 href={item.href}
                 className={`flex items-center px-6 py-2 mt-4 duration-200 border-l-4 ${
                   pathname === item.href
-                    ? "bg-teal-100 border-teal-600 text-teal-600"
-                    : "border-transparent hover:bg-teal-50 hover:border-teal-600"
+                    ? "bg-teal-200 border-teal-600 text-teal-600"
+                    : "border-transparent hover:bg-teal-100 hover:border-teal-600"
                 }`}
               >
                 {item.icon && <span className="mr-2">{item.icon}</span>}

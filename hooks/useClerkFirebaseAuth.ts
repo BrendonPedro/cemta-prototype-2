@@ -1,10 +1,20 @@
+// app/hooks/useClerkFirebaseAuth.ts
+
 'use client';
 
 import { useEffect, useState } from 'react';
 import { useAuth, useUser } from '@clerk/nextjs';
 import { initializeApp, FirebaseApp } from 'firebase/app';
 import { getAuth, signInWithCustomToken, User } from 'firebase/auth';
-import { getFirestore, doc, setDoc, serverTimestamp, getDoc, FieldValue, Timestamp } from 'firebase/firestore';
+import {
+  getFirestore,
+  doc,
+  setDoc,
+  serverTimestamp,
+  getDoc,
+  FieldValue,
+  Timestamp,
+} from 'firebase/firestore';
 import { firebaseConfig } from '@/config/firebaseConfig';
 
 interface RoleRequest {
@@ -48,8 +58,8 @@ interface PublicUserMetadata {
 }
 
 const useClerkFirebaseAuth = () => {
-  const { getToken, isSignedIn } = useAuth();
-  const { user } = useUser();
+  const { getToken } = useAuth();
+  const { isLoaded: userLoaded, user } = useUser();
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [firebaseApp, setFirebaseApp] = useState<FirebaseApp | null>(null);
   const [userRole, setUserRole] = useState<'user' | 'admin' | 'partner' | 'validator'>('user');
@@ -57,7 +67,10 @@ const useClerkFirebaseAuth = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
-   const setUserRoleInFirestore = async (userId: string, role: 'user' | 'admin' | 'partner' | 'validator') => {
+  const setUserRoleInFirestore = async (
+    userId: string,
+    role: 'user' | 'admin' | 'partner' | 'validator'
+  ) => {
     if (firebaseApp) {
       const db = getFirestore(firebaseApp);
       const userRef = doc(db, 'users', userId);
@@ -75,11 +88,11 @@ const useClerkFirebaseAuth = () => {
   }, [firebaseApp]);
 
   // Authenticate with Clerk and Firebase
- useEffect(() => {
+  useEffect(() => {
     const signInWithClerk = async () => {
       setLoading(true);
 
-      if (isSignedIn && user) {
+      if (userLoaded && user) {
         try {
           const token = await getToken({ template: 'integration_firebase' });
           if (token && firebaseApp) {
@@ -93,7 +106,19 @@ const useClerkFirebaseAuth = () => {
             const userSnapshot = await getDoc(userRef);
             const publicMetadata = user.publicMetadata as PublicUserMetadata;
 
-            const role = publicMetadata.role || 'user';
+            // Set default role to 'user' if not already set
+            let role = publicMetadata.role || 'user';
+
+            // If the role is not set in Clerk, update it
+            if (!publicMetadata.role) {
+              await (user as any).update({
+                publicMetadata: {
+                  ...(user.publicMetadata || {}),
+                  role,
+                },
+              });
+            }
+
             setUserRole(role);
 
             const roleRequestData = publicMetadata.roleRequest || null;
@@ -123,9 +148,19 @@ const useClerkFirebaseAuth = () => {
             // If the user is new, set created_at
             if (!userSnapshot.exists()) {
               userData.created_at = serverTimestamp();
+            } else {
+              // Update role in Firestore if it doesn't match
+              const firestoreRole = userSnapshot.data().user_info?.role;
+              if (firestoreRole !== role) {
+                await setDoc(
+                  userRef,
+                  { 'user_info.role': role },
+                  { merge: true }
+                );
+              }
             }
 
-             // Save user data to Firestore
+            // Save user data to Firestore
             await setDoc(userRef, userData, { merge: true });
           }
         } catch (error) {
@@ -142,9 +177,16 @@ const useClerkFirebaseAuth = () => {
     };
 
     signInWithClerk();
-  }, [getToken, isSignedIn, firebaseApp, user]);
+  }, [getToken, userLoaded, user, firebaseApp]);
 
-  return { firebaseUser, userRole, roleRequest, loading, error, setUserRoleInFirestore };
+  return {
+    firebaseUser,
+    userRole,
+    roleRequest,
+    loading,
+    error,
+    setUserRoleInFirestore,
+  };
 };
 
 export default useClerkFirebaseAuth;

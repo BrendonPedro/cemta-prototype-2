@@ -1,5 +1,8 @@
+// /app/api/nearby-restaurants/route.ts
+
 import { NextResponse } from 'next/server'; 
 import { Client, PlaceType1, PlacesNearbyRanking } from '@googlemaps/google-maps-services-js';
+import { getCachedRestaurantsForLocation, saveCachedRestaurantsForLocation } from '@/app/services/firebaseFirestore';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -12,6 +15,21 @@ export async function GET(request: Request) {
   }
 
   try {
+    console.log(`Received request for lat: ${lat}, lng: ${lng}`);
+
+    const parsedLat = parseFloat(lat);
+    const parsedLng = parseFloat(lng);
+
+    // Check if cached data exists
+    const cachedRestaurants = await getCachedRestaurantsForLocation(parsedLat, parsedLng);
+
+    if (cachedRestaurants) {
+      console.log('Serving cached data.');
+      return NextResponse.json({ restaurants: cachedRestaurants });
+    }
+
+    console.log('No cached data found. Fetching from Google Maps API.');
+
     const googleMapsClient = new Client({});
     const apiKey = process.env.GOOGLE_MAPS_API_KEY;
 
@@ -19,20 +37,14 @@ export async function GET(request: Request) {
       throw new Error('Google Maps API key is not set');
     }
 
-    console.log(`Fetching restaurants for lat: ${lat}, lng: ${lng}, limit: ${limit}`);
-
     const response = await googleMapsClient.placesNearby({
       params: {
-        location: { lat: parseFloat(lat), lng: parseFloat(lng) },
+        location: { lat: parsedLat, lng: parsedLng },
         rankby: PlacesNearbyRanking.distance,
         type: PlaceType1.restaurant,
         key: apiKey,
-        // Removed the 'fields' parameter
       },
     });
-
-    console.log('Google Maps API Response Status:', response.data.status);
-    console.log('Number of results:', response.data.results.length);
 
     if (response.data.status !== 'OK') {
       throw new Error(`Google Maps API returned status: ${response.data.status}`);
@@ -41,13 +53,16 @@ export async function GET(request: Request) {
     const nearbyRestaurants = response.data.results.slice(0, parseInt(limit)).map(place => ({
       id: place.place_id,
       name: place.name,
-      address: place.vicinity, // Use 'vicinity' as the address
+      address: place.vicinity,
       latitude: place.geometry?.location.lat,
       longitude: place.geometry?.location.lng,
-      rating: place.rating || 0, // Use rating if available, default to 0
+      rating: place.rating || 0,
     }));
 
-    console.log(`Returning ${nearbyRestaurants.length} restaurants`);
+    // Save to cache
+    await saveCachedRestaurantsForLocation(parsedLat, parsedLng, nearbyRestaurants);
+
+    console.log('Saved new data to cache.');
 
     return NextResponse.json({ restaurants: nearbyRestaurants });
   } catch (error) {

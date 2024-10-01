@@ -74,6 +74,30 @@ interface MenuData {
   other_info: string;
 }
 
+// New function for exponential backoff
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function retryWithExponentialBackoff<T>(
+  operation: () => Promise<T>,
+  maxRetries: number = 5,
+  baseDelay: number = 1000
+): Promise<T> {
+  let retries = 0;
+  while (true) {
+    try {
+      return await operation();
+    } catch (error: any) {
+      if (retries >= maxRetries || error?.status !== 429) {
+        throw error;
+      }
+      const delay = baseDelay * Math.pow(2, retries);
+      console.log(`Retrying after ${delay}ms...`);
+      await wait(delay);
+      retries++;
+    }
+  }
+}
+
 // Enhanced function to parse and fix JSON
 function parseAndFixJSON(ocrText: string): MenuData {
   console.log('Raw OCR text:', ocrText);
@@ -148,8 +172,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: 'Missing required fields' }, { status: 400 });
     }
 
-    // Check for existing menu data
-    const existingMenuData = await getVertexAiResultsByRestaurant(userId, menuName);
+   const existingMenuData = await getVertexAiResultsByRestaurant(userId, menuName);
 
     if (existingMenuData && !forceReprocess) {
       console.log('Existing menu data found. Returning cached data.');
@@ -242,14 +265,14 @@ Important Instructions:
 - Ensure the output is in valid JSON format without any extra text or explanations.
 - Do not truncate or summarize the menu items. Include every item you can see in the image.`;
 
-    let apiCallCount = 1;
+   let apiCallCount = 1;
     let combinedParsedOcrText: MenuData = {
       restaurant_info: {} as RestaurantInfo,
       categories: [],
       other_info: '',
     };
 
-    // Initial API call
+    // Initial API call with retry
     const ocrRequest = {
       contents: [
         {
@@ -266,14 +289,16 @@ Important Instructions:
       },
     };
 
-    const response = await generativeVisionModel.generateContent(ocrRequest);
-    const aggregatedResponse = await response.response;
+    const response = await retryWithExponentialBackoff(async () => {
+      const res = await generativeVisionModel.generateContent(ocrRequest);
+      return res.response;
+    });
 
-    if (!aggregatedResponse?.candidates?.[0]) {
+    if (!response?.candidates?.[0]) {
       throw new Error('Vertex AI response is missing candidates.');
     }
 
-    let ocrText = aggregatedResponse.candidates[0].content.parts[0].text;
+    let ocrText = response.candidates[0].content.parts[0].text;
 
     if (!ocrText) {
       throw new Error('OCR text is undefined or could not be extracted.');
@@ -321,27 +346,29 @@ Ensure you don't miss any items or categories visible in this part of the image.
           },
         };
 
-        const chunkResponse = await generativeVisionModel.generateContent(chunkOcrRequest);
-        const chunkAggregatedResponse = await chunkResponse.response;
+        return retryWithExponentialBackoff(async () => {
+          const chunkResponse = await generativeVisionModel.generateContent(chunkOcrRequest);
+          const chunkAggregatedResponse = await chunkResponse.response;
 
-        if (!chunkAggregatedResponse?.candidates?.[0]) {
-          console.error(`Vertex AI response is missing candidates for chunk ${i + 1}.`);
-          return null;
-        }
+          if (!chunkAggregatedResponse?.candidates?.[0]) {
+            console.error(`Vertex AI response is missing candidates for chunk ${i + 1}.`);
+            return null;
+          }
 
-        let chunkOcrText = chunkAggregatedResponse.candidates[0].content.parts[0].text;
+          let chunkOcrText = chunkAggregatedResponse.candidates[0].content.parts[0].text;
 
-        if (!chunkOcrText) {
-          console.error(`OCR text is undefined for chunk ${i + 1}.`);
-          return null;
-        }
+          if (!chunkOcrText) {
+            console.error(`OCR text is undefined for chunk ${i + 1}.`);
+            return null;
+          }
 
-        try {
-          return parseAndFixJSON(chunkOcrText);
-        } catch (error) {
-          console.error(`Error parsing OCR text for chunk ${i + 1}:`, error);
-          return null;
-        }
+          try {
+            return parseAndFixJSON(chunkOcrText);
+          } catch (error) {
+            console.error(`Error parsing OCR text for chunk ${i + 1}:`, error);
+            return null;
+          }
+        });
       });
 
       const chunkResults = await Promise.all(chunkPromises);
@@ -378,7 +405,7 @@ Ensure you don't miss any items or categories visible in this part of the image.
       combinedParsedOcrText.categories = Array.from(uniqueCategoriesMap.values());
     }
 
- // Save the results and get the processing ID
+   // Save the results and get the processing ID
     let processingId;
     try {
       const restaurantName =

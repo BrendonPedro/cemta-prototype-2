@@ -1,15 +1,9 @@
+// /dashboards/admin/page.tsx
 "use client";
 
 import React from "react";
-import DashboardLayout from "@/app/shared/layouts/DashboardLayout";
 import { useAuth } from "@/components/AuthProvider";
-import FindRestaurantsAndMenus from "@/app/shared/components/FindRestaurantsAndMenus";
-
-const sidebarItems = [
-  { name: "Overview", href: "/dashboards/admin" },
-  { name: "User Management", href: "/dashboards/admin/user-management" },
-  { name: "System Analytics", href: "/dashboards/admin/system-analytics" },
-];
+import FindRestaurantsAndMenus from "@/app/(main)/dashboards/user/find-restaurants/FindRestaurantsAndMenus";
 
 export default function AdminDashboard() {
   const { userRole, loading } = useAuth();
@@ -23,9 +17,9 @@ export default function AdminDashboard() {
   }
 
   return (
-    <DashboardLayout sidebarItems={sidebarItems} userRole={userRole}>
+    <>
       <h1 className="text-3xl font-semibold text-gray-800">Admin Dashboard</h1>
       <FindRestaurantsAndMenus />
-    </DashboardLayout>
+    </>
   );
 }
