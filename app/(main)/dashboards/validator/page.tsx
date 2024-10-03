@@ -1,25 +1,25 @@
-// app/dashboards/validator/page.tsx
+// /dashboards/user/page.tsx
+"use client";
+
 import React from "react";
-import DashboardLayout from "@/app/shared/layouts/DashboardLayout";
+import FindRestaurantsAndMenus from "@/app/(marketing)/find-restaurants/FindRestaurantsAndMenus";
+import { useAuth } from "@/components/AuthProvider";
 
-const sidebarItems = [
-  { name: "Review Queue", href: "/dashboards/validator/review-queue" },
-  { name: "My Contributions", href: "/dashboards/validator/contributions" },
-  {
-    name: "Community Uploads",
-    href: "/dashboards/validator/community-uploads",
-  },
-];
+export default function ValidatorDashboardPage() {
+  const { userRole, loading } = useAuth();
 
-export default function ValidatorDashboard() {
-  const userRole = "validator"; // or 'partner', 'validator', 'user' as appropriate
+  if (loading) {
+    return <div>Loading...</div>;
+  }
+
+  if (userRole !== "validator") {
+    return <div>Unauthorized access</div>;
+  }
+
   return (
-    <DashboardLayout sidebarItems={sidebarItems} userRole={userRole}>
-      <h1 className="text-3xl font-semibold text-gray-800">
-        Validator Dashboard
-      </h1>
-      {/* Add validator-specific content here */}
-      {/* Include a section for community uploads and restaurant validations */}
-    </DashboardLayout>
+    <div>
+      {/* Main content */}
+      <FindRestaurantsAndMenus />
+    </div>
   );
 }

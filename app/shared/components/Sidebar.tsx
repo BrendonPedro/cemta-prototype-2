@@ -1,10 +1,20 @@
-// Sidebar.tsx
-"use client";
-
+// app/shared/components/Sidebar.tsx
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { SidebarItem, UserRole } from "@/components/sidebarItems";
+import {
+  Home,
+  FileText,
+  Search,
+  Heart,
+  BarChart2,
+  Users,
+  Settings,
+  LogOut,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 
 interface SidebarProps {
   items: SidebarItem[];
@@ -14,33 +24,78 @@ interface SidebarProps {
 const Sidebar: React.FC<SidebarProps> = ({ items, userRole }) => {
   const pathname = usePathname();
 
+  const getIcon = (name: string) => {
+    switch (name.toLowerCase()) {
+      case "edit profile":
+        return <Settings size={20} />;
+      case "TranslateMenuPro":
+        return <FileText size={20} />;
+      case "find restaurants":
+        return <Search size={20} />;
+      case "my favorites":
+        return <Heart size={20} />;
+      case "manage menus":
+        return <FileText size={20} />;
+      case "analytics":
+        return <BarChart2 size={20} />;
+      case "validate menus":
+        return <FileText size={20} />;
+      case "recent reviews":
+        return <FileText size={20} />;
+      case "overview":
+        return <Home size={20} />;
+      case "user management":
+        return <Users size={20} />;
+      case "system analytics":
+        return <BarChart2 size={20} />;
+      default:
+        return <Home size={20} />;
+    }
+  };
+
   return (
-    <div className="w-64 bg-white shadow-md">
-      <div className="flex items-center justify-center h-16 bg-teal-600">
-        <h2 className="text-xl font-semibold text-white">
+    <aside className="sidebar rounded-tr-2xl rounded-br-2xl shadow-lg">
+      <div className="p-4 flex justify-between items-center">
+        <h2 className="text-xl font-bold text-gray-800 truncate sidebar-full">
           {userRole.charAt(0).toUpperCase() + userRole.slice(1)} Dashboard
         </h2>
+        <label
+          htmlFor="sidebar-toggle"
+          className="cursor-pointer p-2 rounded-full hover:bg-gray-200 transition-colors duration-200"
+        >
+          <ChevronLeft size={20} className="sidebar-full" />
+          <ChevronRight size={20} className="sidebar-collapsed" />
+        </label>
       </div>
-      <nav className="mt-5">
-        <ul>
+      <nav className="flex-grow">
+        <ul className="space-y-2 p-2">
           {items.map((item) => (
             <li key={item.name}>
               <Link
                 href={item.href}
-                className={`flex items-center px-6 py-2 mt-4 duration-200 border-l-4 ${
+                className={`flex items-center p-3 rounded-lg transition-all duration-200 ${
                   pathname === item.href
-                    ? "bg-teal-200 border-teal-600 text-teal-600"
-                    : "border-transparent hover:bg-teal-100 hover:border-teal-600"
+                    ? "bg-teal-500 text-white shadow-md"
+                    : "text-gray-600 hover:bg-teal-100 hover:text-teal-600"
                 }`}
               >
-                {item.icon && <span className="mr-2">{item.icon}</span>}
-                {item.name}
+                <span className="mr-3 flex-shrink-0">{getIcon(item.name)}</span>
+                <span className="font-medium sidebar-full">{item.name}</span>
               </Link>
             </li>
           ))}
         </ul>
       </nav>
-    </div>
+      <div className="p-2 border-t border-gray-200">
+        <Link
+          href="/api/auth/signout"
+          className="flex items-center p-3 rounded-lg text-gray-600 hover:bg-red-100 hover:text-red-600 transition-all duration-200"
+        >
+          <LogOut size={20} className="mr-3 flex-shrink-0" />
+          <span className="font-medium sidebar-full">Sign Out</span>
+        </Link>
+      </div>
+    </aside>
   );
 };
 

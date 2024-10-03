@@ -2,6 +2,7 @@
 const nextConfig = {
   images: {
     domains: ['maps.googleapis.com'],
+    domains: ['ik.imagekit.io'],
     remotePatterns: [
       {
         protocol: 'https',

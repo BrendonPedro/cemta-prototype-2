@@ -5,12 +5,12 @@ import Link from "next/link";
 
 export const Footer = () => {
   return (
-    <footer className="bg-gray-900 bg-opacity-90 text-white py-12  rounded-t-3xl mt-20">
+    <footer className="bg-gradient-to-b from-white to-customTeal bg-opacity-90 text-customBlack2 py-12 mt-20">
       <div className="container mx-auto px-6">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           <div className="mb-8 md:mb-0">
             <h3 className="text-2xl font-semibold mb-4">CEMTA</h3>
-            <p className="text-gray-400">
+            <p className="text-gray-600">
               Revolutionizing the Dining Experience: Discover, translate, and
               share culinary experiences from around the world.
             </p>
@@ -21,7 +21,7 @@ export const Footer = () => {
               <li>
                 <Link
                   href="/about"
-                  className="text-gray-400 hover:text-white transition-colors duration-300"
+                  className="text-gray-600 hover:text-customTeal transition-colors duration-300"
                 >
                   About Us
                 </Link>
@@ -29,7 +29,7 @@ export const Footer = () => {
               <li>
                 <Link
                   href="/contact"
-                  className="text-gray-400 hover:text-white transition-colors duration-300"
+                  className="text-gray-600 hover:text-customTeal transition-colors duration-300"
                 >
                   Contact
                 </Link>
@@ -37,7 +37,7 @@ export const Footer = () => {
               <li>
                 <Link
                   href="/privacy"
-                  className="text-gray-400 hover:text-white transition-colors duration-300"
+                  className="text-gray-600 hover:text-customTeal transition-colors duration-300"
                 >
                   Privacy Policy
                 </Link>
@@ -45,7 +45,7 @@ export const Footer = () => {
               <li>
                 <Link
                   href="/terms"
-                  className="text-gray-400 hover:text-white transition-colors duration-300"
+                  className="text-gray-600 hover:text-customTeal transition-colors duration-300"
                 >
                   Terms of Service
                 </Link>
@@ -58,7 +58,7 @@ export const Footer = () => {
               <li>
                 <Link
                   href="/explore"
-                  className="text-gray-400 hover:text-white transition-colors duration-300"
+                  className="text-gray-600 hover:text-customTeal transition-colors duration-300"
                 >
                   Explore Restaurants
                 </Link>
@@ -66,7 +66,7 @@ export const Footer = () => {
               <li>
                 <Link
                   href="/translate"
-                  className="text-gray-400 hover:text-white transition-colors duration-300"
+                  className="text-gray-600 hover:text-customTeal transition-colors duration-300"
                 >
                   Menu Translation
                 </Link>
@@ -74,7 +74,7 @@ export const Footer = () => {
               <li>
                 <Link
                   href="/forum"
-                  className="text-gray-400 hover:text-white transition-colors duration-300"
+                  className="text-gray-600 hover:text-customTeal transition-colors duration-300"
                 >
                   Foodie Forum
                 </Link>
@@ -82,7 +82,7 @@ export const Footer = () => {
               <li>
                 <Link
                   href="/partner"
-                  className="text-gray-400 hover:text-white transition-colors duration-300"
+                  className="text-gray-600 hover:text-customTeal transition-colors duration-300"
                 >
                   Become a Partner
                 </Link>
@@ -94,7 +94,7 @@ export const Footer = () => {
             <div className="flex space-x-4">
               <a
                 href="#"
-                className="text-gray-400 hover:text-white transition-colors duration-300"
+                className="text-gray-600 hover:text-customTeal transition-colors duration-300"
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -107,7 +107,7 @@ export const Footer = () => {
               </a>
               <a
                 href="#"
-                className="text-gray-400 hover:text-white transition-colors duration-300"
+                className="text-gray-600 hover:text-customTeal transition-colors duration-300"
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -120,7 +120,7 @@ export const Footer = () => {
               </a>
               <a
                 href="#"
-                className="text-gray-400 hover:text-white transition-colors duration-300"
+                className="text-gray-600 hover:text-customTeal transition-colors duration-300"
               >
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
@@ -134,7 +134,7 @@ export const Footer = () => {
             </div>
           </div>
         </div>
-        <div className="mt-12 text-center text-gray-400">
+        <div className="mt-12 text-center text-gray-600">
           <p>&copy; 2024 CEMTA. All rights reserved. Bon appétit!</p>
         </div>
       </div>

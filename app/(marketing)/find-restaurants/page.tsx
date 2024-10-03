@@ -1,12 +1,12 @@
 import React from "react";
-import MenuAnalyzer from "@/app/shared/components/MenuAnalyzer";
+import FindRestaurantsAndMenus from "@/app/(marketing)/find-restaurants/FindRestaurantsAndMenus";
 import { AuthProvider } from "@/components/AuthProvider";
 
 const MenuAnalyzerPage = () => {
   return (
     <AuthProvider>
       <div>
-        <MenuAnalyzer />
+        <FindRestaurantsAndMenus />
       </div>
     </AuthProvider>
   );

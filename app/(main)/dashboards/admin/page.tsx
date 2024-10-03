@@ -3,7 +3,7 @@
 
 import React from "react";
 import { useAuth } from "@/components/AuthProvider";
-import FindRestaurantsAndMenus from "@/app/(main)/dashboards/user/find-restaurants/FindRestaurantsAndMenus";
+import FindRestaurantsAndMenus from "@/app/(marketing)/find-restaurants/FindRestaurantsAndMenus";
 
 export default function AdminDashboard() {
   const { userRole, loading } = useAuth();

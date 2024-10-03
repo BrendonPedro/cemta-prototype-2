@@ -2,8 +2,8 @@
 
 import React from "react";
 import Image from "next/image";
-import { Header } from "./header";
-import { Footer } from "./footer";
+import { Header } from "@/app/(marketing)/header";
+import { Footer } from "@/app/(marketing)/footer";
 import SidebarWrapper from "@/components/SidebarWrapper";
 import { SlideOutMenu } from "@/components/SlideOutMenu";
 

@@ -9,6 +9,7 @@ const teamMembers = [
   { name: "Daniele Melloti", image: "daniele.png" },
   { name: "Daren Smith", image: "Daren.jpeg" },
   { name: "Hakim Nasution", image: "Hakim.jpeg" },
+  { name: "Harits Nasution", image: "Harits.jpeg" },
 ];
 
 const TeamMember = ({ name, image }: { name: string; image: string }) => (
@@ -26,8 +27,8 @@ const TeamMember = ({ name, image }: { name: string; image: string }) => (
         className="object-cover w-full h-64 transition-transform duration-300 group-hover:scale-110"
       />
       <div className="absolute inset-0 bg-black opacity-0 group-hover:opacity-40 transition-opacity duration-300" />
-      <div className="absolute bottom-4 left-4 right-4 p-2 text-center bg-customBlack2 bg-opacity-90 rounded-lg border-2 border-transparent transform translate-y-full group-hover:translate-y-0 transition-transform duration-300">
-        <h3 className="text-lg font-semibold text-transparent bg-clip-text bg-gradient-to-r from-primary to-secondary">
+      <div className="absolute bottom-4 left-4 right-4 p-2 text-center bg-gray-900 bg-opacity-80 rounded-lg border-2 border-transparent transform translate-y-full group-hover:translate-y-0 transition-transform duration-300">
+        <h3 className="text-lg font-semibold text-transparent bg-clip-text bg-white">
           {name}
         </h3>
       </div>
@@ -134,7 +135,7 @@ export default function CemtaTeamPage() {
           transition={{ duration: 0.5 }}
           className="text-center mb-12"
         >
-          <h1 className="text-6xl font-bold mb-6 text-black relative inline-block">
+          <h1 className="text-7xl font-bold mb-6 text-black relative inline-block">
             Meet the{" "}
             <span
               className="relative inline-block"
@@ -150,7 +151,7 @@ export default function CemtaTeamPage() {
                 after:content-[''] after:absolute after:inset-0
                 after:bg-gradient-to-br after:from-transparent after:via-white after:to-transparent
                 after:opacity-0 after:transition-opacity after:duration-1000
-                ${isCemtaHovered ? "after:opacity-10" : ""}
+                ${isCemtaHovered ? "after:opacity-0" : ""}
               `}
               >
                 CEMTA
@@ -159,13 +160,13 @@ export default function CemtaTeamPage() {
             </span>{" "}
             Team
           </h1>
-          <p className="text-xl text-customBlack2 max-w-2xl mx-auto">
-            Innovators in Enhancing Your Dining Experience Through Innovative
-            Menu Design and Technology Advancement
+          <p className="text-2xl text-customBlack2 max-w-2xl mx-auto">
+            A team dedicated to transforming your dining experience with
+            smart menu creations and the latest tech advancements
           </p>
         </motion.div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 mb-16">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-8 mb-16">
           {teamMembers.map((member) => (
             <TeamMember key={member.name} {...member} />
           ))}
@@ -193,7 +194,7 @@ export default function CemtaTeamPage() {
               after:content-[''] after:absolute after:inset-0
               after:bg-gradient-to-br after:from-transparent after:via-white after:to-transparent
               after:opacity-0 after:transition-opacity after:duration-1000
-              ${isHovered ? "after:opacity-10" : ""}
+              ${isHovered ? "after:opacity-0" : ""}
             `}
               >
                 AI
