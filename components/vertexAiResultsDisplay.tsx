@@ -36,11 +36,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertCircle, RefreshCw } from "lucide-react";
+import { Menu } from '@/types/menuTypes'; // Adjust the import path as necessary
 
 interface VertexAiResultsDisplayProps {
   userId: string;
   latestProcessingId: string | null;
   isCached: boolean;
+  onReprocess: (id: string) => void;
 }
 
 interface MenuItem {
@@ -53,7 +55,11 @@ interface MenuItem {
     original: string;
     english: string;
   } | null;
-  prices: {
+  price?: {
+    amount: number;
+    currency: string;
+  };
+  prices?: {
     [key: string]: string;
   };
   popular: boolean;
@@ -100,7 +106,13 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
   userId,
   latestProcessingId,
   isCached,
+  onReprocess
 }) => {
+  console.log("VertexAiResultsDisplay props:", {
+    userId,
+    latestProcessingId,
+    isCached,
+  });
   const [menuData, setMenuData] = useState<MenuData | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [editedMenuData, setEditedMenuData] = useState<MenuData | null>(null);
@@ -121,7 +133,7 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
     message: string;
   } | null>(null);
 
-  useEffect(() => {
+ useEffect(() => {
     const fetchResults = async () => {
       if (!latestProcessingId) {
         setIsLoading(false);
@@ -140,23 +152,26 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
           setMenuData(results.menuData);
           setEditedMenuData(results.menuData);
           setSelectedHistoryId(latestProcessingId);
-          setLastUpdated(new Date(results.timestamp).toLocaleString());
-          setSelectedCategories(
-            results.menuData.categories.map(
-              (cat: Category) => cat.name.original
-            )
-          );
+          setLastUpdated(results.timestamp || new Date().toISOString());
+          
+          if (Array.isArray(results.menuData.categories)) {
+            setSelectedCategories(
+              results.menuData.categories.map((cat) => cat.name.original)
+            );
+          } else {
+            console.error('Invalid categories structure:', results.menuData.categories);
+            setError("Unexpected data structure in results: categories is not an array.");
+          }
 
-          // Display disclaimer if data is from cache
-          if (results.cached) {
+          if (isCached) {
             setAlert({
               type: "default",
-              message:
-                "This menu data was retrieved from the cache. If you believe the data is stale, you can reprocess it.",
+              message: "This menu data was retrieved from the cache. If you believe the data is stale, you can reprocess it.",
             });
           }
         } else {
-          setError("No menu data found in the results.");
+          console.error('Invalid results structure:', results);
+          setError("No menu data found in the results or unexpected data structure.");
         }
       } catch (error) {
         console.error("Error fetching Vertex AI results:", error);
@@ -177,7 +192,7 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
 
     fetchResults();
     fetchHistory();
-  }, [userId, latestProcessingId]);
+  }, [userId, latestProcessingId, isCached]);
 
   const handleReprocess = () => {
     // Implement reprocessing logic here
@@ -216,26 +231,35 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
     }
   };
 
-  const handleHistorySelect = async (value: string) => {
-    setSelectedHistoryId(value);
-    setIsLoading(true);
-    try {
-      const results = await getVertexAiResults(userId, value);
-      if (results && results.menuData) {
-        setMenuData(results.menuData);
-        setEditedMenuData(results.menuData);
+ const handleHistorySelect = async (value: string) => {
+  setSelectedHistoryId(value);
+  setIsLoading(true);
+  try {
+    const results = await getVertexAiResults(userId, value);
+    if (results && results.menuData) {
+      setMenuData(results.menuData);
+      setEditedMenuData(results.menuData);
+      
+      if (Array.isArray(results.menuData.categories)) {
         setSelectedCategories(
           results.menuData.categories.map((cat: Category) => cat.name.original)
         );
+      } else {
+        console.error('Invalid categories structure:', results.menuData.categories);
+        setError("Unexpected data structure in results: categories is not an array.");
       }
-    } catch (error) {
-      console.error("Error fetching historical results:", error);
-      setError("Failed to fetch historical results.");
-    } finally {
-      setIsLoading(false);
+    } else {
+      console.error('Invalid results structure:', results);
+      setError("No menu data found in the results or unexpected data structure.");
     }
+  } catch (error) {
+    console.error("Error fetching historical results:", error);
+    setError("Failed to fetch historical results.");
+  } finally {
+    setIsLoading(false);
+  }
   };
-
+  
   const toggleCategory = (categoryName: string) => {
     setSelectedCategories((prev) =>
       prev.includes(categoryName)
@@ -263,7 +287,7 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
       category.items.forEach((item) => {
         if (selectedItems.has(item.name.original)) {
           const price = parseFloat(
-            item.prices.regular || Object.values(item.prices)[0] || "0"
+            item.prices?.regular || (item.prices && Object.values(item.prices)[0]) || "0"
           );
           if (!isNaN(price)) {
             total += price;
@@ -299,226 +323,228 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
     </Collapsible>
   );
 
-  const renderMenuItem = (
-    item: MenuItem,
-    categoryIndex: number,
-    itemIndex: number,
-    categoryName?: string
-  ) => (
-    <TableRow key={`${categoryName || ""}-${itemIndex}`}>
-      {showFullMenu && categoryName && <TableCell>{categoryName}</TableCell>}
-      <TableCell>
-        {isEditing ? (
-          <Input
-            value={item.name.original}
-            onChange={(e) =>
-              handleEdit(
-                categoryIndex,
-                itemIndex,
-                "name",
-                JSON.stringify({ ...item.name, original: e.target.value })
-              )
-            }
-          />
-        ) : (
-          item.name.original
-        )}
-      </TableCell>
-      <TableCell>
-        {isEditing ? (
-          <Input
-            value={item.name.pinyin}
-            onChange={(e) =>
-              handleEdit(
-                categoryIndex,
-                itemIndex,
-                "name",
-                JSON.stringify({ ...item.name, pinyin: e.target.value })
-              )
-            }
-          />
-        ) : (
-          item.name.pinyin
-        )}
-      </TableCell>
-      <TableCell>
-        {isEditing ? (
-          <Input
-            value={item.name.english}
-            onChange={(e) =>
-              handleEdit(
-                categoryIndex,
-                itemIndex,
-                "name",
-                JSON.stringify({ ...item.name, english: e.target.value })
-              )
-            }
-          />
-        ) : (
-          item.name.english
-        )}
-      </TableCell>
-      <TableCell>
-        {item.prices && typeof item.prices === "object" ? (
-          Object.entries(item.prices).map(([size, price]) =>
-            price ? (
-              <div key={size}>
+  const renderMenuItem = (item: MenuItem, categoryIndex: number, itemIndex: number, categoryName?: string) => {
+    const priceDisplay = item.price
+      ? `${item.price.amount} ${item.price.currency}`
+      : item.prices
+      ? Object.entries(item.prices)
+          .filter(([_, value]) => value && value !== "")
+          .map(([key, value]) => `${key}: ${value}`)
+          .join(", ")
+      : "N/A";
+    // Add a check for empty categories
+    if (!menuData?.categories || menuData.categories.length === 0) {
+      return (
+        <Card className="w-full mt-6">
+          <CardHeader>
+            <CardTitle>Menu Analysis Results</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p>
+              No categories or menu items found. The menu might be empty or the
+              analysis might not have captured any items.
+            </p>
+            {menuData?.restaurant_info && renderRestaurantInfo(menuData.restaurant_info)}
+            {menuData?.other_info && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Additional Information</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p>{menuData.other_info}</p>
+                </CardContent>
+              </Card>
+            )}
+          </CardContent>
+        </Card>
+      );
+    }
+
+    return (
+      <TableRow key={`${categoryIndex}-${itemIndex}`}>
+        {showFullMenu && categoryName && <TableCell>{categoryName}</TableCell>}
+        <TableCell>
+          {isEditing ? (
+            <Input
+              value={item.name.original}
+              onChange={(e) =>
+                handleEdit(
+                  categoryIndex,
+                  itemIndex,
+                  "name",
+                  JSON.stringify({ ...item.name, original: e.target.value })
+                )
+              }
+            />
+          ) : (
+            item.name.original
+          )}
+        </TableCell>
+        <TableCell>
+          {isEditing ? (
+            <Input
+              value={item.name.pinyin}
+              onChange={(e) =>
+                handleEdit(
+                  categoryIndex,
+                  itemIndex,
+                  "name",
+                  JSON.stringify({ ...item.name, pinyin: e.target.value })
+                )
+              }
+            />
+          ) : (
+            item.name.pinyin
+          )}
+        </TableCell>
+        <TableCell>
+          {isEditing ? (
+            <Input
+              value={item.name.english}
+              onChange={(e) =>
+                handleEdit(
+                  categoryIndex,
+                  itemIndex,
+                  "name",
+                  JSON.stringify({ ...item.name, english: e.target.value })
+                )
+              }
+            />
+          ) : (
+            item.name.english
+          )}
+        </TableCell>
+        <TableCell>{priceDisplay}</TableCell>
+        <TableCell>
+          {isEditing ? (
+            <>
+              <Checkbox
+                checked={item.popular}
+                onCheckedChange={(checked) =>
+                  handleEdit(
+                    categoryIndex,
+                    itemIndex,
+                    "popular",
+                    checked ? "true" : "false"
+                  )
+                }
+              />{" "}
+              Popular
+              <br />
+              <Checkbox
+                checked={item.chef_recommended}
+                onCheckedChange={(checked) =>
+                  handleEdit(
+                    categoryIndex,
+                    itemIndex,
+                    "chef_recommended",
+                    checked ? "true" : "false"
+                  )
+                }
+              />{" "}
+              Chef Recommendation
+              <br />
+              <Input
+                value={item.spice_level}
+                onChange={(e) =>
+                  handleEdit(
+                    categoryIndex,
+                    itemIndex,
+                    "spice_level",
+                    e.target.value
+                  )
+                }
+              />{" "}
+              Spice Level
+              <br />
+              <Input
+                value={item.allergy_alert}
+                onChange={(e) =>
+                  handleEdit(
+                    categoryIndex,
+                    itemIndex,
+                    "allergy_alert",
+                    e.target.value
+                  )
+                }
+              />{" "}
+              Allergy Alert
+            </>
+          ) : (
+            <>
+              {item.popular && "⭐ Popular "}
+              {item.chef_recommended && "👨‍🍳 Chef's Recommendation "}
+              {item.spice_level && `🌶️`.repeat(parseInt(item.spice_level))}
+              {item.allergy_alert && "⚠️ " + item.allergy_alert}
+            </>
+          )}
+        </TableCell>
+        <TableCell>
+          {isEditing ? (
+            <Input
+              value={item.description?.english || ""}
+              onChange={(e) =>
+                handleEdit(
+                  categoryIndex,
+                  itemIndex,
+                  "description",
+                  JSON.stringify({
+                    ...item.description,
+                    english: e.target.value,
+                  })
+                )
+              }
+            />
+          ) : (
+            item.description?.english || ""
+          )}
+        </TableCell>
+        <TableCell>
+          {item.upgrades && Array.isArray(item.upgrades) ? (
+            item.upgrades.map((upgrade, index) => (
+              <div key={index}>
                 {isEditing ? (
                   <Input
-                    value={`${size}: ${price}`}
+                    value={`${upgrade.name}: ${upgrade.price}`}
                     onChange={(e) => {
-                      const [newSize, newPrice] = e.target.value.split(":");
-                      const updatedPrices = {
-                        ...item.prices,
-                        [newSize.trim()]: newPrice.trim(),
+                      const [name, price] = e.target.value.split(":");
+                      const newUpgrades = [...(item.upgrades || [])];
+                      newUpgrades[index] = {
+                        name: name.trim(),
+                        price: price.trim(),
                       };
                       handleEdit(
                         categoryIndex,
                         itemIndex,
-                        "prices",
-                        JSON.stringify(updatedPrices)
+                        "upgrades",
+                        JSON.stringify(newUpgrades)
                       );
                     }}
                   />
                 ) : (
-                  `${size}: ${price}`
+                  `${upgrade.name}: ${upgrade.price}`
                 )}
               </div>
-            ) : null
-          )
-        ) : (
-          <div>No price information available</div>
-        )}
-      </TableCell>
-      <TableCell>
-        {isEditing ? (
-          <>
-            <Checkbox
-              checked={item.popular}
-              onCheckedChange={(checked) =>
-                handleEdit(
-                  categoryIndex,
-                  itemIndex,
-                  "popular",
-                  checked ? "true" : "false"
-                )
-              }
-            />{" "}
-            Popular
-            <br />
-            <Checkbox
-              checked={item.chef_recommended}
-              onCheckedChange={(checked) =>
-                handleEdit(
-                  categoryIndex,
-                  itemIndex,
-                  "chef_recommended",
-                  checked ? "true" : "false"
-                )
-              }
-            />{" "}
-            Chef Recommendation
-            <br />
+            ))
+          ) : (
+            <div>No upgrades available</div>
+          )}
+        </TableCell>
+        <TableCell>
+          {isEditing ? (
             <Input
-              value={item.spice_level}
+              value={item.notes}
               onChange={(e) =>
-                handleEdit(
-                  categoryIndex,
-                  itemIndex,
-                  "spice_level",
-                  e.target.value
-                )
+                handleEdit(categoryIndex, itemIndex, "notes", e.target.value)
               }
-            />{" "}
-            Spice Level
-            <br />
-            <Input
-              value={item.allergy_alert}
-              onChange={(e) =>
-                handleEdit(
-                  categoryIndex,
-                  itemIndex,
-                  "allergy_alert",
-                  e.target.value
-                )
-              }
-            />{" "}
-            Allergy Alert
-          </>
-        ) : (
-          <>
-            {item.popular && "⭐ Popular "}
-            {item.chef_recommended && "👨‍🍳 Chef's Recommendation "}
-            {item.spice_level && `🌶️`.repeat(parseInt(item.spice_level))}
-            {item.allergy_alert && "⚠️ " + item.allergy_alert}
-          </>
-        )}
-      </TableCell>
-      <TableCell>
-        {isEditing ? (
-          <Input
-            value={item.description?.english || ""}
-            onChange={(e) =>
-              handleEdit(
-                categoryIndex,
-                itemIndex,
-                "description",
-                JSON.stringify({
-                  ...item.description,
-                  english: e.target.value,
-                })
-              )
-            }
-          />
-        ) : (
-          item.description?.english || ""
-        )}
-      </TableCell>
-      <TableCell>
-        {item.upgrades && Array.isArray(item.upgrades) ? (
-          item.upgrades.map((upgrade, index) => (
-            <div key={index}>
-              {isEditing ? (
-                <Input
-                  value={`${upgrade.name}: ${upgrade.price}`}
-                  onChange={(e) => {
-                    const [name, price] = e.target.value.split(":");
-                    const newUpgrades = [...(item.upgrades || [])];
-                    newUpgrades[index] = {
-                      name: name.trim(),
-                      price: price.trim(),
-                    };
-                    handleEdit(
-                      categoryIndex,
-                      itemIndex,
-                      "upgrades",
-                      JSON.stringify(newUpgrades)
-                    );
-                  }}
-                />
-              ) : (
-                `${upgrade.name}: ${upgrade.price}`
-              )}
-            </div>
-          ))
-        ) : (
-          <div>No upgrades available</div>
-        )}
-      </TableCell>
-      <TableCell>
-        {isEditing ? (
-          <Input
-            value={item.notes}
-            onChange={(e) =>
-              handleEdit(categoryIndex, itemIndex, "notes", e.target.value)
-            }
-          />
-        ) : (
-          item.notes
-        )}
-      </TableCell>
-    </TableRow>
-  );
+            />
+          ) : (
+            item.notes
+          )}
+        </TableCell>
+      </TableRow>
+    );
+  };
 
   if (isLoading) {
     return (

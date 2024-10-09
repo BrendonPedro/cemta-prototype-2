@@ -34,35 +34,35 @@ const MenuUpload: React.FC<MenuUploadProps> = ({ onUpload, onFileChange }) => {
     }
   };
 
-  const handleUpload = async () => {
-    if (!file || !firebaseToken) return;
+   const handleUpload = async () => {
+     if (!file || !firebaseToken) return;
 
-    setLoading(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
+     setLoading(true);
+     try {
+       const formData = new FormData();
+       formData.append("file", file);
 
-      const response = await fetch("/api/upload-to-gcs", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${firebaseToken}`,
-        },
-        body: formData,
-      });
+       const response = await fetch("/api/upload-to-gcs", {
+         method: "POST",
+         headers: {
+           Authorization: `Bearer ${firebaseToken}`,
+         },
+         body: formData,
+       });
 
-      if (!response.ok) {
-        throw new Error("Failed to upload to Google Cloud Storage");
-      }
+       if (!response.ok) {
+         throw new Error("Failed to upload to Google Cloud Storage");
+       }
 
-      const { url } = await response.json();
-      onUpload(url, previewUrl!, file.name); // Pass file.name as the third argument
-      setUploadSuccess(true);
-    } catch (error) {
-      console.error("Upload failed", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+       const { url } = await response.json();
+       onUpload(url, previewUrl!, file.name);
+       setUploadSuccess(true);
+     } catch (error) {
+       console.error("Upload failed", error);
+     } finally {
+       setLoading(false);
+     }
+   };
 
   return (
     <div className="space-y-4">

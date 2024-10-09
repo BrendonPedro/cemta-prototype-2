@@ -26,6 +26,7 @@ interface AuthContextType {
   error: string | null;
   userRole: "user" | "partner" | "validator" | "admin" | null;
   roleRequest: RoleRequest | null;
+  userId: string | null; // Add this line
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -40,6 +41,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     "user" | "partner" | "validator" | "admin" | null
   >(null);
   const [roleRequest, setRoleRequest] = useState<RoleRequest | null>(null);
+  const [userId, setUserId] = useState<string | null>(null); // Add this line
   const { getToken } = useClerkAuth();
   const { user } = useClerkUser();
 
@@ -61,6 +63,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
         // Fetch user role and role request from Firestore
         if (user) {
+          setUserId(user.id); // Add this line
           const db = getFirestore();
           const userRef = doc(db, "users", user.id);
           const userSnap = await getDoc(userRef);
@@ -83,7 +86,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
   return (
     <AuthContext.Provider
-      value={{ firebaseToken, loading, error, userRole, roleRequest }}
+      value={{ firebaseToken, loading, error, userRole, roleRequest, userId }} // Add userId here
     >
       {children}
     </AuthContext.Provider>

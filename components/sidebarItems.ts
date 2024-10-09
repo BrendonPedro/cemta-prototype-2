@@ -9,11 +9,13 @@ export interface SidebarItem {
 
 export function getSidebarItemsByRole(userRole: UserRole): SidebarItem[] {
   const dashboardItem = { name: "Dashboard", href: `/dashboards/${userRole}` };
+  const menuDetailsItem = { name: "Menu Details", href: "/menu-details/latest" };
   switch (userRole) {
     case "partner":
       return [
             dashboardItem,
         { name: "TranslateMenuPro", href: "/menuAnalyzer" },
+         menuDetailsItem,
         { name: "Manage Menus", href: "/dashboards/partner/manage-menus" },
         { name: "Analytics", href: "/dashboards/partner/analytics" },
       ];
@@ -21,6 +23,7 @@ export function getSidebarItemsByRole(userRole: UserRole): SidebarItem[] {
       return [  
             dashboardItem,
         { name: "TranslateMenuPro", href: "/menuAnalyzer" },
+         menuDetailsItem,
         { name: "Validate Menus", href: "/dashboards/validator/validate-menus" },
         { name: "Recent Reviews", href: "/dashboards/validator/reviews" },
       ];
@@ -28,6 +31,7 @@ export function getSidebarItemsByRole(userRole: UserRole): SidebarItem[] {
       return [
             dashboardItem,
         { name: "TranslateMenuPro", href: "/menuAnalyzer" },
+         menuDetailsItem,
         { name: "Overview", href: "/dashboards/admin" },
         { name: "User Management", href: "/dashboards/admin/user-management" },
         { name: "System Analytics", href: "/dashboards/admin/system-analytics" },
@@ -36,7 +40,8 @@ export function getSidebarItemsByRole(userRole: UserRole): SidebarItem[] {
       return [
           dashboardItem,   
         { name: "TranslateMenuPro", href: "/menuAnalyzer" },
-        { name: "Find Restaurants", href: "/dashboards/user/find-restaurants" },
+         menuDetailsItem,
+        { name: "Find Restaurants", href: "/find-restaurants" },
         { name: "My Favorites", href: "/dashboards/user/favorites" },
         { name: "Edit Profile", href: "/EditProfile" },
       ];

@@ -6,8 +6,8 @@ import { useState } from "react";
 
 const teamMembers = [
   { name: "Brendon Pedro", image: "Brendon4.jpeg" },
-  { name: "Daniele Melloti", image: "daniele.png" },
-  { name: "Daren Smith", image: "Daren.jpeg" },
+  { name: "Daniele Melotti", image: "daniele.png" },
+  { name: "Daren Smith", image: "Daren1.jpg" },
   { name: "Hakim Nasution", image: "Hakim.jpeg" },
   { name: "Harits Nasution", image: "Harits.jpeg" },
 ];

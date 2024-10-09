@@ -1,102 +1,88 @@
-'use client';
+"use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MapPin, Search, Camera, ChevronRight, LogIn } from "lucide-react";
+import { MapPin, Search, Camera, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { useSpring, animated } from "react-spring";
 import { useDrag } from "@use-gesture/react";
 import Image from "next/image";
+import axios from "axios";
 
 interface Restaurant {
-  id: number;
+  id: string;
   name: string;
-  description: string;
-  location: string;
+  address: string;
   rating: number;
-  image: string;
+  latitude: number;
+  longitude: number;
+  photo_reference: string;
 }
-
-const restaurants: Restaurant[] = [
-  {
-    id: 1,
-    name: "Gourmet Haven",
-    description: "Experience culinary artistry with a modern twist",
-    location: "Foodie District",
-    rating: 4.8,
-    image:
-      "https://ik.imagekit.io/z5s6tr/v0/restaurant1.jpg?updatedAt=1684856153336",
-  },
-  {
-    id: 2,
-    name: "Spice Fusion",
-    description: "A journey through exotic flavors and aromas",
-    location: "Culinary Avenue",
-    rating: 4.7,
-    image:
-      "https://ik.imagekit.io/z5s6tr/v0/restaurant2.jpg?updatedAt=1684856153336",
-  },
-  {
-    id: 3,
-    name: "Ocean's Bounty",
-    description: "Fresh seafood delights in an elegant setting",
-    location: "Harbor View",
-    rating: 4.9,
-    image:
-      "https://ik.imagekit.io/z5s6tr/v0/restaurant3.jpg?updatedAt=1684856153336",
-  },
-];
 
 interface RestaurantCardProps {
   restaurant: Restaurant;
   onSwipe: (direction: string) => void;
-  style?: React.CSSProperties;
 }
 
 const RestaurantCard: React.FC<RestaurantCardProps> = ({
   restaurant,
   onSwipe,
-  style,
 }) => {
-  const [{ x, rotate }, set] = useSpring(() => ({ x: 0, rotate: 0 }));
+  const [{ x, rotate }, api] = useSpring(() => ({ x: 0, rotate: 0 }));
 
   const bind = useDrag(
-    ({ down, movement: [mx], direction: [xDir], velocity }) => {
-      const trigger = velocity[0] > 0.2;
-      const rotation = mx / 10;
-      set({ x: down ? mx : 0, rotate: down ? rotation : 0, immediate: down });
+    ({ down, movement: [mx], direction: [xDir], velocity: [vx] }) => {
+      const trigger = Math.abs(vx) > 0.2; // Use the magnitude of velocity
+      const dir = xDir < 0 ? -1 : 1;
       if (!down && trigger) {
-        onSwipe(xDir > 0 ? "right" : "left");
+        api.start({ x: 300 * dir, rotate: 50 * dir });
+        onSwipe(dir > 0 ? "right" : "left");
+      } else {
+        api.start({
+          x: down ? mx : 0,
+          rotate: down ? mx / 10 : 0,
+          immediate: down,
+        });
       }
     },
-    { axis: "x" }
+    { from: () => [x.get(), 0] }
   );
 
   return (
     <animated.div
       {...bind()}
-      style={{ ...style, x, rotate, touchAction: "none" }}
+      style={{ x, rotate, touchAction: "none" }}
       className="absolute w-full h-full"
     >
       <Card className="w-full h-full overflow-hidden rounded-3xl shadow-xl">
-        <Image
-          src={restaurant.image}
-          alt={restaurant.name}
-          width={800}
-          height={600}
-          className="w-full h-56 object-cover"
-        />
+        <div className="relative w-full h-56">
+          {restaurant.photo_reference ? (
+            <Image
+              src={`https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${restaurant.photo_reference}&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}`}
+              alt={restaurant.name}
+              layout="fill"
+              objectFit="cover"
+            />
+          ) : (
+            <Image
+              src="https://images.unsplash.com/photo-1514933651103-005eec06c04b?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1074&q=80"
+              alt="Restaurant placeholder"
+              layout="fill"
+              objectFit="cover"
+            />
+          )}
+        </div>
         <CardContent className="p-6">
           <h3 className="text-2xl font-semibold mb-3 text-gray-800">
             {restaurant.name}
           </h3>
-          <p className="text-gray-600 mb-4">{restaurant.description}</p>
+          <p className="text-gray-600 mb-4">{restaurant.address}</p>
           <div className="flex items-center text-gray-500 mb-4">
             <MapPin className="w-4 h-4 mr-2" />
-            <span>{restaurant.location}</span>
+            <span>{restaurant.address}</span>
           </div>
           <div className="flex items-center">
             <span className="text-yellow-400 mr-1">★</span>
@@ -111,16 +97,45 @@ const RestaurantCard: React.FC<RestaurantCardProps> = ({
 };
 
 export default function AboutPage() {
+  const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [currentIndex, setCurrentIndex] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const fetchNearbyRestaurants = async () => {
+      try {
+        setLoading(true);
+        // Get user's current location
+        const position = await new Promise<GeolocationPosition>(
+          (resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject);
+          }
+        );
+
+        const { latitude, longitude } = position.coords;
+        const response = await axios.get(
+          `/api/nearby-restaurants?lat=${latitude}&lng=${longitude}&limit=5`
+        );
+        setRestaurants(response.data.restaurants);
+        setLoading(false);
+      } catch (error) {
+        console.error("Error fetching nearby restaurants:", error);
+        setError("Failed to fetch nearby restaurants. Please try again later.");
+        setLoading(false);
+      }
+    };
+
+    fetchNearbyRestaurants();
+  }, []);
 
   const handleSwipe = (direction: string) => {
-    console.log(`Swiped ${direction} on ${restaurants[currentIndex].name}`);
+    console.log(`Swiped ${direction} on ${restaurants[currentIndex]?.name}`);
     setCurrentIndex((prevIndex) => (prevIndex + 1) % restaurants.length);
   };
 
   return (
     <div className="min-h-screen">
-      {/* Main Content */}
       <main className="container mx-auto px-6 py-12">
         <section className="text-center mb-20">
           <h1 className="text-5xl md:text-7xl font-bold mb-8 inline-block text-transparent bg-clip-text bg-gradient-to-r from-customBlack to-customTeal py-2">
@@ -146,14 +161,17 @@ export default function AboutPage() {
             Trending Culinary Hotspots
           </h2>
           <div className="relative h-[400px] w-full max-w-md mx-auto">
-            {restaurants.map((restaurant, index) => (
+            {loading && (
+              <p className="text-center">Loading nearby restaurants...</p>
+            )}
+            {error && <p className="text-center text-red-500">{error}</p>}
+            {!loading && !error && restaurants.length > 0 && (
               <RestaurantCard
-                key={restaurant.id}
-                restaurant={restaurant}
+                key={restaurants[currentIndex].id}
+                restaurant={restaurants[currentIndex]}
                 onSwipe={handleSwipe}
-                style={{ display: index === currentIndex ? "block" : "none" }}
               />
-            ))}
+            )}
           </div>
         </section>
 
@@ -171,13 +189,15 @@ export default function AboutPage() {
                   Our AI-powered OCR technology translates Chinese menus
                   instantly, making your dining experience seamless.
                 </p>
-                <Button className="bg-gradient-to-r from-customTeal to-customBlack hover:from-customBlack hover:to-customTeal text-white rounded-full text-lg py-6 px-8 transition-all duration-300 transform hover:scale-105">
-                  <Camera className="mr-2 h-5 w-5" /> Translate Now
-                </Button>
+                <Link href="/menuAnalyzer">
+                  <Button className="bg-gradient-to-r from-customTeal to-customBlack hover:from-customBlack hover:to-customTeal text-white rounded-full text-lg py-6 px-8 transition-all duration-300 transform hover:scale-105">
+                    <Camera className="mr-2 h-5 w-5" /> Translate Now
+                  </Button>
+                </Link>
               </div>
               <div className="flex-1 relative">
                 <Image
-                  src="/api/placeholder/500/300"
+                  src="https://images.unsplash.com/photo-1533777857889-4be7c70b33f7?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1170&q=80"
                   alt="Menu translation demo"
                   width={500}
                   height={300}
