@@ -1,4 +1,5 @@
 // app/components/SidebarWrapper.tsx
+
 "use client";
 
 import React from "react";
@@ -13,7 +14,7 @@ const SidebarWrapper = () => {
   const sidebarItems = getSidebarItemsByRole(userRole || "user");
 
   // Define the paths where the sidebar should be shown
-  const sidebarPaths = ["/dashboards", "/menuAnalyzer"];
+  const sidebarPaths = ["/dashboards", "/menuAnalyzer", "/menu-details"]; // Added "/menu-details"
 
   // Check if the current path starts with any of the sidebarPaths
   const shouldShowSidebar = sidebarPaths.some((path) =>

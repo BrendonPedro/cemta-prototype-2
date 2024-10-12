@@ -1,11 +1,24 @@
 // app/services/firebaseFirestore.ts
 
-import { doc, setDoc, getDoc, updateDoc, collection, query, where, orderBy, limit, getDocs, onSnapshot, getFirestore, DocumentData } from "firebase/firestore";
+import {
+  doc,
+  setDoc,
+  getDoc,
+  updateDoc,
+  collection,
+  query,
+  where,
+  orderBy,
+  limit,
+  getDocs,
+  onSnapshot,
+  DocumentData,
+} from "firebase/firestore";
 import { db } from "@/config/firebaseConfig";
-import { Menu, MenuItem } from "@/types/menuTypes";
-import geohash from 'ngeohash';
+import geohash from "ngeohash";
+import { Menu } from "@/types/menuTypes";
 
-// Add these interfaces at the top of the file
+// Interfaces
 interface HistoricalMenu {
   id: string;
   restaurantName: string;
@@ -64,7 +77,7 @@ const RESTAURANT_DETAILS_COLLECTION = "restaurantDetails";
 export async function saveDocumentAiResults(userId: string, imageUrl: string, menu: Menu) {
   const userRef = doc(db, "users", userId);
   const resultsRef = doc(userRef, "documentAiResults", new Date().toISOString());
-  
+
   await setDoc(resultsRef, {
     imageUrl,
     menu,
@@ -100,6 +113,16 @@ export async function getDocumentAiResults(userId: string, processingId?: string
   }
 }
 
+export async function checkExistingMenuForRestaurant(
+  restaurantId: string
+): Promise<boolean> {
+  const menusRef = collection(db, "restaurants", restaurantId, "menus");
+  const q = query(menusRef, orderBy("timestamp", "desc"), limit(1));
+  const querySnapshot = await getDocs(q);
+
+  return !querySnapshot.empty;
+}
+
 export async function checkExistingMenus(userId: string, fileName: string): Promise<string[]> {
   const userRef = doc(db, "users", userId);
   const resultsCollection = collection(userRef, "vertexAiResults");
@@ -110,61 +133,20 @@ export async function checkExistingMenus(userId: string, fileName: string): Prom
 }
 
 export async function getMenuCount(userId: string): Promise<number> {
-  const userRef = doc(db, "users", userId);
-  const resultsCollection = collection(userRef, "vertexAiResults");
-  const querySnapshot = await getDocs(resultsCollection);
+  const menusCollection = collection(db, "menus");
+  const q = query(menusCollection, where("userId", "==", userId));
+  const querySnapshot = await getDocs(q);
 
   return querySnapshot.size;
 }
 
-
-// Add this new function to get menu count for a specific restaurant
+// Function to get menu count for a specific restaurant
 export async function getMenuCountForRestaurant(userId: string, restaurantId: string): Promise<number> {
-  const userRef = doc(db, "users", userId);
-  const menuRef = doc(userRef, "vertexAiResults", restaurantId);
-  const menuDoc = await getDoc(menuRef);
+  const menusCollection = collection(db, "menus");
+  const q = query(menusCollection, where("userId", "==", userId), where("restaurantId", "==", restaurantId));
+  const querySnapshot = await getDocs(q);
 
-  return menuDoc.exists() ? 1 : 0;
-}
-
-// Modify the saveVertexAiResults function to use restaurantId
-export async function saveVertexAiResults(
-  userId: string, 
-  menuData: any, 
-  menuName: string, 
-  restaurantName: string | undefined
-) {
-  const userRef = doc(db, "users", userId);
-  const resultsRef = doc(userRef, "vertexAiResults", menuName);
-  
-  const timestamp = new Date().toISOString();
-
-  try {
-    const dataToSave: {
-      menuData: string;
-      timestamp: string;
-      cached: boolean;
-      restaurantName?: string;
-    } = {
-    menuData: typeof menuData === 'string' ? menuData : JSON.stringify(menuData),
-    timestamp,
-    cached: true,
-  };
-
-    // Only add restaurantName if it's defined
-    if (restaurantName !== undefined) {
-      dataToSave.restaurantName = restaurantName;
-    }
-
-    await setDoc(resultsRef, dataToSave, { merge: true });
-
-    await updateDoc(userRef, { latestVertexAiProcessingId: menuName });
-
-    return menuName;
-  } catch (error) {
-    console.error("Error saving Vertex AI results:", error);
-    throw error;
-  }
+  return querySnapshot.size;
 }
 
 export function listenToLatestProcessingId(userId: string, callback: (latestId: string) => void) {
@@ -179,56 +161,60 @@ export function listenToLatestProcessingId(userId: string, callback: (latestId: 
   });
 }
 
-export async function getVertexAiResults(userId: string, processingId?: string): Promise<MenuDetails | null> {
-  const userRef = doc(db, "users", userId);
-  let resultsRef;
-
-  if (processingId) {
-    resultsRef = doc(userRef, "vertexAiResults", processingId);
-  } else {
-    const userDoc = await getDoc(userRef);
-    const latestProcessingId = userDoc.data()?.latestVertexAiProcessingId;
-    if (!latestProcessingId) {
-      return null;
-    }
-    resultsRef = doc(userRef, "vertexAiResults", latestProcessingId);
+export async function getVertexAiResults(userId: string, menuId: string) {
+  if (!menuId) {
+    throw new Error('No menu ID provided');
   }
 
-  const docSnap = await getDoc(resultsRef);
+  console.log('Fetching menu data for menuId:', menuId);
 
-  if (docSnap.exists()) {
-    const data = docSnap.data() as MenuDetails;
-    // Ensure menuData is parsed if it's stored as a string
-    if (typeof data.menuData === 'string') {
-      data.menuData = JSON.parse(data.menuData);
+  const menuRef = doc(db, 'menus', menuId);
+  const menuSnap = await getDoc(menuRef);
+
+  if (menuSnap.exists()) {
+    const data = menuSnap.data();
+    if (data.userId === userId) {
+      const menuData =
+        typeof data.menuData === 'string' ? JSON.parse(data.menuData) : data.menuData;
+      return {
+        ...data,
+        menuData,
+        processingId: menuSnap.id,
+        timestamp: data.timestamp
+          ? data.timestamp.toDate().toISOString()
+          : new Date().toISOString(),
+      };
+    } else {
+      console.error('Unauthorized access to menu data. User ID mismatch.');
+      throw new Error('Unauthorized access to menu data');
     }
-    // Ensure categories always exists
-    if (!data.menuData.categories) {
-      data.menuData.categories = [];
-    }
-    return data;
   } else {
-    console.log('No such document!');
-    return null;
+    console.error('No menu data found for menuId:', menuId);
+    throw new Error('No menu data found');
   }
 }
 
-// New function to get menu data by restaurant name
-export async function getVertexAiResultsByRestaurant(userId: string, restaurantName: string) {
-  const userRef = doc(db, "users", userId);
-  const resultsCollection = collection(userRef, "vertexAiResults");
-  const q = query(resultsCollection, where("restaurantName", "==", restaurantName));
+// Function to get menu data by restaurant name
+export async function getVertexAiResultsByRestaurant(userId: string, menuName: string) {
+  const menusCollection = collection(db, "menus");
+  const q = query(
+    menusCollection,
+    where("menuName", "==", menuName),
+    where("userId", "==", userId)
+  );
   const querySnapshot = await getDocs(q);
 
   if (!querySnapshot.empty) {
     const docSnap = querySnapshot.docs[0];
     const data = docSnap.data();
     return {
+      id: docSnap.id,
       ...data,
-      menuData: JSON.parse(data.menuData),
+      menuData: data.menuData,
       cached: data.cached || false,
-      processingId: docSnap.id,
-      timestamp: data.timestamp || new Date().toISOString(),
+      timestamp: data.timestamp
+        ? data.timestamp.toDate().toISOString()
+        : new Date().toISOString(),
     };
   } else {
     return null;
@@ -236,16 +222,32 @@ export async function getVertexAiResultsByRestaurant(userId: string, restaurantN
 }
 
 export async function updateVertexAiResults(userId: string, processingId: string, menuData: any) {
-  const userRef = doc(db, "users", userId);
-  const resultsRef = doc(userRef, "vertexAiResults", processingId);
-  
-  await updateDoc(resultsRef, { menuData });
+  const menuRef = doc(db, "menus", processingId);
+
+  // Ensure the user is authorized to update this menu
+  const menuSnap = await getDoc(menuRef);
+  if (menuSnap.exists()) {
+    const data = menuSnap.data();
+    if (data.userId === userId) {
+      await updateDoc(menuRef, { menuData });
+    } else {
+      console.error('Unauthorized access to update menu data. User ID mismatch.');
+      throw new Error('Unauthorized access to update menu data');
+    }
+  } else {
+    console.error('No menu data found for processingId:', processingId);
+    throw new Error('No menu data found');
+  }
 }
 
 export async function getVertexAiHistory(userId: string) {
-  const userRef = doc(db, "users", userId);
-  const resultsCollection = collection(userRef, "vertexAiResults");
-  const q = query(resultsCollection, orderBy("timestamp", "desc"), limit(10));
+  const menusCollection = collection(db, "menus");
+  const q = query(
+    menusCollection,
+    where("userId", "==", userId),
+    orderBy("timestamp", "desc"),
+    limit(10)
+  );
   const querySnapshot = await getDocs(q);
 
   return querySnapshot.docs.map(doc => ({
@@ -255,26 +257,7 @@ export async function getVertexAiHistory(userId: string) {
   }));
 }
 
-// New: Function to get restaurant details from Firestore
-export async function getRestaurantDetails(placeId: string): Promise<{ rating: number; address: string } | null> {
-  const restaurantRef = doc(db, RESTAURANT_DETAILS_COLLECTION, placeId);
-  const docSnap = await getDoc(restaurantRef);
-
-  if (docSnap.exists()) {
-    const data = docSnap.data();
-    const currentTime = Date.now();
-    const cacheTime = data.cachedAt?.toMillis() || 0;
-    const CACHE_DURATION = 60 * 24 * 60 * 60 * 1000; // 60 days in milliseconds
-
-    if (currentTime - cacheTime < CACHE_DURATION) {
-      return { rating: data.rating, address: data.address };
-    }
-  }
-
-  return null;
-}
-
-// New: Function to set restaurant details in Firestore
+// Function to set restaurant details in Firestore
 export async function setRestaurantDetails(placeId: string, rating: number, address: string) {
   const restaurantRef = doc(db, RESTAURANT_DETAILS_COLLECTION, placeId);
   await setDoc(restaurantRef, {
@@ -295,7 +278,6 @@ export async function saveRestaurantDetails(restaurantId: string, name: string, 
     timestamp: new Date().toISOString(),
   });
 }
-
 
 // Get cached restaurant details from Firestore
 export async function getCachedRestaurantDetails(restaurantId: string) {
@@ -325,7 +307,7 @@ export async function getCachedRestaurantsForLocation(lat: number, lng: number) 
     console.log('Cached data found for this location.');
     const data = docSnap.data();
     const cacheTime = data.cachedAt?.toMillis() || 0;
-    const CACHE_DURATION = 30 * 24 * 60 * 60 * 1000; // 30 days in miiliseconds
+    const CACHE_DURATION = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
 
     if (Date.now() - cacheTime < CACHE_DURATION) {
       return data.restaurants;
@@ -352,20 +334,21 @@ export async function saveCachedRestaurantsForLocation(
   });
 }
 
-// Added this function to get menus for multiple restaurants
+// Function to get menus for multiple restaurants
 export async function getMenusForRestaurants(userId: string, restaurantIds: string[]) {
-  const userRef = doc(db, "users", userId);
   const menus = await Promise.all(
     restaurantIds.map(async (id) => {
-      const menuRef = doc(userRef, "vertexAiResults", id);
+      const menuRef = doc(db, "menus", id);
       const menuDoc = await getDoc(menuRef);
       if (menuDoc.exists()) {
         const data = menuDoc.data();
-        return {
-          id,
-          menuData: JSON.parse(data.menuData),
-          restaurantName: data.restaurantName,
-        };
+        if (data.userId === userId) {
+          return {
+            id,
+            menuData: data.menuData,
+            restaurantName: data.restaurantName,
+          };
+        }
       }
       return null;
     })
@@ -373,8 +356,7 @@ export async function getMenusForRestaurants(userId: string, restaurantIds: stri
   return menus.filter((menu): menu is NonNullable<typeof menu> => menu !== null);
 }
 
-// New functions for role management
-
+// Role management functions
 export async function requestRoleChange(userId: string, requestedRole: 'partner' | 'validator') {
   const userRef = doc(db, "users", userId);
   await updateDoc(userRef, {
@@ -398,11 +380,11 @@ export async function getRoleRequests() {
 export async function updateRoleRequest(userId: string, approved: boolean) {
   const userRef = doc(db, "users", userId);
   const userDoc = await getDoc(userRef);
-  
+
   if (userDoc.exists()) {
     const userData = userDoc.data();
     const requestedRole = userData.user_info?.roleRequest?.requestedRole;
-    
+
     if (approved && requestedRole) {
       await updateDoc(userRef, {
         'user_info.role': requestedRole,
@@ -425,35 +407,42 @@ export async function updateRoleRequest(userId: string, approved: boolean) {
 export async function getUserRole(userId: string) {
   const userRef = doc(db, "users", userId);
   const userDoc = await getDoc(userRef);
-  
+
   if (userDoc.exists()) {
     return userDoc.data().user_info?.role || 'user';
   }
   return 'user';
 }
 
-export async function getHistoricalMenus(limitCount: number, restaurantName?: string, location?: string) {
-  const menusRef = collection(db, 'menus');
-  let q = query(menusRef);
+export async function getHistoricalMenus(
+  limitCount: number,
+  restaurantName?: string,
+  location?: string
+) {
+  const menusRef = collection(db, "menus");
+  const constraints = [];
 
   if (restaurantName) {
-    q = query(q, where('restaurantName', '==', restaurantName));
+    constraints.push(where("restaurantName", "==", restaurantName));
   }
   if (location) {
-    q = query(q, where('location', '==', location));
+    constraints.push(where("location", "==", location));
   }
 
-  q = query(q, orderBy('timestamp', 'desc'), limit(limitCount));
+  constraints.push(orderBy("timestamp", "desc"));
+  constraints.push(limit(limitCount));
+
+  const q = query(menusRef, ...constraints);
 
   const snapshot = await getDocs(q);
-  return snapshot.docs.map(doc => ({
+  return snapshot.docs.map((doc) => ({
     id: doc.id,
-    ...(doc.data() as DocumentData)
+    ...(doc.data() as DocumentData),
   }));
 }
 
 export async function getMenuDetails(menuId: string): Promise<MenuDetails> {
-  const docRef = doc(db, 'processedMenus', menuId);
+  const docRef = doc(db, 'menus', menuId);
   const docSnap = await getDoc(docRef);
 
   if (docSnap.exists()) {
@@ -465,14 +454,15 @@ export async function getMenuDetails(menuId: string): Promise<MenuDetails> {
 }
 
 export async function searchMenus(searchTerm: string): Promise<SearchResult[]> {
-  const menusRef = collection(db, 'menus');
+  const menusRef = collection(db, "menus");
+
   const q = query(
     menusRef,
-    where('restaurantName', '>=', searchTerm),
-    where('restaurantName', '<=', searchTerm + '\uf8ff'),
+    where("restaurantName", ">=", searchTerm),
+    where("restaurantName", "<=", searchTerm + "\uf8ff"),
     limit(10)
   );
-  
+
   const querySnapshot = await getDocs(q);
   return querySnapshot.docs.map(doc => ({
     id: doc.id,
@@ -482,10 +472,14 @@ export async function searchMenus(searchTerm: string): Promise<SearchResult[]> {
 }
 
 export async function getRecentMenus(userId: string): Promise<SearchResult[]> {
-  const userRef = doc(db, "users", userId);
-  const menusRef = collection(userRef, "vertexAiResults");
-  const q = query(menusRef, orderBy("timestamp", "desc"), limit(5));
-  
+  const menusCollection = collection(db, "menus");
+  const q = query(
+    menusCollection,
+    where("userId", "==", userId),
+    orderBy("timestamp", "desc"),
+    limit(5)
+  );
+
   const querySnapshot = await getDocs(q);
   return querySnapshot.docs.map(doc => {
     const data = doc.data();
@@ -495,4 +489,68 @@ export async function getRecentMenus(userId: string): Promise<SearchResult[]> {
       location: data.location || 'Unknown Location',
     };
   });
+}
+
+// Get cached image URL
+export async function getCachedImageUrl(userId: string, fileName: string): Promise<string | null> {
+  const imageRef = doc(db, "users", userId, "imageCaches", fileName);
+  const docSnap = await getDoc(imageRef);
+
+  if (docSnap.exists()) {
+    const data = docSnap.data();
+    const cacheTime = data.cachedAt?.toMillis() || 0;
+    const CACHE_DURATION = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
+
+    if (Date.now() - cacheTime < CACHE_DURATION) {
+      return data.imageUrl;
+    }
+  }
+
+  return null;
+}
+
+export async function saveImageUrlCache(userId: string, fileName: string, imageUrl: string) {
+  const imageRef = doc(db, "users", userId, "imageCaches", fileName);
+  await setDoc(imageRef, {
+    imageUrl,
+    cachedAt: new Date(),
+  });
+}
+
+export async function saveMenuImageReferences(userId: string, restaurantId: string, originalImageUrl: string, processedImageUrl: string) {
+  const menuRef = doc(db, "users", userId, "restaurants", restaurantId, "menus", new Date().toISOString());
+  await setDoc(menuRef, {
+    originalImageUrl,
+    processedImageUrl,
+    timestamp: new Date(),
+  });
+}
+
+export async function saveRestaurantImageReference(restaurantId: string, imageUrl: string) {
+  const restaurantRef = doc(db, "restaurants", restaurantId);
+  await updateDoc(restaurantRef, {
+    imageUrl,
+    imageCachedAt: new Date(),
+  });
+}
+
+export async function getRestaurantDetails(placeId: string): Promise<any | null> {
+  const restaurantRef = doc(db, RESTAURANT_DETAILS_COLLECTION, placeId);
+  const docSnap = await getDoc(restaurantRef);
+
+  if (docSnap.exists()) {
+    const data = docSnap.data();
+    const currentTime = Date.now();
+    const cacheTime = data.cachedAt?.toMillis() || 0;
+    const CACHE_DURATION = 60 * 24 * 60 * 60 * 1000; // 60 days in milliseconds
+
+    if (currentTime - cacheTime < CACHE_DURATION) {
+      return data; // Return all data, not just rating and address
+    } else {
+      console.log('Cached data expired. Consider refreshing the data.');
+      return data; // Still return data, but log that it's expired
+    }
+  }
+
+  return null;
 }

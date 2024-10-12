@@ -24,7 +24,9 @@ const TeamMember = ({ name, image }: { name: string; image: string }) => (
         alt={`${name}`}
         width={250}
         height={250}
-        className="object-cover w-full h-64 transition-transform duration-300 group-hover:scale-110"
+        className={`w-full h-64 transition-transform duration-300 group-hover:scale-110 object-cover ${
+          image === "Daren1.jpg" ? "object-[center_20%]" : ""
+        }`}
       />
       <div className="absolute inset-0 bg-black opacity-0 group-hover:opacity-40 transition-opacity duration-300" />
       <div className="absolute bottom-4 left-4 right-4 p-2 text-center bg-gray-900 bg-opacity-80 rounded-lg border-2 border-transparent transform translate-y-full group-hover:translate-y-0 transition-transform duration-300">

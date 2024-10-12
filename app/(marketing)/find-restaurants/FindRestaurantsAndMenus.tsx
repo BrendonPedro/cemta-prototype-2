@@ -1,3 +1,5 @@
+// FindRestaurantsAndMenus.tsx
+
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
@@ -18,13 +20,14 @@ import { useAuth as useClerkAuth } from "@clerk/nextjs";
 import { GoogleMap, useJsApiLoader, Marker } from "@react-google-maps/api";
 import {
   getMenuCountForRestaurant,
-  saveVertexAiResults,
   getCachedRestaurantDetails,
   saveRestaurantDetails,
   getCachedRestaurantsForLocation,
   saveCachedRestaurantsForLocation,
-  
-} from "@/app/services/firebaseFirestore";
+  // **Add the missing import here**
+  checkExistingMenuForRestaurant,
+} from "@/app/services/firebaseFirestore"; // Updated import
+
 import {
   Tooltip,
   TooltipProvider,
@@ -55,6 +58,7 @@ interface Restaurant {
   latitude: number;
   longitude: number;
   rating: number;
+  photoUrl?: string;
 }
 
 const mapContainerStyle = {
@@ -88,7 +92,8 @@ const taiwanCounties = [
 
 // Moved this outside of the component to stabilize it as a reference and prevent the state from rerendering when the restaurants already exist in firestore (using caching to prevent costly api calls)
 const determineCounty = (location: string): string => {
-  if (location.includes("Zhunan")) return "Miaoli County"; //Add more conditions for counties 
+  if (location.includes("Zhunan")) return "Miaoli County";
+  // Add more conditions for other counties
   return "Unknown County";
 };
 
@@ -122,89 +127,89 @@ export default function FindRestaurantsAndMenus() {
     googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!,
   });
 
-const fetchNearbyRestaurants = useCallback(
-  async (lat: number, lng: number) => {
-    if (!userId) return; // Ensure userId is available
+  const fetchNearbyRestaurants = useCallback(
+    async (lat: number, lng: number) => {
+      if (!userId) return; // Ensure userId is available
 
-    setIsLoading(true);
-    setIsRefreshing(true);
-    setError(null);
+      setIsLoading(true);
+      setIsRefreshing(true);
+      setError(null);
 
-    try {
-      // Fetch from backend (caching is handled server-side)
-      const response = await fetch(
-        `/api/nearby-restaurants?lat=${lat}&lng=${lng}&limit=20`
-      );
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(
-          `Failed to fetch nearby restaurants: ${response.status} ${response.statusText}. ${errorText}`
+      try {
+        // Fetch from backend (caching is handled server-side)
+        const response = await fetch(
+          `/api/nearby-restaurants?lat=${lat}&lng=${lng}&limit=20`
         );
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(
+            `Failed to fetch nearby restaurants: ${response.status} ${response.statusText}. ${errorText}`
+          );
+        }
+
+        const data = await response.json();
+        const restaurantsData = data.restaurants;
+
+        // Fetch restaurants' details, checking global Firestore for cached results
+        const restaurantsWithDetails = await Promise.all(
+          restaurantsData.map(async (r: any) => {
+            // Check if restaurant details exist in the global Firestore collection
+            const cachedRestaurant = await getCachedRestaurantDetails(r.id);
+            // **Add this line to check if the menu exists**
+            const menuExists = await checkExistingMenuForRestaurant(r.id);
+
+            if (cachedRestaurant) {
+              // Use cached data if it exists
+              return {
+                id: r.id,
+                name: cachedRestaurant.name,
+                menuCount: menuExists ? 1 : 0,
+                address: cachedRestaurant.address,
+                county: determineCounty(cachedRestaurant.address),
+                latitude: r.latitude,
+                longitude: r.longitude,
+                rating: cachedRestaurant.rating, // Use cached rating
+              };
+            } else {
+              // Use data from the API response
+              const rating = r.rating || 0;
+              const address = r.address || r.vicinity || "Unknown address"; // Use 'vicinity' if 'address' is not available
+
+              // Save new restaurant details globally in Firestore
+              await saveRestaurantDetails(r.id, r.name, rating, address);
+
+              return {
+                id: r.id,
+                name: r.name,
+                menuCount: menuExists ? 1 : 0,
+                address: address,
+                county: determineCounty(address),
+                latitude: r.latitude,
+                longitude: r.longitude,
+                rating, // Use newly fetched rating
+              };
+            }
+          })
+        );
+
+        setRestaurants(restaurantsWithDetails);
+        setFilteredRestaurants(restaurantsWithDetails.slice(0, 10)); // Show top 10 initially
+        setCenter({ lat, lng });
+      } catch (err) {
+        setError(
+          `Failed to fetch restaurants: ${
+            err instanceof Error ? err.message : String(err)
+          }`
+        );
+      } finally {
+        setIsLoading(false);
+        setIsRefreshing(false);
       }
+    },
+    [userId] // Ensure only necessary dependencies are included
+  );
 
-      const data = await response.json();
-      const restaurantsData = data.restaurants;
-
-       // Fetch restaurants' details, checking global Firestore for cached results
-       const restaurantsWithDetails = await Promise.all(
-         restaurantsData.map(async (r: any) => {
-           // Check if restaurant details exist in the global Firestore collection
-           const cachedRestaurant = await getCachedRestaurantDetails(r.id);
-
-           if (cachedRestaurant) {
-             // Use cached data if it exists
-             return {
-               id: r.id,
-               name: cachedRestaurant.name,
-               menuCount: await getMenuCountForRestaurant(userId!, r.id),
-               address: cachedRestaurant.address,
-               county: determineCounty(cachedRestaurant.address),
-               latitude: r.latitude,
-               longitude: r.longitude,
-               rating: cachedRestaurant.rating, // Use cached rating
-             };
-           } else {
-             // Use data from the API response
-             const rating = r.rating || 0;
-             const address = r.address || r.vicinity || "Unknown address"; // Use 'vicinity' if 'address' is not available
-
-             // Save new restaurant details globally in Firestore
-             await saveRestaurantDetails(r.id, r.name, rating, address);
-
-             return {
-               id: r.id,
-               name: r.name,
-               menuCount: await getMenuCountForRestaurant(userId!, r.id),
-               address: address,
-               county: determineCounty(address),
-               latitude: r.latitude,
-               longitude: r.longitude,
-               rating, // Use newly fetched rating
-             };
-           }
-         })
-       );
-
-       setRestaurants(restaurantsWithDetails);
-       setFilteredRestaurants(restaurantsWithDetails.slice(0, 10)); // Show top 10 initially
-       setCenter({ lat, lng });
-     } catch (err) {
-       setError(
-         `Failed to fetch restaurants: ${
-           err instanceof Error ? err.message : String(err)
-         }`
-       );
-     } finally {
-       setIsLoading(false);
-       setIsRefreshing(false);
-     }
-   },
-   [userId] // Ensure only necessary dependencies are included
- );
-
-
-
-//within component causes rerendering and repeated api calls
+  //within component causes rerendering and repeated api calls
   // const determineCounty = (location: string): string => {
   //   if (location.includes("Zhunan")) return "Miaoli County";
   //   return "Unknown County";
@@ -256,26 +261,55 @@ const fetchNearbyRestaurants = useCallback(
     restaurantId: string,
     restaurantName: string
   ) => {
+    if (!userId || !firebaseToken) {
+      setError("User not authenticated");
+      return;
+    }
+
     try {
       setIsLoading(true);
-      const dummyMenu = {
+
+      // Fetch the restaurant details
+      const restaurant = restaurants.find((r) => r.id === restaurantId);
+
+      if (!restaurant) {
+        throw new Error("Restaurant not found");
+      }
+
+      const menuData = {
         restaurant_info: {
-          name: restaurantName,
-          address: "Dummy Address",
+          name: { original: restaurantName, english: restaurantName },
+          address: {
+            original: restaurant.address,
+            english: restaurant.address,
+          },
         },
-        menu_items: [
-          { name: "Dish 1", price: "$10" },
-          { name: "Dish 2", price: "$15" },
-        ],
+        categories: [], // This will be populated by the AI
       };
 
-      await saveVertexAiResults(
-        userId!,
-        dummyMenu,
-        restaurantId,
-        restaurantName
-      );
+      // Call the API route to save the menu data
+      const response = await fetch("/api/saveVertexAiResults", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${firebaseToken}`,
+        },
+        body: JSON.stringify({
+          menuData,
+          menuId: restaurantId,
+          restaurantId,
+          imageUrl: restaurant.photoUrl || "", // Use the actual photo URL from the restaurant data
+        }),
+      });
 
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(
+          errorData.error || `HTTP error! status: ${response.status}`
+        );
+      }
+
+      // Update the restaurant's menu count
       setRestaurants((prevRestaurants) =>
         prevRestaurants.map((r) =>
           r.id === restaurantId ? { ...r, menuCount: r.menuCount + 1 } : r
@@ -344,7 +378,12 @@ const fetchNearbyRestaurants = useCallback(
   };
 
   if (authLoading || isLoading) {
-    return <div>Loading...</div>;
+    return (
+      <div className="flex justify-center items-center h-screen">
+        <div className="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-gray-900"></div>
+        <p className="ml-4 text-3xl font-semibold text-teal-900">Loading...</p>
+      </div>
+    );
   }
 
   if (authError || error) {
@@ -371,7 +410,9 @@ const fetchNearbyRestaurants = useCallback(
                 disabled={isRefreshing}
               >
                 <RefreshCw
-                  className={`mr-2 h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`}
+                  className={`mr-2 h-4 w-4 ${
+                    isRefreshing ? "animate-spin" : ""
+                  }`}
                 />
                 {isRefreshing ? "Refreshing..." : "Refresh Location"}
               </Button>
@@ -421,16 +462,16 @@ const fetchNearbyRestaurants = useCallback(
                         <DropdownMenuItem onSelect={() => setNameFilter("all")}>
                           All Restaurants
                         </DropdownMenuItem>
-                        {Array.from(new Set(restaurants.map((r) => r.name))).map(
-                          (name) => (
-                            <DropdownMenuItem
-                              key={name}
-                              onSelect={() => setNameFilter(name)}
-                            >
-                              {name}
-                            </DropdownMenuItem>
-                          )
-                        )}
+                        {Array.from(
+                          new Set(restaurants.map((r) => r.name))
+                        ).map((name) => (
+                          <DropdownMenuItem
+                            key={name}
+                            onSelect={() => setNameFilter(name)}
+                          >
+                            {name}
+                          </DropdownMenuItem>
+                        ))}
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableHead>
@@ -471,16 +512,24 @@ const fetchNearbyRestaurants = useCallback(
                         <ChevronDown className="h-4 w-4" />
                       </DropdownMenuTrigger>
                       <DropdownMenuContent>
-                        <DropdownMenuItem onSelect={() => setRatingFilter("all")}>
+                        <DropdownMenuItem
+                          onSelect={() => setRatingFilter("all")}
+                        >
                           All Ratings
                         </DropdownMenuItem>
-                        <DropdownMenuItem onSelect={() => setRatingFilter("4+")}>
+                        <DropdownMenuItem
+                          onSelect={() => setRatingFilter("4+")}
+                        >
                           4+ stars
                         </DropdownMenuItem>
-                        <DropdownMenuItem onSelect={() => setRatingFilter("3-4")}>
+                        <DropdownMenuItem
+                          onSelect={() => setRatingFilter("3-4")}
+                        >
                           3-4 stars
                         </DropdownMenuItem>
-                        <DropdownMenuItem onSelect={() => setRatingFilter("0-3")}>
+                        <DropdownMenuItem
+                          onSelect={() => setRatingFilter("0-3")}
+                        >
                           Below 3 stars
                         </DropdownMenuItem>
                       </DropdownMenuContent>
@@ -493,7 +542,9 @@ const fetchNearbyRestaurants = useCallback(
                         <ChevronDown className="h-4 w-4" />
                       </DropdownMenuTrigger>
                       <DropdownMenuContent>
-                        <DropdownMenuItem onSelect={() => setCountyFilter("all")}>
+                        <DropdownMenuItem
+                          onSelect={() => setCountyFilter("all")}
+                        >
                           All Counties
                         </DropdownMenuItem>
                         {taiwanCounties.map((county) => (
@@ -679,9 +730,11 @@ const fetchNearbyRestaurants = useCallback(
           </CardContent>
         </Card>
       </div>
-      
+
       <Button onClick={() => setShowHistoricalResults(!showHistoricalResults)}>
-        {showHistoricalResults ? 'Hide Historical Results' : 'Show Historical Results'}
+        {showHistoricalResults
+          ? "Hide Historical Results"
+          : "Show Historical Results"}
       </Button>
 
       {showHistoricalResults && <HistoricalMenuResults />}

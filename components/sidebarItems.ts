@@ -1,4 +1,5 @@
-// sidebarItems.ts
+// components/sidebarItems.ts
+
 export type UserRole = "user" | "partner" | "validator" | "admin";
 
 export interface SidebarItem {
@@ -9,38 +10,39 @@ export interface SidebarItem {
 
 export function getSidebarItemsByRole(userRole: UserRole): SidebarItem[] {
   const dashboardItem = { name: "Dashboard", href: `/dashboards/${userRole}` };
-  const menuDetailsItem = { name: "Menu Details", href: "/menu-details/latest" };
+  const menuDetailsItem = { name: "Menu Details", href: "/menu-details" }; // Updated href
+
   switch (userRole) {
     case "partner":
       return [
-            dashboardItem,
+        dashboardItem,
         { name: "TranslateMenuPro", href: "/menuAnalyzer" },
-         menuDetailsItem,
+        menuDetailsItem,
         { name: "Manage Menus", href: "/dashboards/partner/manage-menus" },
         { name: "Analytics", href: "/dashboards/partner/analytics" },
       ];
     case "validator":
-      return [  
-            dashboardItem,
+      return [
+        dashboardItem,
         { name: "TranslateMenuPro", href: "/menuAnalyzer" },
-         menuDetailsItem,
+        menuDetailsItem,
         { name: "Validate Menus", href: "/dashboards/validator/validate-menus" },
         { name: "Recent Reviews", href: "/dashboards/validator/reviews" },
       ];
     case "admin":
       return [
-            dashboardItem,
+        dashboardItem,
         { name: "TranslateMenuPro", href: "/menuAnalyzer" },
-         menuDetailsItem,
+        menuDetailsItem,
         { name: "Overview", href: "/dashboards/admin" },
         { name: "User Management", href: "/dashboards/admin/user-management" },
         { name: "System Analytics", href: "/dashboards/admin/system-analytics" },
       ];
     default:
       return [
-          dashboardItem,   
+        dashboardItem,
         { name: "TranslateMenuPro", href: "/menuAnalyzer" },
-         menuDetailsItem,
+        menuDetailsItem,
         { name: "Find Restaurants", href: "/find-restaurants" },
         { name: "My Favorites", href: "/dashboards/user/favorites" },
         { name: "Edit Profile", href: "/EditProfile" },

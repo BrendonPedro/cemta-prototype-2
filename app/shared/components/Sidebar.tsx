@@ -24,34 +24,36 @@ interface SidebarProps {
 const Sidebar: React.FC<SidebarProps> = ({ items, userRole }) => {
   const pathname = usePathname();
 
-  const getIcon = (name: string) => {
-    switch (name.toLowerCase()) {
-      case "edit profile":
-        return <Settings size={20} />;
-      case "TranslateMenuPro":
-        return <FileText size={20} />;
-      case "find restaurants":
-        return <Search size={20} />;
-      case "my favorites":
-        return <Heart size={20} />;
-      case "manage menus":
-        return <FileText size={20} />;
-      case "analytics":
-        return <BarChart2 size={20} />;
-      case "validate menus":
-        return <FileText size={20} />;
-      case "recent reviews":
-        return <FileText size={20} />;
-      case "overview":
-        return <Home size={20} />;
-      case "user management":
-        return <Users size={20} />;
-      case "system analytics":
-        return <BarChart2 size={20} />;
-      default:
-        return <Home size={20} />;
-    }
-  };
+ const getIcon = (name: string) => {
+  switch (name.toLowerCase()) {
+    case "edit profile":
+      return <Settings size={20} />;
+    case "translatemenupro":
+      return <FileText size={20} />;
+    case "find restaurants":
+      return <Search size={20} />;
+    case "my favorites":
+      return <Heart size={20} />;
+    case "manage menus":
+      return <FileText size={20} />;
+    case "analytics":
+      return <BarChart2 size={20} />;
+    case "validate menus":
+      return <FileText size={20} />;
+    case "recent reviews":
+      return <FileText size={20} />;
+    case "overview":
+      return <Home size={20} />;
+    case "user management":
+      return <Users size={20} />;
+    case "system analytics":
+      return <BarChart2 size={20} />;
+    case "menu details":
+      return <FileText size={20} />; // Added case for "Menu Details"
+    default:
+      return <Home size={20} />;
+  }
+};
 
   return (
     <aside className="sidebar rounded-tr-2xl rounded-br-2xl shadow-lg">

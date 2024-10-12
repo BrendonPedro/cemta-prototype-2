@@ -1,16 +1,21 @@
+// app/api/vertex-ai/route.ts
+
 import { NextRequest, NextResponse } from 'next/server';
 import { VertexAI } from '@google-cloud/vertexai';
 import { GoogleAuth } from 'google-auth-library';
 import axios from 'axios';
 import sharp from 'sharp';
 import {
-  saveVertexAiResults,
   getVertexAiResultsByRestaurant,
-} from '@/app/services/firebaseFirestore';
+  getCachedImageUrl,
+  saveImageUrlCache,
+} from '@/app/services/firebaseFirestore'; // Keep client-side safe imports
+import { saveVertexAiResults } from '@/app/services/firebaseFirestore.server'; // Import server-side function
 import { jsonrepair } from 'jsonrepair';
 import vision from '@google-cloud/vision';
 import pLimit from 'p-limit';
 import { setTimeout } from 'timers/promises';
+import { storage, originalMenuBucket, processedMenuBucket } from '@/config/googleCloudConfig';
 
 // Queue system
 const queue: (() => Promise<any>)[] = [];
@@ -54,7 +59,9 @@ interface RequestBody {
   imageUrl: string;
   userId: string;
   menuName: string;
+  restaurantId: string;
   forceReprocess?: boolean;
+  menuId?: string;
 }
 
 // Initialize Vision API client
@@ -101,7 +108,7 @@ async function detectChiliIcons(imageChunkBuffer: Buffer): Promise<number> {
   if (!visionClient || !visionClient.objectLocalization) {
     throw new Error('Vision client or objectLocalization method is undefined');
   }
-  
+
   const [result] = await visionClient.objectLocalization({
     image: { content: imageChunkBuffer.toString('base64') },
   });
@@ -129,7 +136,7 @@ async function processImageChunks(imageChunkBuffers: Buffer[], generativeModel: 
               mimeType: 'image/png',
             },
           },
-          { text: basePrompt }, 
+          { text: basePrompt },
         ],
       },
     ],
@@ -246,29 +253,32 @@ function mergeCategories(categories: any[]): any[] {
 export async function POST(req: NextRequest) {
   try {
     const reqBody: RequestBody = await req.json();
-    const { imageUrl, userId, menuName, forceReprocess } = reqBody;
+    const { imageUrl, userId, menuName, menuId, restaurantId, forceReprocess } = reqBody;
 
-    if (!imageUrl || !userId || !menuName) {
-      return NextResponse.json(
-        { message: 'Missing required fields' },
-        { status: 400 }
-      );
-    }
+if (!imageUrl || !userId || !menuName || !menuId) {
+  return NextResponse.json(
+    { message: 'Missing required fields' },
+    { status: 400 }
+  );
+}
 
-    const existingMenuData = await getVertexAiResultsByRestaurant(userId, menuName);
-
-    if (existingMenuData && !forceReprocess) {
-      console.log('Existing menu data found. Returning cached data.');
-      return NextResponse.json(
-        {
-          menuData: existingMenuData.menuData,
-          processingId: existingMenuData.processingId,
-          apiCallCount,
-          cached: true,
-          timestamp: existingMenuData.timestamp,
-        },
-        { status: 200 }
-      );
+    // Check for cached results
+    const cachedImageUrl = await getCachedImageUrl(userId, menuName);
+    if (cachedImageUrl && !forceReprocess) {
+      const existingMenuData = await getVertexAiResultsByRestaurant(userId, menuName);
+      if (existingMenuData) {
+        console.log('Existing menu data found. Returning cached data.');
+        return NextResponse.json(
+          {
+            menuData: existingMenuData.menuData,
+            processingId: existingMenuData.id,
+            apiCallCount: 0,
+            cached: true,
+            timestamp: existingMenuData.timestamp,
+          },
+          { status: 200 }
+        );
+      }
     }
 
     return new Promise((resolve) => {
@@ -281,8 +291,37 @@ export async function POST(req: NextRequest) {
           const client = await auth.getClient();
           await client.getAccessToken();
 
-          const imageResponse = await axios.get(imageUrl, { responseType: 'arraybuffer' });
-          const imageBuffer = Buffer.from(imageResponse.data);
+          // Download image from original bucket or URL
+          let imageBuffer: Buffer;
+          try {
+            if (imageUrl.startsWith('gs://')) {
+              // Handle gs:// URLs
+              const bucketName = imageUrl.split('/')[2];
+              const fileName = imageUrl.split('/').slice(3).join('/');
+              const bucket = storage.bucket(bucketName);
+              const file = bucket.file(fileName);
+              [imageBuffer] = await file.download();
+            } else if (imageUrl.startsWith('https://storage.googleapis.com')) {
+              // Handle storage.googleapis.com URLs
+              const parsedUrl = new URL(imageUrl);
+              const bucketName = parsedUrl.pathname.split('/')[1];
+              const fileName = decodeURIComponent(parsedUrl.pathname.split('/').slice(2).join('/'));
+              const bucket = storage.bucket(bucketName);
+              const file = bucket.file(fileName);
+              [imageBuffer] = await file.download();
+            } else {
+              // Handle other URLs via axios
+              const imageResponse = await axios.get(imageUrl, { responseType: 'arraybuffer' });
+              imageBuffer = Buffer.from(imageResponse.data);
+            }
+          } catch (downloadError: unknown) {
+            console.error('Error downloading image:', downloadError);
+            if (downloadError instanceof Error) {
+              throw new Error(`Failed to download image: ${downloadError.message}`);
+            } else {
+              throw new Error('Failed to download image: Unknown error');
+            }
+          }
 
           const optimizedImageBuffer = await sharp(imageBuffer)
             .resize({ width: 2560 })
@@ -290,11 +329,19 @@ export async function POST(req: NextRequest) {
             .png({ quality: 80 })
             .toBuffer();
 
+          // Upload optimized image to processed bucket
+          const processedFileName = `${userId}/${menuName}_processed.png`;
+          const processedFile = processedMenuBucket.file(processedFileName);
+          await processedFile.save(optimizedImageBuffer, {
+            metadata: { contentType: 'image/png' },
+          });
+          const processedImageUrl = `gs://${processedMenuBucket.name}/${processedFileName}`;
+
           const vertexAI = new VertexAI({ project: projectId, location });
           const generativeModel = vertexAI.getGenerativeModel({ model: modelId });
 
-    // Prepare the base prompt
-    const basePrompt = `You are an AI assistant that extracts data from menu images and outputs JSON. Analyze the menu image provided and output only the JSON representation of the menu in the specified format, without any explanations, code snippets, or additional text. Ensure you capture all details, including prices, descriptions, and categories.
+          // Prepare the base prompt
+          const basePrompt = `You are an AI assistant that extracts data from menu images and outputs JSON. Analyze the menu image provided and output only the JSON representation of the menu in the specified format, without any explanations, code snippets, or additional text. Ensure you capture all details, including prices, descriptions, and categories.
 
 JSON Format:
 {
@@ -358,7 +405,7 @@ Instructions:
 
 Now, analyze the following image and output the JSON accordingly, capturing as much detail as possible.
 `;
-          
+
           // Reset apiCallCount for each request
           apiCallCount = 0;
 
@@ -380,7 +427,7 @@ Now, analyze the following image and output the JSON accordingly, capturing as m
           const totalChunks = 3;
           const chunkBuffers = await splitImageIntoChunks(optimizedImageBuffer, totalChunks);
 
-          const chunkPromises = chunkBuffers.map(chunkBuffer => 
+          const chunkPromises = chunkBuffers.map(chunkBuffer =>
             limit(() => processImageChunksWithRetry([chunkBuffer], generativeModel, basePrompt))
           );
 
@@ -406,14 +453,18 @@ Now, analyze the following image and output the JSON accordingly, capturing as m
             menuName ||
             'Unknown Restaurant';
 
+          console.log('Processing menuId:', menuId);
           let processingId;
           try {
-            processingId = await saveVertexAiResults(
+         processingId = await saveVertexAiResults(
               userId,
               combinedMenuData,
+              menuId,
+              restaurantId,
               menuName,
-              restaurantName
+              imageUrl,
             );
+            await saveImageUrlCache(userId, menuName, processedImageUrl);
           } catch (saveError) {
             console.error('Error saving results:', saveError);
             throw saveError;
@@ -425,7 +476,7 @@ Now, analyze the following image and output the JSON accordingly, capturing as m
           resolve(NextResponse.json(
             {
               menuData: combinedMenuData,
-              processingId,
+              processingId: menuId,
               apiCallCount,
               cached: false,
               timestamp: new Date().toISOString(),
@@ -433,19 +484,18 @@ Now, analyze the following image and output the JSON accordingly, capturing as m
             { status: 200 }
           ));
         } catch (error: any) {
-          console.error('Error:', error);
-          resolve(NextResponse.json(
-            { message: 'An error occurred', error: error.message || String(error) },
-            { status: 500 }
-          ));
+          console.error('Error in Vertex AI processing:', error);
+          let errorMessage = 'An error occurred during processing';
+          if (error.response) {
+            errorMessage += `: ${error.response.status} ${error.response.statusText}`;
+            console.error('Error response data:', error.response.data);
+          }
+          resolve(NextResponse.json({ error: errorMessage }, { status: 500 }));
         }
       });
     });
   } catch (error: any) {
-    console.error('Error:', error);
-    return NextResponse.json(
-      { message: 'An error occurred', error: error.message || String(error) },
-      { status: 500 }
-    );
+    console.error('Error in API route:', error);
+    return NextResponse.json({ error: 'An error occurred in the API route' }, { status: 500 });
   }
 }

@@ -4,6 +4,7 @@ import { DocumentProcessorServiceClient } from '@google-cloud/documentai';
 
 const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID;
 const keyFilename = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+const primaryRegion = 'asia-east1'; 
 
 if (!projectId) {
   throw new Error('Missing GOOGLE_CLOUD_PROJECT_ID environment variable');
@@ -22,8 +23,17 @@ const documentAiClient = new DocumentProcessorServiceClient({
   keyFilename,
 });
 
-const labeledBucketName = process.env.GOOGLE_CLOUD_STORAGE_BUCKET_LABELED;
-const unlabeledBucketName = process.env.GOOGLE_CLOUD_STORAGE_BUCKET;
+function getBucketName(envVar: string | undefined): string {
+  if (!envVar) {
+    throw new Error(`Missing environment variable`);
+  }
+  return envVar.replace('gs://', '');
+}
+
+
+// Document AI Buckets
+const labeledBucketName = process.env.GOOGLE_CLOUD_STORAGE_BUCKET_LABELED?.replace('gs://', '');
+const unlabeledBucketName = process.env.GOOGLE_CLOUD_STORAGE_BUCKET?.replace('gs://', '');
 
 if (!labeledBucketName) {
   throw new Error('Missing GOOGLE_CLOUD_STORAGE_BUCKET_LABELED environment variable');
@@ -36,45 +46,83 @@ if (!unlabeledBucketName) {
 const labeledBucket = storage.bucket(labeledBucketName);
 const unlabeledBucket = storage.bucket(unlabeledBucketName);
 
-export { storage, documentAiClient, labeledBucket, unlabeledBucket };
+// Restaurant Image Cache Buckets
+const originalMenuBucketName = getBucketName(process.env.GOOGLE_CLOUD_STORAGE_BUCKET_ORIGINAL_MENUS);
+const processedMenuBucketName = getBucketName(process.env.GOOGLE_CLOUD_STORAGE_BUCKET_PROCESSED_MENUS);
+const restaurantImagesBucketName = getBucketName(process.env.GOOGLE_CLOUD_STORAGE_BUCKET_RESTAURANT_IMAGES);
 
-// // googleCloudConfig.ts
-// import { Storage } from '@google-cloud/storage';
-// import { DocumentProcessorServiceClient } from '@google-cloud/documentai';
+if (!originalMenuBucketName || !processedMenuBucketName || !restaurantImagesBucketName) {
+  throw new Error('Missing one or more required GCP bucket environment variables');
+}
 
-// const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID;
-// const keyFilename = process.env.GOOGLE_APPLICATION_CREDENTIALS;
+const originalMenuBucket = storage.bucket(originalMenuBucketName);
+const processedMenuBucket = storage.bucket(processedMenuBucketName);
+const restaurantImagesBucket = storage.bucket(restaurantImagesBucketName);
 
-// if (!projectId) {
-//   throw new Error('Missing GOOGLE_CLOUD_PROJECT_ID environment variable');
-// }
+// Set up replication
+async function setupReplication() {
+  try {
+    await originalMenuBucket.addLifecycleRule({
+      action: { type: 'SetStorageClass', storageClass: 'NEARLINE' },
+      condition: {
+        age: 30, // Move to Nearline storage after 30 days
+      },
+    });
 
-// if (!keyFilename) {
-//   throw new Error('Missing GOOGLE_APPLICATION_CREDENTIALS environment variable');
-// }
+    await processedMenuBucket.addLifecycleRule({
+      action: { type: 'SetStorageClass', storageClass: 'NEARLINE' },
+      condition: {
+        age: 30,
+      },
+    });
 
-// const storage = new Storage({
-//   projectId,
-//   keyFilename,
-// });
+    await restaurantImagesBucket.addLifecycleRule({
+      action: { type: 'SetStorageClass', storageClass: 'NEARLINE' },
+      condition: {
+        age: 30,
+      },
+    });
 
-// const documentAiClient = new DocumentProcessorServiceClient({
-//   projectId,
-//   keyFilename,
-// });
+    console.log('Successfully set up replication rules');
+  } catch (error) {
+    console.error('Error setting up replication:', error);
+    throw new Error('Failed to set up replication. Check your permissions and bucket configuration.');
+  }
+}
 
-// const labeledBucketName = process.env.GOOGLE_CLOUD_STORAGE_BUCKET_LABELED;
-// const unlabeledBucketName = process.env.GOOGLE_CLOUD_STORAGE_BUCKET;
+// Test bucket access
+async function testBucketAccess() {
+  try {
+    await Promise.all([
+      originalMenuBucket.exists(),
+      processedMenuBucket.exists(),
+      restaurantImagesBucket.exists(),
+      labeledBucket.exists(),
+      unlabeledBucket.exists()
+    ]);
+    console.log('Successfully connected to all GCS buckets');
+  } catch (error) {
+    console.error('Error accessing GCS buckets:', error);
+    throw new Error('Failed to access GCS buckets. Check your permissions and bucket names.');
+  }
+}
 
-// if (!labeledBucketName) {
-//   throw new Error('Missing GOOGLE_CLOUD_STORAGE_BUCKET_LABELED environment variable');
-// }
+// Initialize buckets and test access
+(async () => {
+  try {
+    await setupReplication();
+    await testBucketAccess();
+  } catch (error) {
+    console.error('Error during initialization:', error);
+  }
+})();
 
-// if (!unlabeledBucketName) {
-//   throw new Error('Missing GOOGLE_CLOUD_STORAGE_BUCKET environment variable');
-// }
-
-// const labeledBucket = storage.bucket(labeledBucketName);
-// const unlabeledBucket = storage.bucket(unlabeledBucketName);
-
-// export { storage, documentAiClient, labeledBucket, unlabeledBucket };
+export {
+  storage,
+  documentAiClient,
+  labeledBucket,
+  unlabeledBucket,
+  originalMenuBucket,
+  processedMenuBucket,
+  restaurantImagesBucket,
+};

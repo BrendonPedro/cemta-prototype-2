@@ -37,12 +37,16 @@ import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertCircle, RefreshCw } from "lucide-react";
 import { Menu } from '@/types/menuTypes'; // Adjust the import path as necessary
+import MenuDataDisplay from "./MenuDataDisplay";
 
 interface VertexAiResultsDisplayProps {
   userId: string;
   latestProcessingId: string | null;
   isCached: boolean;
   onReprocess: (id: string) => void;
+  processingError: string | null;
+  existingMenuInfo: any | null;
+  menuName: string;
 }
 
 interface MenuItem {
@@ -106,12 +110,16 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
   userId,
   latestProcessingId,
   isCached,
-  onReprocess
+  onReprocess,
+  processingError,
+  existingMenuInfo,
+  menuName,
 }) => {
   console.log("VertexAiResultsDisplay props:", {
     userId,
     latestProcessingId,
     isCached,
+    processingError,
   });
   const [menuData, setMenuData] = useState<MenuData | null>(null);
   const [isEditing, setIsEditing] = useState(false);
@@ -132,67 +140,92 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
     type: "default" | "destructive";
     message: string;
   } | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
 
- useEffect(() => {
+  useEffect(() => {
     const fetchResults = async () => {
-      if (!latestProcessingId) {
+      if (existingMenuInfo) {
+        // Handle existing menu data
+        setMenuData(existingMenuInfo.menuData);
+        setEditedMenuData(existingMenuInfo.menuData);
+        setSelectedHistoryId(existingMenuInfo.id);
+        setLastUpdated(existingMenuInfo.timestamp);
+        setAlert({
+          type: "default",
+          message: "This menu already exists in the database.",
+        });
+        setIsLoading(false);
+      } else if (!latestProcessingId) {
         setIsLoading(false);
         setError(
           "No processing ID available. Please try processing the image again."
         );
         return;
-      }
+      } else {
+        setIsLoading(true);
+        setError(null);
 
-      setIsLoading(true);
-      setError(null);
+        try {
+          console.log("Fetching Vertex AI results...");
+          const results = await getVertexAiResults(userId, latestProcessingId);
+          console.log("Fetched results:", results);
 
-      try {
-        const results = await getVertexAiResults(userId, latestProcessingId);
-        if (results && results.menuData) {
-          setMenuData(results.menuData);
-          setEditedMenuData(results.menuData);
-          setSelectedHistoryId(latestProcessingId);
-          setLastUpdated(results.timestamp || new Date().toISOString());
-          
-          if (Array.isArray(results.menuData.categories)) {
-            setSelectedCategories(
-              results.menuData.categories.map((cat) => cat.name.original)
-            );
+          if (results && results.menuData) {
+            setMenuData(results.menuData);
+            setEditedMenuData(results.menuData);
+            setSelectedHistoryId(latestProcessingId);
+            setLastUpdated(results.timestamp || new Date().toISOString());
+
+            if (Array.isArray(results.menuData.categories)) {
+              setSelectedCategories(
+                results.menuData.categories.map(
+                  (cat: Category) => cat.name.original
+                )
+              );
+            } else {
+              console.error(
+                "Invalid categories structure:",
+                results.menuData.categories
+              );
+              setError(
+                "Unexpected data structure in results: categories is not an array."
+              );
+            }
+
+            if (isCached) {
+              setAlert({
+                type: "default",
+                message:
+                  "This menu data was retrieved from the cache. If you believe the data is stale, you can reprocess it.",
+              });
+            }
           } else {
-            console.error('Invalid categories structure:', results.menuData.categories);
-            setError("Unexpected data structure in results: categories is not an array.");
+            console.error("Invalid results structure:", results);
+            setError(
+              "No menu data found in the results or unexpected data structure."
+            );
           }
+        } catch (error: any) {
+          console.error("Error fetching Vertex AI results:", error);
+          setError(
+            `Failed to fetch Vertex AI results: ${error.message}. Please try again.`
+          );
 
-          if (isCached) {
-            setAlert({
-              type: "default",
-              message: "This menu data was retrieved from the cache. If you believe the data is stale, you can reprocess it.",
-            });
+          if (retryCount < 3) {
+            console.log(`Retrying in 5 seconds... (Attempt ${retryCount + 1})`);
+            setTimeout(() => {
+              setRetryCount((prevCount) => prevCount + 1);
+              fetchResults();
+            }, 5000);
           }
-        } else {
-          console.error('Invalid results structure:', results);
-          setError("No menu data found in the results or unexpected data structure.");
+        } finally {
+          setIsLoading(false);
         }
-      } catch (error) {
-        console.error("Error fetching Vertex AI results:", error);
-        setError("Failed to fetch Vertex AI results. Please try again.");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    const fetchHistory = async () => {
-      try {
-        const historyData = await getVertexAiHistory(userId);
-        setHistory(historyData);
-      } catch (error) {
-        console.error("Error fetching history:", error);
       }
     };
 
     fetchResults();
-    fetchHistory();
-  }, [userId, latestProcessingId, isCached]);
+  }, [userId, latestProcessingId, isCached, retryCount, existingMenuInfo]);
 
   const handleReprocess = () => {
     // Implement reprocessing logic here
@@ -231,35 +264,44 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
     }
   };
 
- const handleHistorySelect = async (value: string) => {
-  setSelectedHistoryId(value);
-  setIsLoading(true);
-  try {
-    const results = await getVertexAiResults(userId, value);
-    if (results && results.menuData) {
-      setMenuData(results.menuData);
-      setEditedMenuData(results.menuData);
-      
-      if (Array.isArray(results.menuData.categories)) {
-        setSelectedCategories(
-          results.menuData.categories.map((cat: Category) => cat.name.original)
-        );
+  const handleHistorySelect = async (value: string) => {
+    setSelectedHistoryId(value);
+    setIsLoading(true);
+    try {
+      const results = await getVertexAiResults(userId, value);
+      if (results && results.menuData) {
+        setMenuData(results.menuData);
+        setEditedMenuData(results.menuData);
+
+        if (Array.isArray(results.menuData.categories)) {
+          setSelectedCategories(
+            results.menuData.categories.map(
+              (cat: Category) => cat.name.original
+            )
+          );
+        } else {
+          console.error(
+            "Invalid categories structure:",
+            results.menuData.categories
+          );
+          setError(
+            "Unexpected data structure in results: categories is not an array."
+          );
+        }
       } else {
-        console.error('Invalid categories structure:', results.menuData.categories);
-        setError("Unexpected data structure in results: categories is not an array.");
+        console.error("Invalid results structure:", results);
+        setError(
+          "No menu data found in the results or unexpected data structure."
+        );
       }
-    } else {
-      console.error('Invalid results structure:', results);
-      setError("No menu data found in the results or unexpected data structure.");
+    } catch (error) {
+      console.error("Error fetching historical results:", error);
+      setError("Failed to fetch historical results.");
+    } finally {
+      setIsLoading(false);
     }
-  } catch (error) {
-    console.error("Error fetching historical results:", error);
-    setError("Failed to fetch historical results.");
-  } finally {
-    setIsLoading(false);
-  }
   };
-  
+
   const toggleCategory = (categoryName: string) => {
     setSelectedCategories((prev) =>
       prev.includes(categoryName)
@@ -287,7 +329,9 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
       category.items.forEach((item) => {
         if (selectedItems.has(item.name.original)) {
           const price = parseFloat(
-            item.prices?.regular || (item.prices && Object.values(item.prices)[0]) || "0"
+            item.prices?.regular ||
+            (item.prices && Object.values(item.prices)[0]) ||
+            "0"
           );
           if (!isNaN(price)) {
             total += price;
@@ -313,9 +357,8 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
           <p key={key} className="mb-2">
             <strong>{key.replace(/_/g, " ")}:</strong>{" "}
             {typeof value === "object" && value !== null
-              ? `${value.original || ""} ${
-                  (value as any).english ? `(${(value as any).english})` : ""
-                }`
+              ? `${value.original || ""} ${(value as any).english ? `(${(value as any).english})` : ""
+              }`
               : value || "N/A"}
           </p>
         ))}
@@ -323,15 +366,20 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
     </Collapsible>
   );
 
-  const renderMenuItem = (item: MenuItem, categoryIndex: number, itemIndex: number, categoryName?: string) => {
+  const renderMenuItem = (
+    item: MenuItem,
+    categoryIndex: number,
+    itemIndex: number,
+    categoryName?: string
+  ) => {
     const priceDisplay = item.price
       ? `${item.price.amount} ${item.price.currency}`
       : item.prices
-      ? Object.entries(item.prices)
+        ? Object.entries(item.prices)
           .filter(([_, value]) => value && value !== "")
           .map(([key, value]) => `${key}: ${value}`)
           .join(", ")
-      : "N/A";
+        : "N/A";
     // Add a check for empty categories
     if (!menuData?.categories || menuData.categories.length === 0) {
       return (
@@ -344,7 +392,8 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
               No categories or menu items found. The menu might be empty or the
               analysis might not have captured any items.
             </p>
-            {menuData?.restaurant_info && renderRestaurantInfo(menuData.restaurant_info)}
+            {menuData?.restaurant_info &&
+              renderRestaurantInfo(menuData.restaurant_info)}
             {menuData?.other_info && (
               <Card>
                 <CardHeader>
@@ -550,7 +599,7 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
     return (
       <Card className="w-full mt-6">
         <CardHeader>
-          <CardTitle>Loading Results</CardTitle>
+          <CardTitle>Loading Results for {menuName}</CardTitle>
         </CardHeader>
         <CardContent>
           <Skeleton className="w-full h-8 mb-4" />
@@ -561,14 +610,14 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
     );
   }
 
-  if (error) {
+  if (processingError) {
     return (
       <Card className="w-full mt-6">
         <CardHeader>
-          <CardTitle>Error</CardTitle>
+          <CardTitle>Processing Error for {menuName}</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-red-500">{error}</p>
+          <p className="text-red-500">{processingError}</p>
         </CardContent>
       </Card>
     );
@@ -578,7 +627,7 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
     return (
       <Card className="w-full mt-6">
         <CardHeader>
-          <CardTitle>No Data Available</CardTitle>
+          <CardTitle>No Data Available for {menuName}</CardTitle>
         </CardHeader>
         <CardContent>
           <p>No menu data available. Please try processing the image again.</p>
@@ -587,184 +636,7 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
     );
   }
 
-  return (
-    <Card className="w-full mt-6">
-      <CardHeader>
-        <CardTitle>Menu Analysis Results</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {isCached && lastUpdated && (
-          <Alert variant="default" className="mb-4">
-            <AlertCircle className="h-4 w-4" />
-            <AlertTitle>Cached Data</AlertTitle>
-            <AlertDescription>
-              This menu data was retrieved from the cache. Last updated:{" "}
-              {lastUpdated}
-              <Button
-                variant="cemta"
-                size="sm"
-                className="mt-2"
-                onClick={handleReprocess}
-              >
-                <RefreshCw className="mr-2 h-4 w-4" />
-                Reprocess (Premium)
-              </Button>
-            </AlertDescription>
-          </Alert>
-        )}
-        <div className="space-y-6">
-          <Select
-            onValueChange={handleHistorySelect}
-            value={selectedHistoryId || undefined}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="Select historical result" />
-            </SelectTrigger>
-            <SelectContent>
-              {history.map((item) => (
-                <SelectItem key={item.id} value={item.id}>
-                  {item.menuName} - {new Date(item.timestamp).toLocaleString()}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+  return <MenuDataDisplay menuData={menuData} menuName={menuName} />;
 
-          <div className="flex items-center space-x-2">
-            <Checkbox
-              id="showFullMenu"
-              checked={showFullMenu}
-              onCheckedChange={(checked) => setShowFullMenu(checked as boolean)}
-            />
-            <label htmlFor="showFullMenu">
-              Show full menu (including categories)
-            </label>
-          </div>
-
-          {renderRestaurantInfo(menuData.restaurant_info)}
-
-          {menuData.categories.length > 0 ? (
-            showFullMenu ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Category</TableHead>
-                    <TableHead>Original Name</TableHead>
-                    <TableHead>Pinyin</TableHead>
-                    <TableHead>English Name</TableHead>
-                    <TableHead>Prices</TableHead>
-                    <TableHead>Attributes</TableHead>
-                    <TableHead>Description</TableHead>
-                    <TableHead>Upgrades</TableHead>
-                    <TableHead>Notes</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {menuData.categories.flatMap((category, categoryIndex) =>
-                    category.items.map((item, itemIndex) =>
-                      renderMenuItem(
-                        item,
-                        categoryIndex,
-                        itemIndex,
-                        `${category.name.original} ${
-                          category.name.english
-                            ? `(${category.name.english})`
-                            : ""
-                        }`
-                      )
-                    )
-                  )}
-                </TableBody>
-              </Table>
-            ) : (
-              <div className="space-y-6">
-                <Tabs defaultValue={menuData.categories[0].name.original}>
-                  <TabsList className="flex flex-wrap gap-2 mb-6">
-                    {menuData.categories.map((category) => (
-                      <TabsTrigger
-                        key={category.name.original}
-                        value={category.name.original}
-                        className="px-3 py-2 text-sm whitespace-normal text-center h-auto"
-                      >
-                        <span className="block">{category.name.original}</span>
-                        {category.name.english && (
-                          <span className="block text-xs text-muted-foreground">
-                            ({category.name.english})
-                          </span>
-                        )}
-                      </TabsTrigger>
-                    ))}
-                  </TabsList>
-                  {menuData.categories.map((category, categoryIndex) => (
-                    <TabsContent
-                      key={category.name.original}
-                      value={category.name.original}
-                    >
-                      <div className="overflow-x-auto">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Original Name</TableHead>
-                              <TableHead>Pinyin</TableHead>
-                              <TableHead>English Name</TableHead>
-                              <TableHead>Prices</TableHead>
-                              <TableHead>Attributes</TableHead>
-                              <TableHead>Description</TableHead>
-                              <TableHead>Upgrades</TableHead>
-                              <TableHead>Notes</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {category.items.map((item, itemIndex) =>
-                              renderMenuItem(item, categoryIndex, itemIndex)
-                            )}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    </TabsContent>
-                  ))}
-                </Tabs>
-              </div>
-            )
-          ) : (
-            <p>No categories</p>
-          )}
-          <div className="text-right font-bold">
-            Total for selected items: ${calculateTotal()}
-          </div>
-
-          {menuData.other_info && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Additional Information</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p>{menuData.other_info}</p>
-              </CardContent>
-            </Card>
-          )}
-
-          <div className="flex justify-end space-x-2">
-            {isEditing ? (
-              <>
-                <Button onClick={handleSave}>Save</Button>
-                <Button
-                  onClick={() => {
-                    setIsEditing(false);
-                    setEditedMenuData(menuData);
-                  }}
-                  variant="cemta"
-                >
-                  Cancel
-                </Button>
-              </>
-            ) : (
-              <Button onClick={() => setIsEditing(true)}>Edit</Button>
-            )}
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-};
-
+} 
 export default VertexAiResultsDisplay;

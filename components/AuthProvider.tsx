@@ -63,7 +63,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
 
         // Fetch user role and role request from Firestore
         if (user) {
-          setUserId(user.id); // Add this line
+          setUserId(user.id); // This sets userId in the context
           const db = getFirestore();
           const userRef = doc(db, "users", user.id);
           const userSnap = await getDoc(userRef);

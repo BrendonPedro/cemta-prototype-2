@@ -1,3 +1,5 @@
+// app/api/set-user-role/route.ts
+
 import { NextResponse } from "next/server";
 import { auth, clerkClient } from "@clerk/nextjs/server";
 import { getFirestore, doc, updateDoc, getDoc } from 'firebase/firestore';

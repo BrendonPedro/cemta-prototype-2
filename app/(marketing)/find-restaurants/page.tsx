@@ -1,3 +1,5 @@
+//find-restaurants/page.tsx
+
 import React from "react";
 import FindRestaurantsAndMenus from "@/app/(marketing)/find-restaurants/FindRestaurantsAndMenus";
 import { AuthProvider } from "@/components/AuthProvider";

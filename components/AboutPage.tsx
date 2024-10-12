@@ -11,6 +11,13 @@ import { useSpring, animated } from "react-spring";
 import { useDrag } from "@use-gesture/react";
 import Image from "next/image";
 import axios from "axios";
+import {
+  Carousel,
+  CarouselContent,
+  CarouselItem,
+  CarouselNext,
+  CarouselPrevious,
+} from "@/components/ui/carousel";
 
 interface Restaurant {
   id: string;
@@ -24,81 +31,48 @@ interface Restaurant {
 
 interface RestaurantCardProps {
   restaurant: Restaurant;
-  onSwipe: (direction: string) => void;
 }
 
-const RestaurantCard: React.FC<RestaurantCardProps> = ({
-  restaurant,
-  onSwipe,
-}) => {
-  const [{ x, rotate }, api] = useSpring(() => ({ x: 0, rotate: 0 }));
-
-  const bind = useDrag(
-    ({ down, movement: [mx], direction: [xDir], velocity: [vx] }) => {
-      const trigger = Math.abs(vx) > 0.2; // Use the magnitude of velocity
-      const dir = xDir < 0 ? -1 : 1;
-      if (!down && trigger) {
-        api.start({ x: 300 * dir, rotate: 50 * dir });
-        onSwipe(dir > 0 ? "right" : "left");
-      } else {
-        api.start({
-          x: down ? mx : 0,
-          rotate: down ? mx / 10 : 0,
-          immediate: down,
-        });
-      }
-    },
-    { from: () => [x.get(), 0] }
-  );
+const RestaurantCard: React.FC<RestaurantCardProps> = ({ restaurant }) => {
+  const imageUrl = restaurant.photo_reference
+    ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${restaurant.photo_reference}&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}`
+    : "https://images.unsplash.com/photo-1514933651103-005eec06c04b?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1074&q=80";
 
   return (
-    <animated.div
-      {...bind()}
-      style={{ x, rotate, touchAction: "none" }}
-      className="absolute w-full h-full"
-    >
-      <Card className="w-full h-full overflow-hidden rounded-3xl shadow-xl">
-        <div className="relative w-full h-56">
-          {restaurant.photo_reference ? (
-            <Image
-              src={`https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${restaurant.photo_reference}&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}`}
-              alt={restaurant.name}
-              layout="fill"
-              objectFit="cover"
-            />
-          ) : (
-            <Image
-              src="https://images.unsplash.com/photo-1514933651103-005eec06c04b?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1074&q=80"
-              alt="Restaurant placeholder"
-              layout="fill"
-              objectFit="cover"
-            />
-          )}
+    <Card className="w-full h-full overflow-hidden rounded-3xl shadow-xl">
+      <div className="relative w-full h-56">
+        <Image
+          src={imageUrl}
+          alt={restaurant.name}
+          layout="fill"
+          objectFit="cover"
+          onError={(e) => {
+            console.error("Image load error:", e);
+            (e.target as HTMLImageElement).src =
+              "https://images.unsplash.com/photo-1514933651103-005eec06c04b?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1074&q=80";
+          }}
+        />
+      </div>
+      <CardContent className="p-6">
+        <h3 className="text-2xl font-semibold mb-3 text-gray-800">
+          {restaurant.name}
+        </h3>
+        <p className="text-gray-600 mb-4">{restaurant.address}</p>
+        <div className="flex items-center text-gray-500 mb-4">
+          <MapPin className="w-4 h-4 mr-2" />
+          <span>{restaurant.address}</span>
         </div>
-        <CardContent className="p-6">
-          <h3 className="text-2xl font-semibold mb-3 text-gray-800">
-            {restaurant.name}
-          </h3>
-          <p className="text-gray-600 mb-4">{restaurant.address}</p>
-          <div className="flex items-center text-gray-500 mb-4">
-            <MapPin className="w-4 h-4 mr-2" />
-            <span>{restaurant.address}</span>
-          </div>
-          <div className="flex items-center">
-            <span className="text-yellow-400 mr-1">★</span>
-            <span className="font-semibold">
-              {restaurant.rating.toFixed(1)}
-            </span>
-          </div>
-        </CardContent>
-      </Card>
-    </animated.div>
+        <div className="flex items-center">
+          <span className="text-yellow-400 mr-1">★</span>
+          <span className="font-semibold">{restaurant.rating.toFixed(1)}</span>
+        </div>
+      </CardContent>
+    </Card>
   );
 };
 
 export default function AboutPage() {
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
-  const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -129,11 +103,6 @@ export default function AboutPage() {
     fetchNearbyRestaurants();
   }, []);
 
-  const handleSwipe = (direction: string) => {
-    console.log(`Swiped ${direction} on ${restaurants[currentIndex]?.name}`);
-    setCurrentIndex((prevIndex) => (prevIndex + 1) % restaurants.length);
-  };
-
   return (
     <div className="min-h-screen">
       <main className="container mx-auto px-6 py-12">
@@ -155,22 +124,27 @@ export default function AboutPage() {
             </Button>
           </div>
         </section>
-
         <section className="mb-20">
           <h2 className="text-4xl font-bold text-customBlack mb-10 text-center">
             Trending Culinary Hotspots
           </h2>
-          <div className="relative h-[400px] w-full max-w-md mx-auto">
+          <div className="w-full max-w-md mx-auto">
             {loading && (
               <p className="text-center">Loading nearby restaurants...</p>
             )}
             {error && <p className="text-center text-red-500">{error}</p>}
             {!loading && !error && restaurants.length > 0 && (
-              <RestaurantCard
-                key={restaurants[currentIndex].id}
-                restaurant={restaurants[currentIndex]}
-                onSwipe={handleSwipe}
-              />
+              <Carousel>
+                <CarouselContent>
+                  {restaurants.map((restaurant) => (
+                    <CarouselItem key={restaurant.id}>
+                      <RestaurantCard restaurant={restaurant} />
+                    </CarouselItem>
+                  ))}
+                </CarouselContent>
+                <CarouselPrevious />
+                <CarouselNext />
+              </Carousel>
             )}
           </div>
         </section>

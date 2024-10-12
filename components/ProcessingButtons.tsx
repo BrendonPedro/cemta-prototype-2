@@ -1,9 +1,11 @@
+// components/ProcessingButtons.tsx
+
 import React from "react";
 import { Button } from "@/components/ui/button";
-import { Loader2 } from "lucide-react";
 
 interface ProcessingButtonsProps {
   onProcess: () => void;
+  onReprocess?: () => void;
   isProcessing: boolean;
   isDisabled: boolean;
   isCached: boolean;
@@ -12,29 +14,31 @@ interface ProcessingButtonsProps {
 
 const ProcessingButtons: React.FC<ProcessingButtonsProps> = ({
   onProcess,
+  onReprocess,
   isProcessing,
   isDisabled,
   isCached,
   isUploaded,
 }) => {
   let buttonText = "Process with Vertex AI";
+  let buttonAction = onProcess;
+
   if (isUploaded && !isProcessing) {
     buttonText = "Analyze Menu";
-  } else if (isProcessing) {
-    buttonText = "Processing...";
-  } else if (isCached) {
+    buttonAction = onProcess;
+  } else if (isCached && onReprocess) {
     buttonText = "Reprocess with Vertex AI";
+    buttonAction = onReprocess;
   }
 
   return (
-    <div className="inline-flex items-center w-full">
+    <div className="inline-flex items-center w-full mt-4">
       <Button
-        onClick={onProcess}
+        onClick={() => buttonAction()}
         disabled={isProcessing || isDisabled}
         variant="nextButton2"
         className="w-full"
       >
-        {isProcessing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
         {buttonText}
       </Button>
     </div>

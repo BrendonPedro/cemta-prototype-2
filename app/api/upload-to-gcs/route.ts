@@ -1,10 +1,11 @@
-// /app/api/upload-to-gcs/route.ts
+// app/api/upload-to-gcs/route.ts
 
 import { NextRequest, NextResponse } from 'next/server';
-import { unlabeledBucket } from '@/config/googleCloudConfig';
+import { originalMenuBucket } from '@/config/googleCloudConfig';
 import admin from '@/config/firebaseAdmin';
 import { DecodedIdToken } from 'firebase-admin/auth';
 import Busboy from 'busboy';
+import { saveImageUrlCache } from '@/app/services/firebaseFirestore';
 
 export async function POST(req: NextRequest) {
   return new Promise<NextResponse>(async (resolve, reject) => {
@@ -37,11 +38,12 @@ export async function POST(req: NextRequest) {
       const fileWritePromises: Promise<void>[] = [];
       let fileUploaded = false;
       let fileUrl = '';
+      let fileName = '';
 
       bb.on('file', (fieldname: string, file: NodeJS.ReadableStream, info: { filename: string; encoding: string; mimeType: string }) => {
         const { filename, mimeType } = info;
-        const fileName = `${Date.now()}-${decodedToken.uid}-${filename}`;
-        const fileStream = unlabeledBucket.file(fileName).createWriteStream({
+        fileName = `${Date.now()}-${decodedToken.uid}-${filename}`;
+        const fileStream = originalMenuBucket.file(fileName).createWriteStream({
           resumable: false,
           contentType: mimeType,
         });
@@ -50,7 +52,7 @@ export async function POST(req: NextRequest) {
 
         fileStream.on('finish', () => {
           fileUploaded = true;
-          fileUrl = `https://storage.googleapis.com/${unlabeledBucket.name}/${fileName}`;
+          fileUrl = `https://storage.googleapis.com/${originalMenuBucket.name}/${fileName}`;
         });
 
         fileWritePromises.push(
@@ -67,6 +69,10 @@ export async function POST(req: NextRequest) {
           if (!fileUploaded) {
             return resolve(NextResponse.json({ message: 'No file uploaded' }, { status: 400 }));
           }
+          
+          // Save the image URL to cache
+          await saveImageUrlCache(decodedToken.uid, fileName, fileUrl);
+          
           resolve(NextResponse.json({ url: fileUrl }, { status: 200 }));
         } catch (error) {
           console.error('Error during file upload:', error);
@@ -96,7 +102,3 @@ function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return String(error);
 }
-
-
-
-
