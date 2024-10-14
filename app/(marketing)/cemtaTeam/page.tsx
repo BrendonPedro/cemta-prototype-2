@@ -9,7 +9,7 @@ const teamMembers = [
   { name: "Daniele Melotti", image: "daniele.png" },
   { name: "Daren Smith", image: "Daren1.jpg" },
   { name: "Hakim Nasution", image: "Hakim.jpeg" },
-  { name: "Harits Nasution", image: "Harits.jpeg" },
+  { name: "Harits Nasution", image: "Harits1.jpg" },
 ];
 
 const TeamMember = ({ name, image }: { name: string; image: string }) => (
@@ -26,6 +26,8 @@ const TeamMember = ({ name, image }: { name: string; image: string }) => (
         height={250}
         className={`w-full h-64 transition-transform duration-300 group-hover:scale-110 object-cover ${
           image === "Daren1.jpg" ? "object-[center_20%]" : ""
+        } ${
+          image === "Harits1.jpg" ? "object-[center_10%] scale-135" : ""
         }`}
       />
       <div className="absolute inset-0 bg-black opacity-0 group-hover:opacity-40 transition-opacity duration-300" />

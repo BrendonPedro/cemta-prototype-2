@@ -10,6 +10,7 @@ export default function MenuDetailsLayout({
   children: React.ReactNode;
 }) {
   return (
+    
     <AuthProvider>
       <div className="flex">
         <SidebarWrapper /> {/* Include the SidebarWrapper */}

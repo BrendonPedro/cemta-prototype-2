@@ -6,7 +6,6 @@ import React, { useState, useEffect, useCallback } from "react";
 import { useAuth } from "../../../components/AuthProvider";
 import Image from "next/image";
 import MenuUpload from "./MenuUpload";
-import VertexAiResultsDisplay from "../../../components/vertexAiResultsDisplay";
 import {
   getMenuCount,
   getVertexAiResultsByRestaurant,
@@ -18,6 +17,7 @@ import { AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
 import { slugify } from "@/app/utils/stringUtils";
+// Removed unused imports related to VertexAiResultsDisplay
 
 const MAX_MENUS_PER_USER = 150;
 
@@ -27,9 +27,6 @@ const MenuAnalyzer = () => {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isProcessed, setIsProcessed] = useState(false);
-  const [latestVertexProcessingId, setLatestVertexProcessingId] = useState<
-    string | null
-  >(null);
   const [menuName, setMenuName] = useState("");
   const [alert, setAlert] = useState<{
     type: "default" | "destructive";
@@ -46,6 +43,7 @@ const MenuAnalyzer = () => {
   const [processingError, setProcessingError] = useState<string | null>(null);
   const [menuId, setMenuId] = useState<string>("");
   const [isCheckingExistingMenu, setIsCheckingExistingMenu] = useState(false);
+  // Removed menuData state variable as it's no longer needed
 
   // Memoize handleProcessing to prevent unnecessary re-renders
   const handleProcessing = useCallback(
@@ -115,7 +113,6 @@ const MenuAnalyzer = () => {
         const result = await response.json();
         console.log("Vertex AI processing result:", result);
 
-        setLatestVertexProcessingId(menuId);
         setIsProcessed(true);
         setIsCached(result.cached);
         setIsAnalyzed(true);
@@ -158,7 +155,7 @@ const MenuAnalyzer = () => {
 
         console.log("Vertex AI results saved successfully");
 
-        // **Update existingMenuInfo with the new menu's info**
+        // Update existingMenuInfo with the new menu's info
         setExistingMenuInfo({
           id: menuId,
           restaurantName: menuName,
@@ -173,7 +170,6 @@ const MenuAnalyzer = () => {
         setIsProcessing(false);
       }
     },
-
     [
       firebaseToken,
       menuImageUrl,
@@ -235,6 +231,7 @@ const MenuAnalyzer = () => {
     setIsCached(false);
     setAlert(null);
     setIsAnalyzed(false);
+    // Removed setMenuData(null); since menuData state is removed
 
     // Extract restaurant name and ID
     const restaurantName = extractRestaurantName(fileName);
@@ -434,22 +431,7 @@ const MenuAnalyzer = () => {
             </Alert>
           )}
 
-          {/* Processing and Results Section */}
-          {isProcessed && latestVertexProcessingId && (
-            <VertexAiResultsDisplay
-              userId={userId as string}
-              latestProcessingId={latestVertexProcessingId}
-              isCached={isCached}
-              existingMenuInfo={existingMenuInfo}
-              onReprocess={(id: string) => {
-                setLatestVertexProcessingId(id);
-                setIsProcessed(false);
-                handleProcessing(true);
-              }}
-              processingError={processingError}
-              menuName={menuName}
-            />
-          )}
+          {/* Removed the VertexAiResultsDisplay component */}
         </CardContent>
       </Card>
     </div>
