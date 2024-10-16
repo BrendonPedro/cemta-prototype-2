@@ -13,6 +13,7 @@ import {
   getDocs,
   onSnapshot,
   DocumentData,
+  deleteDoc,
 } from "firebase/firestore";
 import { db } from "@/config/firebaseConfig";
 import geohash from "ngeohash";
@@ -72,11 +73,25 @@ interface SearchResult {
   location: string;
 }
 
+interface MenuSummary {
+  id: string;
+  menuName: string;
+  timestamp: any;
+}
+
 const RESTAURANT_DETAILS_COLLECTION = "restaurantDetails";
 
-export async function saveDocumentAiResults(userId: string, imageUrl: string, menu: Menu) {
+export async function saveDocumentAiResults(
+  userId: string,
+  imageUrl: string,
+  menu: Menu,
+) {
   const userRef = doc(db, "users", userId);
-  const resultsRef = doc(userRef, "documentAiResults", new Date().toISOString());
+  const resultsRef = doc(
+    userRef,
+    "documentAiResults",
+    new Date().toISOString(),
+  );
 
   await setDoc(resultsRef, {
     imageUrl,
@@ -88,7 +103,10 @@ export async function saveDocumentAiResults(userId: string, imageUrl: string, me
   await updateDoc(userRef, { latestDocumentAiProcessingId: resultsRef.id });
 }
 
-export async function getDocumentAiResults(userId: string, processingId?: string) {
+export async function getDocumentAiResults(
+  userId: string,
+  processingId?: string,
+) {
   const userRef = doc(db, "users", userId);
   let resultsRef;
 
@@ -108,13 +126,13 @@ export async function getDocumentAiResults(userId: string, processingId?: string
   if (docSnap.exists()) {
     return docSnap.data();
   } else {
-    console.log('No such document!');
+    console.log("No such document!");
     return null;
   }
 }
 
 export async function checkExistingMenuForRestaurant(
-  restaurantId: string
+  restaurantId: string,
 ): Promise<boolean> {
   const menusRef = collection(db, "restaurants", restaurantId, "menus");
   const q = query(menusRef, orderBy("timestamp", "desc"), limit(1));
@@ -123,13 +141,20 @@ export async function checkExistingMenuForRestaurant(
   return !querySnapshot.empty;
 }
 
-export async function checkExistingMenus(userId: string, fileName: string): Promise<string[]> {
+export async function checkExistingMenus(
+  userId: string,
+  fileName: string,
+): Promise<string[]> {
   const userRef = doc(db, "users", userId);
   const resultsCollection = collection(userRef, "vertexAiResults");
-  const q = query(resultsCollection, where("menuName", ">=", fileName), where("menuName", "<=", fileName + "\uf8ff"));
+  const q = query(
+    resultsCollection,
+    where("menuName", ">=", fileName),
+    where("menuName", "<=", fileName + "\uf8ff"),
+  );
   const querySnapshot = await getDocs(q);
 
-  return querySnapshot.docs.map(doc => doc.data().menuName);
+  return querySnapshot.docs.map((doc) => doc.data().menuName);
 }
 
 export async function getMenuCount(userId: string): Promise<number> {
@@ -141,15 +166,25 @@ export async function getMenuCount(userId: string): Promise<number> {
 }
 
 // Function to get menu count for a specific restaurant
-export async function getMenuCountForRestaurant(userId: string, restaurantId: string): Promise<number> {
+export async function getMenuCountForRestaurant(
+  userId: string,
+  restaurantId: string,
+): Promise<number> {
   const menusCollection = collection(db, "menus");
-  const q = query(menusCollection, where("userId", "==", userId), where("restaurantId", "==", restaurantId));
+  const q = query(
+    menusCollection,
+    where("userId", "==", userId),
+    where("restaurantId", "==", restaurantId),
+  );
   const querySnapshot = await getDocs(q);
 
   return querySnapshot.size;
 }
 
-export function listenToLatestProcessingId(userId: string, callback: (latestId: string) => void) {
+export function listenToLatestProcessingId(
+  userId: string,
+  callback: (latestId: string) => void,
+) {
   const userRef = doc(db, "users", userId);
   return onSnapshot(userRef, (doc) => {
     if (doc.exists()) {
@@ -163,65 +198,87 @@ export function listenToLatestProcessingId(userId: string, callback: (latestId: 
 
 export async function getVertexAiResults(userId: string, menuId: string) {
   if (!menuId) {
-    throw new Error('No menu ID provided');
+    throw new Error("No menu ID provided");
   }
 
-  console.log('Fetching menu data for menuId:', menuId);
+  console.log("Fetching menu data for menuId:", menuId);
 
-  const menuRef = doc(db, 'menus', menuId);
+  const menuRef = doc(db, "menus", menuId);
   const menuSnap = await getDoc(menuRef);
 
   if (menuSnap.exists()) {
     const data = menuSnap.data();
     if (data.userId === userId) {
       const menuData =
-        typeof data.menuData === 'string' ? JSON.parse(data.menuData) : data.menuData;
-      return {
-        ...data,
-        menuData,
-        processingId: menuSnap.id,
-        timestamp: data.timestamp
-          ? data.timestamp.toDate().toISOString()
-          : new Date().toISOString(),
-      };
+        typeof data.menuData === "string"
+          ? JSON.parse(data.menuData)
+          : data.menuData;
+ return {
+    menuData: data.menuData,
+    processingId: menuSnap.id,
+    timestamp: data.timestamp
+      ? data.timestamp.toDate().toISOString()
+      : new Date().toISOString(),
+    restaurantValidated: data.restaurantValidated || false,
+    validatorValidated: data.validatorValidated || false,
+    restaurantName: data.restaurantName || data.menuData.restaurant_info.name.original,
+    imageUrl: data.imageUrl || null,
+  };
     } else {
-      console.error('Unauthorized access to menu data. User ID mismatch.');
-      throw new Error('Unauthorized access to menu data');
+      console.error("Unauthorized access to menu data. User ID mismatch.");
+      throw new Error("Unauthorized access to menu data");
     }
   } else {
-    console.error('No menu data found for menuId:', menuId);
-    throw new Error('No menu data found');
+    console.error("No menu data found for menuId:", menuId);
+    throw new Error("No menu data found");
   }
 }
 
 // Function to get menu data by restaurant name
-export async function getVertexAiResultsByRestaurant(userId: string, menuName: string) {
+export async function getVertexAiResultsByRestaurant(
+  userId: string,
+  menuName: string,
+) {
   const menusCollection = collection(db, "menus");
   const q = query(
     menusCollection,
     where("menuName", "==", menuName),
-    where("userId", "==", userId)
+    where("userId", "==", userId),
   );
   const querySnapshot = await getDocs(q);
 
   if (!querySnapshot.empty) {
     const docSnap = querySnapshot.docs[0];
     const data = docSnap.data();
+     const menuData =
+      typeof data.menuData === "string"
+        ? JSON.parse(data.menuData)
+        : data.menuData;
+
     return {
       id: docSnap.id,
       ...data,
-      menuData: data.menuData,
+      menuData,
       cached: data.cached || false,
       timestamp: data.timestamp
         ? data.timestamp.toDate().toISOString()
         : new Date().toISOString(),
+      // Ensure restaurantName is included
+      restaurantName:
+        data.restaurantName ||
+        menuData?.restaurant_info?.name?.original ||
+        "Unknown",
     };
   } else {
     return null;
   }
 }
 
-export async function updateVertexAiResults(userId: string, processingId: string, menuData: any) {
+export async function updateVertexAiResults(
+  userId: string,
+  processingId: string,
+  menuData: any,
+) {
   const menuRef = doc(db, "menus", processingId);
 
   // Ensure the user is authorized to update this menu
@@ -231,12 +288,14 @@ export async function updateVertexAiResults(userId: string, processingId: string
     if (data.userId === userId) {
       await updateDoc(menuRef, { menuData });
     } else {
-      console.error('Unauthorized access to update menu data. User ID mismatch.');
-      throw new Error('Unauthorized access to update menu data');
+      console.error(
+        "Unauthorized access to update menu data. User ID mismatch.",
+      );
+      throw new Error("Unauthorized access to update menu data");
     }
   } else {
-    console.error('No menu data found for processingId:', processingId);
-    throw new Error('No menu data found');
+    console.error("No menu data found for processingId:", processingId);
+    throw new Error("No menu data found");
   }
 }
 
@@ -246,11 +305,11 @@ export async function getVertexAiHistory(userId: string) {
     menusCollection,
     where("userId", "==", userId),
     orderBy("timestamp", "desc"),
-    limit(10)
+    limit(10),
   );
   const querySnapshot = await getDocs(q);
 
-  return querySnapshot.docs.map(doc => ({
+  return querySnapshot.docs.map((doc) => ({
     id: doc.id,
     menuName: doc.data().menuName,
     timestamp: doc.data().timestamp,
@@ -258,7 +317,11 @@ export async function getVertexAiHistory(userId: string) {
 }
 
 // Function to set restaurant details in Firestore
-export async function setRestaurantDetails(placeId: string, rating: number, address: string) {
+export async function setRestaurantDetails(
+  placeId: string,
+  rating: number,
+  address: string,
+) {
   const restaurantRef = doc(db, RESTAURANT_DETAILS_COLLECTION, placeId);
   await setDoc(restaurantRef, {
     rating,
@@ -268,7 +331,12 @@ export async function setRestaurantDetails(placeId: string, rating: number, addr
 }
 
 // Save restaurant details (rating and address) in Firestore
-export async function saveRestaurantDetails(restaurantId: string, name: string, rating: number, address: string) {
+export async function saveRestaurantDetails(
+  restaurantId: string,
+  name: string,
+  rating: number,
+  address: string,
+) {
   const restaurantRef = doc(db, "restaurants", restaurantId);
 
   await setDoc(restaurantRef, {
@@ -297,14 +365,17 @@ function getLocationCacheKey(lat: number, lng: number): string {
   return geohash.encode(lat, lng, 5);
 }
 
-export async function getCachedRestaurantsForLocation(lat: number, lng: number) {
+export async function getCachedRestaurantsForLocation(
+  lat: number,
+  lng: number,
+) {
   const locationKey = getLocationCacheKey(lat, lng);
   console.log(`Cache Key: ${locationKey}`);
   const cacheRef = doc(db, "locationCaches", locationKey);
   const docSnap = await getDoc(cacheRef);
 
   if (docSnap.exists()) {
-    console.log('Cached data found for this location.');
+    console.log("Cached data found for this location.");
     const data = docSnap.data();
     const cacheTime = data.cachedAt?.toMillis() || 0;
     const CACHE_DURATION = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
@@ -312,10 +383,10 @@ export async function getCachedRestaurantsForLocation(lat: number, lng: number) 
     if (Date.now() - cacheTime < CACHE_DURATION) {
       return data.restaurants;
     } else {
-      console.log('Cached data expired. Fetching new data.');
+      console.log("Cached data expired. Fetching new data.");
     }
   } else {
-    console.log('No cached data for this location.');
+    console.log("No cached data for this location.");
   }
   return null;
 }
@@ -323,7 +394,7 @@ export async function getCachedRestaurantsForLocation(lat: number, lng: number) 
 export async function saveCachedRestaurantsForLocation(
   lat: number,
   lng: number,
-  restaurants: any[]
+  restaurants: any[],
 ) {
   const locationKey = getLocationCacheKey(lat, lng);
   const cacheRef = doc(db, "locationCaches", locationKey);
@@ -335,7 +406,10 @@ export async function saveCachedRestaurantsForLocation(
 }
 
 // Function to get menus for multiple restaurants
-export async function getMenusForRestaurants(userId: string, restaurantIds: string[]) {
+export async function getMenusForRestaurants(
+  userId: string,
+  restaurantIds: string[],
+) {
   const menus = await Promise.all(
     restaurantIds.map(async (id) => {
       const menuRef = doc(db, "menus", id);
@@ -351,29 +425,37 @@ export async function getMenusForRestaurants(userId: string, restaurantIds: stri
         }
       }
       return null;
-    })
+    }),
   );
-  return menus.filter((menu): menu is NonNullable<typeof menu> => menu !== null);
+  return menus.filter(
+    (menu): menu is NonNullable<typeof menu> => menu !== null,
+  );
 }
 
 // Role management functions
-export async function requestRoleChange(userId: string, requestedRole: 'partner' | 'validator') {
+export async function requestRoleChange(
+  userId: string,
+  requestedRole: "partner" | "validator",
+) {
   const userRef = doc(db, "users", userId);
   await updateDoc(userRef, {
-    'user_info.roleRequest': {
+    "user_info.roleRequest": {
       requestedRole,
-      status: 'pending'
-    }
+      status: "pending",
+    },
   });
 }
 
 export async function getRoleRequests() {
   const usersRef = collection(db, "users");
-  const q = query(usersRef, where("user_info.roleRequest.status", "==", "pending"));
+  const q = query(
+    usersRef,
+    where("user_info.roleRequest.status", "==", "pending"),
+  );
   const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map(doc => ({
+  return querySnapshot.docs.map((doc) => ({
     id: doc.id,
-    ...doc.data().user_info
+    ...doc.data().user_info,
   }));
 }
 
@@ -387,18 +469,18 @@ export async function updateRoleRequest(userId: string, approved: boolean) {
 
     if (approved && requestedRole) {
       await updateDoc(userRef, {
-        'user_info.role': requestedRole,
-        'user_info.roleRequest': {
+        "user_info.role": requestedRole,
+        "user_info.roleRequest": {
           requestedRole: null,
-          status: 'approved'
-        }
+          status: "approved",
+        },
       });
     } else {
       await updateDoc(userRef, {
-        'user_info.roleRequest': {
+        "user_info.roleRequest": {
           requestedRole: null,
-          status: 'rejected'
-        }
+          status: "rejected",
+        },
       });
     }
   }
@@ -409,15 +491,15 @@ export async function getUserRole(userId: string) {
   const userDoc = await getDoc(userRef);
 
   if (userDoc.exists()) {
-    return userDoc.data().user_info?.role || 'user';
+    return userDoc.data().user_info?.role || "user";
   }
-  return 'user';
+  return "user";
 }
 
 export async function getHistoricalMenus(
   limitCount: number,
   restaurantName?: string,
-  location?: string
+  location?: string,
 ) {
   const menusRef = collection(db, "menus");
   const constraints = [];
@@ -442,14 +524,14 @@ export async function getHistoricalMenus(
 }
 
 export async function getMenuDetails(menuId: string): Promise<MenuDetails> {
-  const docRef = doc(db, 'menus', menuId);
+  const docRef = doc(db, "menus", menuId);
   const docSnap = await getDoc(docRef);
 
   if (docSnap.exists()) {
     const data = docSnap.data() as MenuDetails;
     return data;
   } else {
-    throw new Error('Menu not found');
+    throw new Error("Menu not found");
   }
 }
 
@@ -460,11 +542,11 @@ export async function searchMenus(searchTerm: string): Promise<SearchResult[]> {
     menusRef,
     where("restaurantName", ">=", searchTerm),
     where("restaurantName", "<=", searchTerm + "\uf8ff"),
-    limit(10)
+    limit(10),
   );
 
   const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map(doc => ({
+  return querySnapshot.docs.map((doc) => ({
     id: doc.id,
     restaurantName: doc.data().restaurantName,
     location: doc.data().location,
@@ -477,22 +559,25 @@ export async function getRecentMenus(userId: string): Promise<SearchResult[]> {
     menusCollection,
     where("userId", "==", userId),
     orderBy("timestamp", "desc"),
-    limit(5)
+    limit(5),
   );
 
   const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map(doc => {
+  return querySnapshot.docs.map((doc) => {
     const data = doc.data();
     return {
       id: doc.id,
-      restaurantName: data.restaurantName || 'Unknown Restaurant',
-      location: data.location || 'Unknown Location',
+      restaurantName: data.restaurantName || "Unknown Restaurant",
+      location: data.location || "Unknown Location",
     };
   });
 }
 
 // Get cached image URL
-export async function getCachedImageUrl(userId: string, fileName: string): Promise<string | null> {
+export async function getCachedImageUrl(
+  userId: string,
+  fileName: string,
+): Promise<string | null> {
   const imageRef = doc(db, "users", userId, "imageCaches", fileName);
   const docSnap = await getDoc(imageRef);
 
@@ -509,7 +594,11 @@ export async function getCachedImageUrl(userId: string, fileName: string): Promi
   return null;
 }
 
-export async function saveImageUrlCache(userId: string, fileName: string, imageUrl: string) {
+export async function saveImageUrlCache(
+  userId: string,
+  fileName: string,
+  imageUrl: string,
+) {
   const imageRef = doc(db, "users", userId, "imageCaches", fileName);
   await setDoc(imageRef, {
     imageUrl,
@@ -517,8 +606,21 @@ export async function saveImageUrlCache(userId: string, fileName: string, imageU
   });
 }
 
-export async function saveMenuImageReferences(userId: string, restaurantId: string, originalImageUrl: string, processedImageUrl: string) {
-  const menuRef = doc(db, "users", userId, "restaurants", restaurantId, "menus", new Date().toISOString());
+export async function saveMenuImageReferences(
+  userId: string,
+  restaurantId: string,
+  originalImageUrl: string,
+  processedImageUrl: string,
+) {
+  const menuRef = doc(
+    db,
+    "users",
+    userId,
+    "restaurants",
+    restaurantId,
+    "menus",
+    new Date().toISOString(),
+  );
   await setDoc(menuRef, {
     originalImageUrl,
     processedImageUrl,
@@ -526,7 +628,10 @@ export async function saveMenuImageReferences(userId: string, restaurantId: stri
   });
 }
 
-export async function saveRestaurantImageReference(restaurantId: string, imageUrl: string) {
+export async function saveRestaurantImageReference(
+  restaurantId: string,
+  imageUrl: string,
+) {
   const restaurantRef = doc(db, "restaurants", restaurantId);
   await updateDoc(restaurantRef, {
     imageUrl,
@@ -534,7 +639,9 @@ export async function saveRestaurantImageReference(restaurantId: string, imageUr
   });
 }
 
-export async function getRestaurantDetails(placeId: string): Promise<any | null> {
+export async function getRestaurantDetails(
+  placeId: string,
+): Promise<any | null> {
   const restaurantRef = doc(db, RESTAURANT_DETAILS_COLLECTION, placeId);
   const docSnap = await getDoc(restaurantRef);
 
@@ -547,10 +654,164 @@ export async function getRestaurantDetails(placeId: string): Promise<any | null>
     if (currentTime - cacheTime < CACHE_DURATION) {
       return data; // Return all data, not just rating and address
     } else {
-      console.log('Cached data expired. Consider refreshing the data.');
+      console.log("Cached data expired. Consider refreshing the data.");
       return data; // Still return data, but log that it's expired
     }
   }
 
   return null;
+}
+
+export const updateValidationStatus = async (
+  menuId: string,
+  updates: { [key: string]: boolean },
+) => {
+  const menuRef = doc(db, "menus", menuId);
+
+  // Ensure the menu exists
+  const menuSnap = await getDoc(menuRef);
+  if (menuSnap.exists()) {
+    await updateDoc(menuRef, updates);
+  } else {
+    throw new Error("Menu not found");
+  }
+};
+
+// Function to search for restaurants
+export async function searchRestaurants(
+  searchTerm: string,
+): Promise<SearchResult[]> {
+  const restaurantsRef = collection(db, "restaurants");
+
+  const q = query(
+    restaurantsRef,
+    where("name", ">=", searchTerm),
+    where("name", "<=", searchTerm + "\uf8ff"),
+    limit(10),
+  );
+
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map((doc) => ({
+    id: doc.id,
+    restaurantName: doc.data().name,
+    location: doc.data().address || "Unknown Location",
+  }));
+}
+
+// Function to get menus by restaurant ID
+export async function getMenusByRestaurantId(
+  restaurantId: string,
+): Promise<MenuSummary[]> {
+  const menusRef = collection(db, "menus");
+  const q = query(menusRef, where("restaurantId", "==", restaurantId));
+
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map((doc) => {
+    const data = doc.data();
+    return {
+      id: doc.id,
+      menuName: data.menuName || "Unnamed Menu",
+      timestamp: data.timestamp,
+    };
+  });
+}
+
+export async function searchRestaurantsByName(
+  searchTerm: string
+): Promise<string[]> {
+  const restaurantsRef = collection(db, "restaurants");
+
+  const q = query(
+    restaurantsRef,
+    where("name", ">=", searchTerm),
+    where("name", "<=", searchTerm + "\uf8ff"),
+    limit(10)
+  );
+
+  const querySnapshot = await getDocs(q);
+  return querySnapshot.docs.map((doc) => doc.data().name);
+}
+
+export async function updateRestaurantNameInFirestore(
+  menuId: string,
+  newName: string
+) {
+  const menuRef = doc(db, "menus", menuId);
+  const menuDoc = await getDoc(menuRef);
+
+  if (menuDoc.exists()) {
+    const menuData = menuDoc.data();
+    const oldRestaurantId = menuData.restaurantId;
+
+    // Create a new restaurant document if it doesn't exist
+    const newRestaurantRef = doc(db, "restaurants", newName);
+    const newRestaurantDoc = await getDoc(newRestaurantRef);
+
+    if (!newRestaurantDoc.exists()) {
+      await setDoc(newRestaurantRef, {
+        name: newName,
+        address: menuData.menuData.restaurant_info.address,
+        // Add other relevant restaurant info
+      });
+    }
+
+    // Update the menu document
+    await updateDoc(menuRef, { 
+      restaurantName: newName,
+      restaurantId: newRestaurantRef.id
+    });
+
+    // Move the menu to the new restaurant's subcollection
+    if (oldRestaurantId) {
+      const oldRestaurantMenuRef = doc(db, "restaurants", oldRestaurantId, "menus", menuId);
+      const newRestaurantMenuRef = doc(db, "restaurants", newName, "menus", menuId);
+      const oldMenuDoc = await getDoc(oldRestaurantMenuRef);
+      if (oldMenuDoc.exists()) {
+        await setDoc(newRestaurantMenuRef, oldMenuDoc.data());
+        await deleteDoc(oldRestaurantMenuRef);
+      }
+    }
+  }
+}
+
+export async function linkRestaurantToFranchise(
+  menuId: string,
+  franchiseName: string
+) {
+  const menuRef = doc(db, "menus", menuId);
+  const menuDoc = await getDoc(menuRef);
+
+  if (menuDoc.exists()) {
+    const menuData = menuDoc.data();
+    const franchiseRef = doc(db, "franchises", franchiseName);
+
+    // Create franchise document if it doesn't exist
+    await setDoc(franchiseRef, { name: franchiseName }, { merge: true });
+
+    // Link the restaurant to the franchise
+    await updateDoc(menuRef, { franchiseId: franchiseRef.id });
+
+    // Add the restaurant to the franchise's restaurants subcollection
+    const franchiseRestaurantRef = doc(franchiseRef, "restaurants", menuData.restaurantId);
+    await setDoc(franchiseRestaurantRef, {
+      name: menuData.restaurantName,
+      address: menuData.menuData.restaurant_info.address,
+      // Add other relevant restaurant info
+    });
+  }
+}
+
+export async function getAssociatedFranchiseRestaurants(menuId: string): Promise<string[]> {
+  const menuRef = doc(db, "menus", menuId);
+  const menuDoc = await getDoc(menuRef);
+
+  if (menuDoc.exists()) {
+    const menuData = menuDoc.data();
+    if (menuData.franchiseId) {
+      const franchiseRef = doc(db, "franchises", menuData.franchiseId);
+      const restaurantsSnapshot = await getDocs(collection(franchiseRef, "restaurants"));
+      return restaurantsSnapshot.docs.map(doc => doc.data().name);
+    }
+  }
+  return [];
 }

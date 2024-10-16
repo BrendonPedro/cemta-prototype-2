@@ -58,7 +58,9 @@
   }
   body {
     @apply bg-background text-foreground;
-    font-feature-settings: "rlig" 1, "calt" 1;
+    font-feature-settings:
+      "rlig" 1,
+      "calt" 1;
   }
 }
 
@@ -99,7 +101,8 @@
 }
 
 @keyframes blink-caret {
-  from, to {
+  from,
+  to {
     border-color: transparent;
   }
   50% {
@@ -227,7 +230,7 @@
 
 .right_leg:hover {
   transform: rotate(-20deg);
-}	
+}
 
 .left_eye,
 .right_eye {
@@ -275,7 +278,9 @@
 }
 
 .sidebar-full {
-  transition: opacity 0.2s ease-in-out, transform 0.2s ease-in-out;
+  transition:
+    opacity 0.2s ease-in-out,
+    transform 0.2s ease-in-out;
   opacity: 1;
   transform: translateX(0);
 }
@@ -302,8 +307,8 @@
 
 /* Hide scrollbar for IE, Edge and Firefox */
 .sidebar-wrapper {
-  -ms-overflow-style: none;  /* IE and Edge */
-  scrollbar-width: none;  /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
 }
 
 /* carousel.css */
@@ -380,7 +385,7 @@
   pre {
     margin: 0;
   } */
-  /* button {
+/* button {
     @apply w-fit cursor-pointer rounded-lg border-0 bg-teal-600 px-6 py-4 text-lg text-white hover:bg-gray-900;
   }
   button:focus {
@@ -392,8 +397,8 @@
 }*/
 /* 
 @layer components { */
-  /* glass-morphism */
-  /* .glass {
+/* glass-morphism */
+/* .glass {
     @apply border border-solid border-[hsla(0,0%,100%,0.2)] bg-gray-951 backdrop-blur-[10px] hover:border hover:border-solid hover:border-white;
     -webkit-backdrop-filter: blur(10px);
   }

@@ -1,11 +1,11 @@
 // app/api/role-change/route.ts
 
-import { NextRequest, NextResponse } from 'next/server';
-import { getAuth } from '@clerk/nextjs/server';
-import { clerkClient } from '@clerk/nextjs/server';
-import { initializeApp } from 'firebase/app';
-import { getFirestore, doc, updateDoc } from 'firebase/firestore';
-import { firebaseConfig } from '@/config/firebaseConfig';
+import { NextRequest, NextResponse } from "next/server";
+import { getAuth } from "@clerk/nextjs/server";
+import { clerkClient } from "@clerk/nextjs/server";
+import { initializeApp } from "firebase/app";
+import { getFirestore, doc, updateDoc } from "firebase/firestore";
+import { firebaseConfig } from "@/config/firebaseConfig";
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
   const { userId } = getAuth(request);
 
   if (!userId) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   // Verify the admin user's role
@@ -31,8 +31,8 @@ export async function POST(request: NextRequest) {
   const adminMetadata = adminUser.publicMetadata as PublicMetadata;
   const adminRole = adminMetadata.role;
 
-  if (adminRole !== 'admin') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  if (adminRole !== "admin") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const { targetUserId, approve } = await request.json();
@@ -43,7 +43,10 @@ export async function POST(request: NextRequest) {
   const requestedRole = publicMetadata.roleRequest?.requestedRole;
 
   if (!requestedRole) {
-    return NextResponse.json({ error: 'No role request found for this user.' }, { status: 400 });
+    return NextResponse.json(
+      { error: "No role request found for this user." },
+      { status: 400 },
+    );
   }
 
   if (approve) {
@@ -57,12 +60,12 @@ export async function POST(request: NextRequest) {
     });
 
     // Update Firestore
-    const userRef = doc(db, 'users', targetUserId);
+    const userRef = doc(db, "users", targetUserId);
     await updateDoc(userRef, {
-      'user_info.role': requestedRole,
-      'user_info.roleRequest': {
+      "user_info.role": requestedRole,
+      "user_info.roleRequest": {
         requestedRole: null,
-        status: 'approved',
+        status: "approved",
       },
     });
   } else {
@@ -72,20 +75,20 @@ export async function POST(request: NextRequest) {
         ...(publicMetadata || {}),
         roleRequest: {
           requestedRole: null,
-          status: 'rejected',
+          status: "rejected",
         },
       },
     });
 
     // Update Firestore
-    const userRef = doc(db, 'users', targetUserId);
+    const userRef = doc(db, "users", targetUserId);
     await updateDoc(userRef, {
-      'user_info.roleRequest': {
+      "user_info.roleRequest": {
         requestedRole: null,
-        status: 'rejected',
+        status: "rejected",
       },
     });
   }
 
-  return NextResponse.json({ message: 'Role request processed.' });
+  return NextResponse.json({ message: "Role request processed." });
 }

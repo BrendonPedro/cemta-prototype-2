@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import React, { useEffect, useState } from "react";
 import { Loader } from "@googlemaps/js-api-loader";
@@ -19,7 +19,7 @@ const MapComponent = () => {
         {
           center: { lat: -34.397, lng: 150.644 },
           zoom: 8,
-        }
+        },
       );
       setMap(map);
     });
@@ -29,4 +29,3 @@ const MapComponent = () => {
 };
 
 export default MapComponent;
-

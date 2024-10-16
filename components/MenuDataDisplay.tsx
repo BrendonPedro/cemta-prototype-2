@@ -1,6 +1,6 @@
 // components/MenuDataDisplay.tsx
 
-'use client';
+"use client";
 
 import React, { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -115,16 +115,16 @@ const MenuDataDisplay: React.FC<MenuDataDisplayProps> = ({
     item: MenuItem,
     categoryIndex: number,
     itemIndex: number,
-    categoryName?: string
+    categoryName?: string,
   ) => {
     const priceDisplay = item.price
       ? `${item.price.amount} ${item.price.currency}`
       : item.prices
-      ? Object.entries(item.prices)
-          .filter(([_, value]) => value && value !== "")
-          .map(([key, value]) => `${key}: ${value}`)
-          .join(", ")
-      : "N/A";
+        ? Object.entries(item.prices)
+            .filter(([_, value]) => value && value !== "")
+            .map(([key, value]) => `${key}: ${value}`)
+            .join(", ")
+        : "N/A";
 
     return (
       <TableRow key={`${categoryIndex}-${itemIndex}`}>
@@ -203,9 +203,9 @@ const MenuDataDisplay: React.FC<MenuDataDisplayProps> = ({
                           category.name.english
                             ? `(${category.name.english})`
                             : ""
-                        }`
-                      )
-                    )
+                        }`,
+                      ),
+                    ),
                   )}
                 </TableBody>
               </Table>
@@ -249,7 +249,7 @@ const MenuDataDisplay: React.FC<MenuDataDisplayProps> = ({
                           </TableHeader>
                           <TableBody>
                             {category.items.map((item, itemIndex) =>
-                              renderMenuItem(item, categoryIndex, itemIndex)
+                              renderMenuItem(item, categoryIndex, itemIndex),
                             )}
                           </TableBody>
                         </Table>

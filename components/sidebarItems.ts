@@ -26,7 +26,10 @@ export function getSidebarItemsByRole(userRole: UserRole): SidebarItem[] {
         dashboardItem,
         { name: "TranslateMenuPro", href: "/menuAnalyzer" },
         menuDetailsItem,
-        { name: "Validate Menus", href: "/dashboards/validator/validate-menus" },
+        {
+          name: "Validate Menus",
+          href: "/dashboards/validator/validate-menus",
+        },
         { name: "Recent Reviews", href: "/dashboards/validator/reviews" },
       ];
     case "admin":
@@ -36,7 +39,10 @@ export function getSidebarItemsByRole(userRole: UserRole): SidebarItem[] {
         menuDetailsItem,
         { name: "Overview", href: "/dashboards/admin" },
         { name: "User Management", href: "/dashboards/admin/user-management" },
-        { name: "System Analytics", href: "/dashboards/admin/system-analytics" },
+        {
+          name: "System Analytics",
+          href: "/dashboards/admin/system-analytics",
+        },
       ];
     default:
       return [

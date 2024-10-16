@@ -1,4 +1,3 @@
-
 // middleware.ts
 import { clerkMiddleware } from "@clerk/nextjs/server";
 
@@ -8,10 +7,8 @@ export const config = {
   matcher: [
     // Exclude static files and Next.js internals
     "/((?!.+\\.[\\w]+$|_next).*)",
-        '/((?!account/).*)',
+    "/((?!account/).*)",
     // Include API routes
     "/api/(.*)",
   ],
 };
-
-

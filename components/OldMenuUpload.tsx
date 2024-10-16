@@ -30,7 +30,7 @@ const OldMenuUpload = () => {
   const [vertexAiResult, setVertexAiResult] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [latestProcessingId, setLatestProcessingId] = useState<string | null>(
-    null
+    null,
   );
 
   useEffect(() => {
@@ -121,7 +121,7 @@ const OldMenuUpload = () => {
     } catch (error) {
       console.error("Upload or processing failed", error);
       setError(
-        error instanceof Error ? error.message : "An unknown error occurred"
+        error instanceof Error ? error.message : "An unknown error occurred",
       );
     } finally {
       setLoading(false);
@@ -142,7 +142,7 @@ const OldMenuUpload = () => {
 
       if (!vertexAiResponse.ok) {
         throw new Error(
-          `Failed to process with Vertex AI: ${vertexAiResponse.statusText}`
+          `Failed to process with Vertex AI: ${vertexAiResponse.statusText}`,
         );
       }
 
@@ -153,7 +153,7 @@ const OldMenuUpload = () => {
     } catch (error) {
       console.error("Vertex AI processing failed", error);
       setError(
-        error instanceof Error ? error.message : "An unknown error occurred"
+        error instanceof Error ? error.message : "An unknown error occurred",
       );
     }
   };

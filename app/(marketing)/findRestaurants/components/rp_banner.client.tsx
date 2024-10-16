@@ -1,8 +1,8 @@
 "use client";
 
-import { Button } from "@/components/ui/button"
+import { Button } from "@/components/ui/button";
 import Image from "next/image";
-import { MouseEventHandler } from 'react';
+import { MouseEventHandler } from "react";
 
 const RestaurantPartner_Banner = ({
   handleOnClick,

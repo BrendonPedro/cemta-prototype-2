@@ -85,7 +85,7 @@ export default function RestaurantDashboard() {
   const { firebaseToken, loading: authLoading, error: authError } = useAuth();
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [filteredRestaurants, setFilteredRestaurants] = useState<Restaurant[]>(
-    []
+    [],
   );
   const [nameFilter, setNameFilter] = useState("all");
   const [countyFilter, setCountyFilter] = useState("all");
@@ -97,7 +97,7 @@ export default function RestaurantDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(0); // Pagination state
   const [focusedRestaurant, setFocusedRestaurant] = useState<Restaurant | null>(
-    null
+    null,
   ); // Focused restaurant on map click
 
   const { isLoaded } = useJsApiLoader({
@@ -112,12 +112,12 @@ export default function RestaurantDashboard() {
       setError(null);
       try {
         const response = await fetch(
-          `/api/nearby-restaurants?lat=${lat}&lng=${lng}&limit=20`
+          `/api/nearby-restaurants?lat=${lat}&lng=${lng}&limit=20`,
         );
         if (!response.ok) {
           const errorText = await response.text();
           throw new Error(
-            `Failed to fetch nearby restaurants: ${response.status} ${response.statusText}. ${errorText}`
+            `Failed to fetch nearby restaurants: ${response.status} ${response.statusText}. ${errorText}`,
           );
         }
         const data = await response.json();
@@ -136,7 +136,7 @@ export default function RestaurantDashboard() {
               longitude: r.longitude,
               rating: r.rating || 0, // Rating added
             };
-          })
+          }),
         );
 
         setRestaurants(restaurantsWithDetails);
@@ -146,14 +146,14 @@ export default function RestaurantDashboard() {
         setError(
           `Failed to fetch restaurants: ${
             err instanceof Error ? err.message : String(err)
-          }`
+          }`,
         );
       } finally {
         setIsLoading(false);
         setIsRefreshing(false);
       }
     },
-    [userId]
+    [userId],
   );
 
   const determineCounty = (location: string): string => {
@@ -170,10 +170,10 @@ export default function RestaurantDashboard() {
       },
       (error) => {
         setError(
-          "Failed to get user location. Please enable location services and try again."
+          "Failed to get user location. Please enable location services and try again.",
         );
         setIsLoading(false);
-      }
+      },
     );
   }, [userId, firebaseToken, authLoading, fetchNearbyRestaurants]);
 
@@ -185,9 +185,9 @@ export default function RestaurantDashboard() {
       },
       (error) => {
         setError(
-          "Failed to get user location. Please enable location services and try again."
+          "Failed to get user location. Please enable location services and try again.",
         );
-      }
+      },
     );
   };
 
@@ -197,7 +197,7 @@ export default function RestaurantDashboard() {
 
   const handleRequestMenu = async (
     restaurantId: string,
-    restaurantName: string
+    restaurantName: string,
   ) => {
     try {
       setIsLoading(true);
@@ -216,20 +216,20 @@ export default function RestaurantDashboard() {
         userId!,
         dummyMenu,
         restaurantId,
-        restaurantName
+        restaurantName,
       );
 
       setRestaurants((prevRestaurants) =>
         prevRestaurants.map((r) =>
-          r.id === restaurantId ? { ...r, menuCount: r.menuCount + 1 } : r
-        )
+          r.id === restaurantId ? { ...r, menuCount: r.menuCount + 1 } : r,
+        ),
       );
     } catch (error) {
       console.error("Error requesting menu:", error);
       setError(
         `Failed to request menu: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     } finally {
       setIsLoading(false);
@@ -260,10 +260,10 @@ export default function RestaurantDashboard() {
           (menuCountFilter === "1-3" &&
             restaurant.menuCount >= 1 &&
             restaurant.menuCount <= 3) ||
-          (menuCountFilter === "4+" && restaurant.menuCount >= 4))
+          (menuCountFilter === "4+" && restaurant.menuCount >= 4)),
     );
     setFilteredRestaurants(
-      filtered.slice(currentPage * 10, (currentPage + 1) * 10)
+      filtered.slice(currentPage * 10, (currentPage + 1) * 10),
     ); // Paginate results
   }, [
     restaurants,
@@ -346,7 +346,7 @@ export default function RestaurantDashboard() {
                           >
                             {name}
                           </DropdownMenuItem>
-                        )
+                        ),
                       )}
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -446,8 +446,8 @@ export default function RestaurantDashboard() {
                         onClick={() =>
                           handleRequestMenu(restaurant.id, restaurant.name)
                         }
-                          className="text-customTeal border-customTeal hover:bg-customTeal hover:text-white"
-                          variant="nextButton"
+                        className="text-customTeal border-customTeal hover:bg-customTeal hover:text-white"
+                        variant="nextButton"
                       >
                         Request Menu
                       </Button>

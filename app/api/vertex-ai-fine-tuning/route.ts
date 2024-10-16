@@ -1,14 +1,14 @@
 // app/api/vertex-ai-fine-tuning/route.ts
 
-import { NextRequest, NextResponse } from 'next/server';
-import { VertexAI } from '@google-cloud/vertexai';
-import { Storage } from '@google-cloud/storage';
-import { db } from '@/config/firebaseConfig';
-import { collection, addDoc, getDocs } from 'firebase/firestore';
+import { NextRequest, NextResponse } from "next/server";
+import { VertexAI } from "@google-cloud/vertexai";
+import { Storage } from "@google-cloud/storage";
+import { db } from "@/config/firebaseConfig";
+import { collection, addDoc, getDocs } from "firebase/firestore";
 
 // Initialize Vertex AI and Cloud Storage
-const projectId = 'cemta-prototype-2';
-const location = 'us-central1';
+const projectId = "cemta-prototype-2";
+const location = "us-central1";
 const vertexAI = new VertexAI({ project: projectId, location });
 const storage = new Storage();
 
@@ -70,24 +70,27 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, fineTuningJobId });
   } catch (error) {
-    console.error('Error in fine-tuning workflow:', error);
-    return NextResponse.json({ success: false, error: 'Fine-tuning workflow failed' }, { status: 500 });
+    console.error("Error in fine-tuning workflow:", error);
+    return NextResponse.json(
+      { success: false, error: "Fine-tuning workflow failed" },
+      { status: 500 },
+    );
   }
 }
 
 async function getUnlabeledMenus(): Promise<Menu[]> {
-  const menusRef = collection(db, 'unlabeledMenus');
+  const menusRef = collection(db, "unlabeledMenus");
   const snapshot = await getDocs(menusRef);
-  return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Menu));
+  return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }) as Menu);
 }
 
 async function processMenus(menus: Menu[]): Promise<ProcessedMenu[]> {
   const processedMenus: ProcessedMenu[] = [];
   for (const menu of menus) {
-    const response = await fetch('/api/vertex-ai', {
-      method: 'POST',
+    const response = await fetch("/api/vertex-ai", {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
+        "Content-Type": "application/json",
       },
       body: JSON.stringify(menu),
     });
@@ -98,20 +101,26 @@ async function processMenus(menus: Menu[]): Promise<ProcessedMenu[]> {
 }
 
 async function storeJSONOutput(processedMenus: ProcessedMenu[]): Promise<void> {
-  const bucket = storage.bucket('your-bucket-name');
+  const bucket = storage.bucket("your-bucket-name");
   for (const menu of processedMenus) {
     const file = bucket.file(`menus/${menu.id}/output.json`);
     await file.save(JSON.stringify(menu.result.menuData));
   }
 }
 
-async function prepareTrainingData(processedMenus: ProcessedMenu[]): Promise<string> {
-  const trainingData = processedMenus.map(menu => ({
+async function prepareTrainingData(
+  processedMenus: ProcessedMenu[],
+): Promise<string> {
+  const trainingData = processedMenus.map((menu) => ({
     image_uri: `gs://your-bucket-name/menus/${menu.id}/image.jpg`,
-    output_uri: `gs://your-bucket-name/menus/${menu.id}/output.json`
+    output_uri: `gs://your-bucket-name/menus/${menu.id}/output.json`,
   }));
-  const trainingDataFile = storage.bucket('your-bucket-name').file('training-data.jsonl');
-  await trainingDataFile.save(trainingData.map(item => JSON.stringify(item)).join('\n'));
+  const trainingDataFile = storage
+    .bucket("your-bucket-name")
+    .file("training-data.jsonl");
+  await trainingDataFile.save(
+    trainingData.map((item) => JSON.stringify(item)).join("\n"),
+  );
 
   return `gs://your-bucket-name/training-data.jsonl`;
 }
@@ -119,5 +128,5 @@ async function prepareTrainingData(processedMenus: ProcessedMenu[]): Promise<str
 async function initiateFinetuning(trainingDataUri: string): Promise<string> {
   // TODO: Implement the actual fine-tuning job creation
   console.log(`Initiating fine-tuning with data from: ${trainingDataUri}`);
-  return 'dummy-job-id';
+  return "dummy-job-id";
 }

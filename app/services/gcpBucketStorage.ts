@@ -1,8 +1,19 @@
 // app/services/gcpBucketStorage.ts
 
-import { storage, originalMenuBucket, processedMenuBucket, restaurantImagesBucket } from '@/config/googleCloudConfig';
+import {
+  storage,
+  originalMenuBucket,
+  processedMenuBucket,
+  restaurantImagesBucket,
+} from "@/config/googleCloudConfig";
 
-export async function uploadOriginalMenu(userId: string, restaurantId: string, fileName: string, imageBuffer: Buffer, contentType: string): Promise<string> {
+export async function uploadOriginalMenu(
+  userId: string,
+  restaurantId: string,
+  fileName: string,
+  imageBuffer: Buffer,
+  contentType: string,
+): Promise<string> {
   const filePath = `${userId}/${restaurantId}/${fileName}`;
   const file = originalMenuBucket.file(filePath);
 
@@ -12,15 +23,21 @@ export async function uploadOriginalMenu(userId: string, restaurantId: string, f
 
   // Return a signed URL that expires in 15 minutes
   const [url] = await file.getSignedUrl({
-    version: 'v4',
-    action: 'read',
+    version: "v4",
+    action: "read",
     expires: Date.now() + 15 * 60 * 1000, // 15 minutes
   });
 
   return url;
 }
 
-export async function uploadProcessedMenu(userId: string, restaurantId: string, fileName: string, imageBuffer: Buffer, contentType: string): Promise<string> {
+export async function uploadProcessedMenu(
+  userId: string,
+  restaurantId: string,
+  fileName: string,
+  imageBuffer: Buffer,
+  contentType: string,
+): Promise<string> {
   const filePath = `${userId}/${restaurantId}/${fileName}`;
   const file = processedMenuBucket.file(filePath);
 
@@ -30,15 +47,19 @@ export async function uploadProcessedMenu(userId: string, restaurantId: string, 
 
   // Return a signed URL that expires in 1 hour
   const [url] = await file.getSignedUrl({
-    version: 'v4',
-    action: 'read',
+    version: "v4",
+    action: "read",
     expires: Date.now() + 60 * 60 * 1000, // 1 hour
   });
 
   return url;
 }
 
-export async function uploadRestaurantImage(restaurantId: string, imageBuffer: Buffer, contentType: string): Promise<string> {
+export async function uploadRestaurantImage(
+  restaurantId: string,
+  imageBuffer: Buffer,
+  contentType: string,
+): Promise<string> {
   const fileName = `${restaurantId}.jpg`;
   const file = restaurantImagesBucket.file(fileName);
 
@@ -50,7 +71,11 @@ export async function uploadRestaurantImage(restaurantId: string, imageBuffer: B
   return `https://storage.googleapis.com/${restaurantImagesBucket.name}/${fileName}`;
 }
 
-export async function uploadImageToBucket(fileName: string, imageBuffer: Buffer, contentType: string): Promise<string> {
+export async function uploadImageToBucket(
+  fileName: string,
+  imageBuffer: Buffer,
+  contentType: string,
+): Promise<string> {
   const file = restaurantImagesBucket.file(fileName);
 
   await file.save(imageBuffer, {
@@ -61,7 +86,9 @@ export async function uploadImageToBucket(fileName: string, imageBuffer: Buffer,
   return `https://storage.googleapis.com/${restaurantImagesBucket.name}/${fileName}`;
 }
 
-export async function getImageFromBucket(fileName: string): Promise<Buffer | null> {
+export async function getImageFromBucket(
+  fileName: string,
+): Promise<Buffer | null> {
   const file = restaurantImagesBucket.file(fileName);
 
   try {

@@ -1,43 +1,45 @@
-import { MapboxType } from '@/types'
+import { MapboxType } from "@/types";
 
 const transformRestaurantData = (result: MapboxType) => {
-    return {
-        id: result.id,
-        address: result.properties?.address || "",
-        name: result.text,
-        imgUrl: "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
-    };
+  return {
+    id: result.id,
+    address: result.properties?.address || "",
+    name: result.text,
+    imgUrl:
+      "https://images.unsplash.com/photo-1414235077428-338989a2e8c0?q=80&w=1170&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D",
+  };
 };
 
 export const fetchRestaurantPartners = async () => {
-    try {
-        const response = await fetch(
-            `https://api.mapbox.com/geocoding/v5/mapbox.places/restaurant.json?limit=6&proximity=ip&access_token=${process.env.MAPBOX_API}`
-        );
-        const data = await response.json();
-       
-        return data.features.map((result: MapboxType) =>
-            transformRestaurantData(result));
-        
-    } catch (error) {
-        console.error('Error while fetching restaurants', error);
-    }
+  try {
+    const response = await fetch(
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/restaurant.json?limit=6&proximity=ip&access_token=${process.env.MAPBOX_API}`,
+    );
+    const data = await response.json();
+
+    return data.features.map((result: MapboxType) =>
+      transformRestaurantData(result),
+    );
+  } catch (error) {
+    console.error("Error while fetching restaurants", error);
+  }
 };
 
 export const fetchRestaurantPartner = async (id: string, queryId: string) => {
   try {
     const response = await fetch(
-      `https://api.mapbox.com/geocoding/v5/mapbox.places/${id}.json?proximity=ip&access_token=${process.env.MAPBOX_API}`
+      `https://api.mapbox.com/geocoding/v5/mapbox.places/${id}.json?proximity=ip&access_token=${process.env.MAPBOX_API}`,
     );
     const data = await response.json();
     // const photos = await getListOfRestaurantPhotos();
 
-    const restaurantPartner = data.features.map((result: MapboxType, idx: number) =>
-      transformRestaurantData(parseInt(queryId), result, photos)
+    const restaurantPartner = data.features.map(
+      (result: MapboxType, idx: number) =>
+        transformRestaurantData(parseInt(queryId), result, photos),
     );
     return restaurantPartner.length > 0 ? restaurantPartner[0] : {};
   } catch (error) {
-    console.error('Error while fetching restaurants', error);
+    console.error("Error while fetching restaurants", error);
   }
 };
 
@@ -101,6 +103,3 @@ export const fetchRestaurantPartner = async (id: string, queryId: string) => {
 //     console.error('Error while fetching restaurants', error);
 //   }
 // };
-
-
-

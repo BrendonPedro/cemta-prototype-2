@@ -1,8 +1,8 @@
 // config/firebaseConfig.ts
 
-import { initializeApp, getApp, getApps, FirebaseApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
-import { getAuth, GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
+import { initializeApp, getApp, getApps, FirebaseApp } from "firebase/app";
+import { getFirestore } from "firebase/firestore";
+import { getAuth, GoogleAuthProvider, signInWithPopup } from "firebase/auth";
 
 // CEMTA web app's Firebase configuration
 const firebaseConfig = {
@@ -23,13 +23,11 @@ if (!getApps().length) {
 }
 
 const provider = new GoogleAuthProvider();
-provider.setCustomParameters({ prompt: 'select_account' });
+provider.setCustomParameters({ prompt: "select_account" });
 
 const db = getFirestore(app);
 const auth = getAuth(app);
 
 export const signInWithGooglePopup = () => signInWithPopup(auth, provider);
 
-export { db, auth, app, firebaseConfig }; 
-
-
+export { db, auth, app, firebaseConfig };

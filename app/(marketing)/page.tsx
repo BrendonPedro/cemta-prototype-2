@@ -91,10 +91,10 @@ export default function Home() {
                   userRole === "admin"
                     ? "/dashboards/admin"
                     : userRole === "partner"
-                    ? "/dashboards/partner"
-                    : userRole === "validator"
-                    ? "/dashboards/validator"
-                    : "/dashboards/user"
+                      ? "/dashboards/partner"
+                      : userRole === "validator"
+                        ? "/dashboards/validator"
+                        : "/dashboards/user"
                 }
               >
                 Continue to{" "}

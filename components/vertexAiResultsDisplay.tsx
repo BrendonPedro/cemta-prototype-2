@@ -36,7 +36,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertCircle, RefreshCw } from "lucide-react";
-import { Menu } from '@/types/menuTypes'; // Adjust the import path as necessary
+import { Menu } from "@/types/menuTypes"; // Adjust the import path as necessary
 import MenuDataDisplay from "./MenuDataDisplay";
 
 interface VertexAiResultsDisplayProps {
@@ -126,7 +126,7 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
   const [editedMenuData, setEditedMenuData] = useState<MenuData | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(
-    null
+    null,
   );
   const [isLoading, setIsLoading] = useState(true);
   const [progress, setProgress] = useState(0);
@@ -158,7 +158,7 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
       } else if (!latestProcessingId) {
         setIsLoading(false);
         setError(
-          "No processing ID available. Please try processing the image again."
+          "No processing ID available. Please try processing the image again.",
         );
         return;
       } else {
@@ -179,16 +179,16 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
             if (Array.isArray(results.menuData.categories)) {
               setSelectedCategories(
                 results.menuData.categories.map(
-                  (cat: Category) => cat.name.original
-                )
+                  (cat: Category) => cat.name.original,
+                ),
               );
             } else {
               console.error(
                 "Invalid categories structure:",
-                results.menuData.categories
+                results.menuData.categories,
               );
               setError(
-                "Unexpected data structure in results: categories is not an array."
+                "Unexpected data structure in results: categories is not an array.",
               );
             }
 
@@ -202,13 +202,13 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
           } else {
             console.error("Invalid results structure:", results);
             setError(
-              "No menu data found in the results or unexpected data structure."
+              "No menu data found in the results or unexpected data structure.",
             );
           }
         } catch (error: any) {
           console.error("Error fetching Vertex AI results:", error);
           setError(
-            `Failed to fetch Vertex AI results: ${error.message}. Please try again.`
+            `Failed to fetch Vertex AI results: ${error.message}. Please try again.`,
           );
 
           if (retryCount < 3) {
@@ -236,7 +236,7 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
     categoryIndex: number,
     itemIndex: number,
     field: keyof MenuItem,
-    value: string
+    value: string,
   ) => {
     if (!editedMenuData) return;
 
@@ -276,22 +276,22 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
         if (Array.isArray(results.menuData.categories)) {
           setSelectedCategories(
             results.menuData.categories.map(
-              (cat: Category) => cat.name.original
-            )
+              (cat: Category) => cat.name.original,
+            ),
           );
         } else {
           console.error(
             "Invalid categories structure:",
-            results.menuData.categories
+            results.menuData.categories,
           );
           setError(
-            "Unexpected data structure in results: categories is not an array."
+            "Unexpected data structure in results: categories is not an array.",
           );
         }
       } else {
         console.error("Invalid results structure:", results);
         setError(
-          "No menu data found in the results or unexpected data structure."
+          "No menu data found in the results or unexpected data structure.",
         );
       }
     } catch (error) {
@@ -306,7 +306,7 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
     setSelectedCategories((prev) =>
       prev.includes(categoryName)
         ? prev.filter((cat) => cat !== categoryName)
-        : [...prev, categoryName]
+        : [...prev, categoryName],
     );
   };
 
@@ -330,8 +330,8 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
         if (selectedItems.has(item.name.original)) {
           const price = parseFloat(
             item.prices?.regular ||
-            (item.prices && Object.values(item.prices)[0]) ||
-            "0"
+              (item.prices && Object.values(item.prices)[0]) ||
+              "0",
           );
           if (!isNaN(price)) {
             total += price;
@@ -357,8 +357,9 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
           <p key={key} className="mb-2">
             <strong>{key.replace(/_/g, " ")}:</strong>{" "}
             {typeof value === "object" && value !== null
-              ? `${value.original || ""} ${(value as any).english ? `(${(value as any).english})` : ""
-              }`
+              ? `${value.original || ""} ${
+                  (value as any).english ? `(${(value as any).english})` : ""
+                }`
               : value || "N/A"}
           </p>
         ))}
@@ -370,15 +371,15 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
     item: MenuItem,
     categoryIndex: number,
     itemIndex: number,
-    categoryName?: string
+    categoryName?: string,
   ) => {
     const priceDisplay = item.price
       ? `${item.price.amount} ${item.price.currency}`
       : item.prices
         ? Object.entries(item.prices)
-          .filter(([_, value]) => value && value !== "")
-          .map(([key, value]) => `${key}: ${value}`)
-          .join(", ")
+            .filter(([_, value]) => value && value !== "")
+            .map(([key, value]) => `${key}: ${value}`)
+            .join(", ")
         : "N/A";
     // Add a check for empty categories
     if (!menuData?.categories || menuData.categories.length === 0) {
@@ -421,7 +422,7 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
                   categoryIndex,
                   itemIndex,
                   "name",
-                  JSON.stringify({ ...item.name, original: e.target.value })
+                  JSON.stringify({ ...item.name, original: e.target.value }),
                 )
               }
             />
@@ -438,7 +439,7 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
                   categoryIndex,
                   itemIndex,
                   "name",
-                  JSON.stringify({ ...item.name, pinyin: e.target.value })
+                  JSON.stringify({ ...item.name, pinyin: e.target.value }),
                 )
               }
             />
@@ -455,7 +456,7 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
                   categoryIndex,
                   itemIndex,
                   "name",
-                  JSON.stringify({ ...item.name, english: e.target.value })
+                  JSON.stringify({ ...item.name, english: e.target.value }),
                 )
               }
             />
@@ -474,7 +475,7 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
                     categoryIndex,
                     itemIndex,
                     "popular",
-                    checked ? "true" : "false"
+                    checked ? "true" : "false",
                   )
                 }
               />{" "}
@@ -487,7 +488,7 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
                     categoryIndex,
                     itemIndex,
                     "chef_recommended",
-                    checked ? "true" : "false"
+                    checked ? "true" : "false",
                   )
                 }
               />{" "}
@@ -500,7 +501,7 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
                     categoryIndex,
                     itemIndex,
                     "spice_level",
-                    e.target.value
+                    e.target.value,
                   )
                 }
               />{" "}
@@ -513,7 +514,7 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
                     categoryIndex,
                     itemIndex,
                     "allergy_alert",
-                    e.target.value
+                    e.target.value,
                   )
                 }
               />{" "}
@@ -540,7 +541,7 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
                   JSON.stringify({
                     ...item.description,
                     english: e.target.value,
-                  })
+                  }),
                 )
               }
             />
@@ -566,7 +567,7 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
                         categoryIndex,
                         itemIndex,
                         "upgrades",
-                        JSON.stringify(newUpgrades)
+                        JSON.stringify(newUpgrades),
                       );
                     }}
                   />
@@ -637,6 +638,5 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
   }
 
   return <MenuDataDisplay menuData={menuData} menuName={menuName} />;
-
-} 
+};
 export default VertexAiResultsDisplay;

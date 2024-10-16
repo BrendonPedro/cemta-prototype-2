@@ -42,7 +42,7 @@ export default async function Home() {
 
   return (
     <div className="mb-56 ">
-      <main className="mx-auto mt-10 max-w-6xl px-4" >
+      <main className="mx-auto mt-10 max-w-6xl px-4">
         <NearbyRestaurantPartners />
         <div className="mt-20">
           <h2 className="mt-8 pb-8 text-3xl font-bold text-black">
@@ -57,7 +57,7 @@ export default async function Home() {
                   imgUrl={restaurantPartner.imgUrl}
                   href={`/findRestaurants/restaurant/${restaurantPartner.id}?id=${idx}`}
                 />
-              )
+              ),
             )}
           </div>
         </div>

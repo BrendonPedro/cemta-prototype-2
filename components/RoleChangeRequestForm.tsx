@@ -20,7 +20,7 @@ if (!getApps().length) {
 export default function RoleChangeRequestForm() {
   const { user } = useUser();
   const [requestedRole, setRequestedRole] = useState<"partner" | "validator">(
-    "partner"
+    "partner",
   );
   const [message, setMessage] = useState("");
 

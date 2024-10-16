@@ -2,7 +2,10 @@
 
 import React, { useState, useEffect, useCallback } from "react";
 import { useAuth } from "@/components/AuthProvider";
-import { getVertexAiHistory, getVertexAiResults } from "@/app/services/firebaseFirestore";
+import {
+  getVertexAiHistory,
+  getVertexAiResults,
+} from "@/app/services/firebaseFirestore";
 import { onSnapshot, doc } from "firebase/firestore";
 import { db } from "@/config/firebaseConfig";
 import { Button } from "@/components/ui/button";
@@ -73,14 +76,14 @@ const HistoricalSearches: React.FC<HistoricalSearchesProps> = ({
         } else {
           console.log(
             "No result or menuData found for latestProcessingId:",
-            latestProcessingId
+            latestProcessingId,
           );
         }
       } catch (error) {
         console.error("Error in updateHistoricalSearches:", error);
       }
     },
-    [userId]
+    [userId],
   );
 
   useEffect(() => {
@@ -102,7 +105,7 @@ const HistoricalSearches: React.FC<HistoricalSearchesProps> = ({
                 "Unknown Restaurant",
               score: calculateScore(menuData),
             };
-          })
+          }),
         );
         setHistoricalSearches(detailedHistory);
         setIsLoading(false);

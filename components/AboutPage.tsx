@@ -84,12 +84,12 @@ export default function AboutPage() {
         const position = await new Promise<GeolocationPosition>(
           (resolve, reject) => {
             navigator.geolocation.getCurrentPosition(resolve, reject);
-          }
+          },
         );
 
         const { latitude, longitude } = position.coords;
         const response = await axios.get(
-          `/api/nearby-restaurants?lat=${latitude}&lng=${longitude}&limit=5`
+          `/api/nearby-restaurants?lat=${latitude}&lng=${longitude}&limit=5`,
         );
         setRestaurants(response.data.restaurants);
         setLoading(false);

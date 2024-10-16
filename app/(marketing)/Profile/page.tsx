@@ -1,4 +1,4 @@
-import EditProfile  from "@/app/(marketing)/Profile/EditProfile";
+import EditProfile from "@/app/(marketing)/Profile/EditProfile";
 
 const EditProfilePage = () => {
   return (

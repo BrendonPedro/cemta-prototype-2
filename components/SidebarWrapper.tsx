@@ -18,7 +18,7 @@ const SidebarWrapper = () => {
 
   // Check if the current path starts with any of the sidebarPaths
   const shouldShowSidebar = sidebarPaths.some((path) =>
-    pathname.startsWith(path)
+    pathname.startsWith(path),
   );
 
   if (!shouldShowSidebar) {

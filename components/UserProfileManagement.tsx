@@ -6,7 +6,7 @@ const UserProfileManagement: React.FC = () => {
   const { userData, updateUserRole } = useAuth();
 
   const handleRoleChange = (
-    newRole: "user" | "admin" | "partner" | "validator"
+    newRole: "user" | "admin" | "partner" | "validator",
   ) => {
     updateUserRole(newRole);
   };
@@ -21,7 +21,7 @@ const UserProfileManagement: React.FC = () => {
           value={userData?.role || "user"}
           onChange={(e) =>
             handleRoleChange(
-              e.target.value as "user" | "admin" | "partner" | "validator"
+              e.target.value as "user" | "admin" | "partner" | "validator",
             )
           }
         >

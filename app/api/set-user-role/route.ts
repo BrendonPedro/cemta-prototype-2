@@ -2,7 +2,7 @@
 
 import { NextResponse } from "next/server";
 import { auth, clerkClient } from "@clerk/nextjs/server";
-import { getFirestore, doc, updateDoc, getDoc } from 'firebase/firestore';
+import { getFirestore, doc, updateDoc, getDoc } from "firebase/firestore";
 
 // Role request endpoint
 export async function POST(request: Request) {
@@ -16,27 +16,30 @@ export async function POST(request: Request) {
     const userRef = doc(db, "users", userId);
 
     await updateDoc(userRef, {
-      'user_info.roleRequest': {
+      "user_info.roleRequest": {
         requestedRole,
-        status: 'pending'
-      }
+        status: "pending",
+      },
     });
 
     // Update Clerk public metadata
     await clerkClient.users.updateUser(userId, {
-      publicMetadata: { 
-        ...user.publicMetadata, 
+      publicMetadata: {
+        ...user.publicMetadata,
         roleRequest: {
           requestedRole,
-          status: 'pending'
-        }
+          status: "pending",
+        },
       },
     });
 
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Error requesting role change:", error);
-    return NextResponse.json({ success: false, error: "Failed to request role change" }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: "Failed to request role change" },
+      { status: 500 },
+    );
   }
 }
 
@@ -47,12 +50,18 @@ export async function PUT(request: Request) {
 
   // Check if the requester is an admin
   if (!adminId) {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(
+      { success: false, error: "Unauthorized" },
+      { status: 401 },
+    );
   }
 
   const adminUser = await clerkClient.users.getUser(adminId);
-  if (adminUser.publicMetadata.role !== 'admin') {
-    return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
+  if (adminUser.publicMetadata.role !== "admin") {
+    return NextResponse.json(
+      { success: false, error: "Unauthorized" },
+      { status: 401 },
+    );
   }
 
   try {
@@ -62,37 +71,45 @@ export async function PUT(request: Request) {
     const userData = userDoc.data();
 
     if (!userData || !userData.user_info.roleRequest) {
-      return NextResponse.json({ success: false, error: "No pending role request" }, { status: 400 });
+      return NextResponse.json(
+        { success: false, error: "No pending role request" },
+        { status: 400 },
+      );
     }
 
-    const newRole = approved ? userData.user_info.roleRequest.requestedRole : userData.user_info.role;
-    const newStatus = approved ? 'approved' : 'rejected';
+    const newRole = approved
+      ? userData.user_info.roleRequest.requestedRole
+      : userData.user_info.role;
+    const newStatus = approved ? "approved" : "rejected";
 
     // Update Firestore
     await updateDoc(userRef, {
-      'user_info.role': newRole,
-      'user_info.roleRequest': {
+      "user_info.role": newRole,
+      "user_info.roleRequest": {
         requestedRole: null,
-        status: newStatus
-      }
+        status: newStatus,
+      },
     });
 
     // Update Clerk
     const user = await clerkClient.users.getUser(userId);
     await clerkClient.users.updateUser(userId, {
-      publicMetadata: { 
-        ...user.publicMetadata, 
+      publicMetadata: {
+        ...user.publicMetadata,
         role: newRole,
         roleRequest: {
           requestedRole: null,
-          status: newStatus
-        }
+          status: newStatus,
+        },
       },
     });
 
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Error updating user role:", error);
-    return NextResponse.json({ success: false, error: "Failed to update user role" }, { status: 500 });
+    return NextResponse.json(
+      { success: false, error: "Failed to update user role" },
+      { status: 500 },
+    );
   }
 }

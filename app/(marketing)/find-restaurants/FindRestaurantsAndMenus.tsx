@@ -102,7 +102,7 @@ export default function FindRestaurantsAndMenus() {
   const { firebaseToken, loading: authLoading, error: authError } = useAuth();
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [filteredRestaurants, setFilteredRestaurants] = useState<Restaurant[]>(
-    []
+    [],
   );
   const [nameFilter, setNameFilter] = useState("all");
   const [countyFilter, setCountyFilter] = useState("all");
@@ -118,7 +118,7 @@ export default function FindRestaurantsAndMenus() {
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(0);
   const [focusedRestaurant, setFocusedRestaurant] = useState<Restaurant | null>(
-    null
+    null,
   );
   const [showHistoricalResults, setShowHistoricalResults] = useState(false);
 
@@ -138,12 +138,12 @@ export default function FindRestaurantsAndMenus() {
       try {
         // Fetch from backend (caching is handled server-side)
         const response = await fetch(
-          `/api/nearby-restaurants?lat=${lat}&lng=${lng}&limit=20`
+          `/api/nearby-restaurants?lat=${lat}&lng=${lng}&limit=20`,
         );
         if (!response.ok) {
           const errorText = await response.text();
           throw new Error(
-            `Failed to fetch nearby restaurants: ${response.status} ${response.statusText}. ${errorText}`
+            `Failed to fetch nearby restaurants: ${response.status} ${response.statusText}. ${errorText}`,
           );
         }
 
@@ -189,7 +189,7 @@ export default function FindRestaurantsAndMenus() {
                 rating, // Use newly fetched rating
               };
             }
-          })
+          }),
         );
 
         setRestaurants(restaurantsWithDetails);
@@ -199,14 +199,14 @@ export default function FindRestaurantsAndMenus() {
         setError(
           `Failed to fetch restaurants: ${
             err instanceof Error ? err.message : String(err)
-          }`
+          }`,
         );
       } finally {
         setIsLoading(false);
         setIsRefreshing(false);
       }
     },
-    [userId] // Ensure only necessary dependencies are included
+    [userId], // Ensure only necessary dependencies are included
   );
 
   //within component causes rerendering and repeated api calls
@@ -224,10 +224,10 @@ export default function FindRestaurantsAndMenus() {
       },
       (error) => {
         setError(
-          "Failed to get user location. Please enable location services and try again."
+          "Failed to get user location. Please enable location services and try again.",
         );
         setIsLoading(false);
-      }
+      },
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId, firebaseToken, authLoading]);
@@ -240,9 +240,9 @@ export default function FindRestaurantsAndMenus() {
       },
       (error) => {
         setError(
-          "Failed to get user location. Please enable location services and try again."
+          "Failed to get user location. Please enable location services and try again.",
         );
-      }
+      },
     );
   };
 
@@ -259,7 +259,7 @@ export default function FindRestaurantsAndMenus() {
 
   const handleRequestMenu = async (
     restaurantId: string,
-    restaurantName: string
+    restaurantName: string,
   ) => {
     if (!userId || !firebaseToken) {
       setError("User not authenticated");
@@ -305,22 +305,22 @@ export default function FindRestaurantsAndMenus() {
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(
-          errorData.error || `HTTP error! status: ${response.status}`
+          errorData.error || `HTTP error! status: ${response.status}`,
         );
       }
 
       // Update the restaurant's menu count
       setRestaurants((prevRestaurants) =>
         prevRestaurants.map((r) =>
-          r.id === restaurantId ? { ...r, menuCount: r.menuCount + 1 } : r
-        )
+          r.id === restaurantId ? { ...r, menuCount: r.menuCount + 1 } : r,
+        ),
       );
     } catch (error) {
       console.error("Error requesting menu:", error);
       setError(
         `Failed to request menu: ${
           error instanceof Error ? error.message : String(error)
-        }`
+        }`,
       );
     } finally {
       setIsLoading(false);
@@ -351,10 +351,10 @@ export default function FindRestaurantsAndMenus() {
           (menuCountFilter === "1-3" &&
             restaurant.menuCount >= 1 &&
             restaurant.menuCount <= 3) ||
-          (menuCountFilter === "4+" && restaurant.menuCount >= 4))
+          (menuCountFilter === "4+" && restaurant.menuCount >= 4)),
     );
     setFilteredRestaurants(
-      filtered.slice(currentPage * 10, (currentPage + 1) * 10)
+      filtered.slice(currentPage * 10, (currentPage + 1) * 10),
     ); // Paginate results
   }, [
     restaurants,
@@ -463,7 +463,7 @@ export default function FindRestaurantsAndMenus() {
                           All Restaurants
                         </DropdownMenuItem>
                         {Array.from(
-                          new Set(restaurants.map((r) => r.name))
+                          new Set(restaurants.map((r) => r.name)),
                         ).map((name) => (
                           <DropdownMenuItem
                             key={name}

@@ -28,7 +28,7 @@ const RoleRequestButton: React.FC = () => {
 
       if (response.ok) {
         setMessage(
-          "Role change requested successfully. Please wait for admin approval."
+          "Role change requested successfully. Please wait for admin approval.",
         );
         setRequestedRole("");
       } else {

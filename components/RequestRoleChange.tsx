@@ -21,7 +21,7 @@ const db = getFirestore(firebaseApp);
 const RequestRoleChange = () => {
   const { user } = useUser();
   const [requestedRole, setRequestedRole] = useState<"partner" | "validator">(
-    "partner"
+    "partner",
   );
   const [message, setMessage] = useState("");
 
@@ -50,7 +50,7 @@ const RequestRoleChange = () => {
             },
           },
         },
-        { merge: true }
+        { merge: true },
       );
 
       setMessage("Your role change request has been submitted.");

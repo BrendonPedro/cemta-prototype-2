@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import React, { useState, useEffect } from "react";
 import {
@@ -25,7 +25,7 @@ const AdminRoleManagement: React.FC = () => {
     const usersRef = collection(db, "users");
     const q = query(
       usersRef,
-      where("user_info.roleRequest.status", "==", "pending")
+      where("user_info.roleRequest.status", "==", "pending"),
     );
     const querySnapshot = await getDocs(q);
     const requests = querySnapshot.docs.map((doc) => ({

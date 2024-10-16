@@ -1,4 +1,4 @@
-// components/MenuUpload.tsx
+// app/shared/components/MenuUpload.tsx
 
 "use client";
 
@@ -69,7 +69,7 @@ const MenuUpload: React.FC<MenuUploadProps> = ({ onUpload, onFileChange }) => {
         setLoading(false);
       }
     },
-    [onFileChange, firebaseToken, onUpload]
+    [onFileChange, firebaseToken, onUpload],
   );
 
   const onDrop = useCallback(
@@ -78,7 +78,7 @@ const MenuUpload: React.FC<MenuUploadProps> = ({ onUpload, onFileChange }) => {
         handleFileSelection(acceptedFiles[0]);
       }
     },
-    [handleFileSelection]
+    [handleFileSelection],
   );
 
   const acceptedFileTypes: Accept = {

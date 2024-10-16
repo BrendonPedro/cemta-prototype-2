@@ -1,21 +1,25 @@
 // app/api/vertex-ai/route.ts
 
-import { NextRequest, NextResponse } from 'next/server';
-import { VertexAI } from '@google-cloud/vertexai';
-import { GoogleAuth } from 'google-auth-library';
-import axios from 'axios';
-import sharp from 'sharp';
+import { NextRequest, NextResponse } from "next/server";
+import { VertexAI } from "@google-cloud/vertexai";
+import { GoogleAuth } from "google-auth-library";
+import axios from "axios";
+import sharp from "sharp";
 import {
   getVertexAiResultsByRestaurant,
   getCachedImageUrl,
   saveImageUrlCache,
-} from '@/app/services/firebaseFirestore'; // Keep client-side safe imports
-import { saveVertexAiResults } from '@/app/services/firebaseFirestore.server'; // Import server-side function
-import { jsonrepair } from 'jsonrepair';
-import vision from '@google-cloud/vision';
-import pLimit from 'p-limit';
-import { setTimeout } from 'timers/promises';
-import { storage, originalMenuBucket, processedMenuBucket } from '@/config/googleCloudConfig';
+} from "@/app/services/firebaseFirestore"; // Keep client-side safe imports
+import { saveVertexAiResults } from "@/app/services/firebaseFirestore.server"; // Import server-side function
+import { jsonrepair } from "jsonrepair";
+import vision from "@google-cloud/vision";
+import pLimit from "p-limit";
+import { setTimeout } from "timers/promises";
+import {
+  storage,
+  originalMenuBucket,
+  processedMenuBucket,
+} from "@/config/googleCloudConfig";
 
 // Queue system
 const queue: (() => Promise<any>)[] = [];
@@ -31,7 +35,7 @@ async function processQueue() {
       try {
         await task();
       } catch (error) {
-        console.error('Error processing task:', error);
+        console.error("Error processing task:", error);
       }
       await setTimeout(1000);
     }
@@ -46,9 +50,9 @@ function addToQueue(task: () => Promise<any>) {
 }
 
 // Initialize Vertex AI
-const projectId = 'cemta-prototype-2';
-const location = 'us-central1';
-const modelId = 'gemini-1.5-pro-002';
+const projectId = "cemta-prototype-2";
+const location = "us-central1";
+const modelId = "gemini-1.5-pro-002";
 
 // Constants
 const MAX_OUTPUT_TOKENS = 8192;
@@ -74,12 +78,16 @@ const limit = pLimit(4);
 let apiCallCount = 0;
 
 // Helper functions
-async function splitImageIntoChunks(imageBuffer: Buffer, chunks: number): Promise<Buffer[]> {
+async function splitImageIntoChunks(
+  imageBuffer: Buffer,
+  chunks: number,
+): Promise<Buffer[]> {
   const image = sharp(imageBuffer);
   const metadata = await image.metadata();
   const { width, height } = metadata;
 
-  if (!width || !height) throw new Error('Unable to retrieve image dimensions.');
+  if (!width || !height)
+    throw new Error("Unable to retrieve image dimensions.");
 
   const chunkHeight = Math.ceil(height / chunks);
   const chunkBuffers: Buffer[] = [];
@@ -89,7 +97,9 @@ async function splitImageIntoChunks(imageBuffer: Buffer, chunks: number): Promis
     const extractHeight = i === chunks - 1 ? height - top : chunkHeight;
 
     if (extractHeight <= 0 || top + extractHeight > height) {
-      console.warn(`Invalid extract dimensions for chunk ${i + 1}. Skipping this chunk.`);
+      console.warn(
+        `Invalid extract dimensions for chunk ${i + 1}. Skipping this chunk.`,
+      );
       continue;
     }
 
@@ -106,34 +116,39 @@ async function splitImageIntoChunks(imageBuffer: Buffer, chunks: number): Promis
 
 async function detectChiliIcons(imageChunkBuffer: Buffer): Promise<number> {
   if (!visionClient || !visionClient.objectLocalization) {
-    throw new Error('Vision client or objectLocalization method is undefined');
+    throw new Error("Vision client or objectLocalization method is undefined");
   }
 
   const [result] = await visionClient.objectLocalization({
-    image: { content: imageChunkBuffer.toString('base64') },
+    image: { content: imageChunkBuffer.toString("base64") },
   });
   const objects = result.localizedObjectAnnotations || [];
 
-  const chiliObjects = objects.filter((object) =>
-    object.name?.toLowerCase().includes('chili') ||
-    object.name?.toLowerCase().includes('pepper')
+  const chiliObjects = objects.filter(
+    (object) =>
+      object.name?.toLowerCase().includes("chili") ||
+      object.name?.toLowerCase().includes("pepper"),
   );
 
   return chiliObjects.length;
 }
 
-async function processImageChunks(imageChunkBuffers: Buffer[], generativeModel: any, basePrompt: string): Promise<any> {
-  const imageChunkBase64 = imageChunkBuffers[0].toString('base64');
+async function processImageChunks(
+  imageChunkBuffers: Buffer[],
+  generativeModel: any,
+  basePrompt: string,
+): Promise<any> {
+  const imageChunkBase64 = imageChunkBuffers[0].toString("base64");
 
   const request = {
     contents: [
       {
-        role: 'user',
+        role: "user",
         parts: [
           {
             inlineData: {
               data: imageChunkBase64,
-              mimeType: 'image/png',
+              mimeType: "image/png",
             },
           },
           { text: basePrompt },
@@ -150,24 +165,24 @@ async function processImageChunks(imageChunkBuffers: Buffer[], generativeModel: 
   const candidate = response.response?.candidates?.[0];
 
   if (!candidate) {
-    throw new Error('Vertex AI did not return any candidates.');
+    throw new Error("Vertex AI did not return any candidates.");
   }
 
   const contentParts = candidate.content?.parts;
 
   if (!contentParts || contentParts.length === 0) {
-    throw new Error('No content parts returned by Vertex AI.');
+    throw new Error("No content parts returned by Vertex AI.");
   }
 
   const firstPart = contentParts[0];
 
   if (!firstPart || !firstPart.text) {
-    throw new Error('Model output is undefined.');
+    throw new Error("Model output is undefined.");
   }
 
   const modelOutput: string = firstPart.text;
 
-  console.log('Model Output:', modelOutput);
+  console.log("Model Output:", modelOutput);
 
   function extractJSON(text: string): string {
     const jsonRegex = /{[\s\S]*}/;
@@ -175,7 +190,7 @@ async function processImageChunks(imageChunkBuffers: Buffer[], generativeModel: 
     if (match) {
       return match[0];
     } else {
-      throw new Error('No JSON content found in the model output.');
+      throw new Error("No JSON content found in the model output.");
     }
   }
 
@@ -186,8 +201,8 @@ async function processImageChunks(imageChunkBuffers: Buffer[], generativeModel: 
     const repairedJSON = jsonrepair(jsonText);
     menuData = JSON.parse(repairedJSON);
   } catch (error) {
-    console.error('Error repairing JSON:', error);
-    throw new Error('Failed to parse JSON from model output.');
+    console.error("Error repairing JSON:", error);
+    throw new Error("Failed to parse JSON from model output.");
   }
 
   const spiceLevel = await detectChiliIcons(imageChunkBuffers[0]);
@@ -203,25 +218,36 @@ async function processImageChunks(imageChunkBuffers: Buffer[], generativeModel: 
   return menuData;
 }
 
-async function processImageChunksWithRetry(imageChunkBuffers: Buffer[], generativeModel: any, basePrompt: string, maxRetries = MAX_RETRIES): Promise<any> {
+async function processImageChunksWithRetry(
+  imageChunkBuffers: Buffer[],
+  generativeModel: any,
+  basePrompt: string,
+  maxRetries = MAX_RETRIES,
+): Promise<any> {
   let attempt = 0;
   const baseDelay = 1000;
 
   while (attempt < maxRetries) {
     try {
       apiCallCount++; // Increment this every time you make an API call
-      return await processImageChunks(imageChunkBuffers, generativeModel, basePrompt);
+      return await processImageChunks(
+        imageChunkBuffers,
+        generativeModel,
+        basePrompt,
+      );
     } catch (error: any) {
       console.error(`Error in attempt ${attempt + 1}:`, error);
       if (
-        error.message.includes('429') ||
-        error.message.includes('RESOURCE_EXHAUSTED') ||
-        error.message.includes('rate limit')
+        error.message.includes("429") ||
+        error.message.includes("RESOURCE_EXHAUSTED") ||
+        error.message.includes("rate limit")
       ) {
         attempt++;
         const jitter = Math.random() * 0.3 - 0.15;
         const delay = baseDelay * Math.pow(2, attempt - 1) * (1 + jitter);
-        console.warn(`Attempt ${attempt} failed due to rate limiting. Retrying after ${delay.toFixed(2)} ms...`);
+        console.warn(
+          `Attempt ${attempt} failed due to rate limiting. Retrying after ${delay.toFixed(2)} ms...`,
+        );
         await setTimeout(delay);
       } else {
         throw error;
@@ -229,14 +255,16 @@ async function processImageChunksWithRetry(imageChunkBuffers: Buffer[], generati
     }
   }
 
-  throw new Error(`Failed to process image chunks after ${maxRetries} attempts.`);
+  throw new Error(
+    `Failed to process image chunks after ${maxRetries} attempts.`,
+  );
 }
 
 function mergeCategories(categories: any[]): any[] {
   const categoryMap = new Map<string, any>();
 
   for (const category of categories) {
-    const key = category.name.original || 'Unnamed Category';
+    const key = category.name.original || "Unnamed Category";
 
     if (categoryMap.has(key)) {
       const existingCategory = categoryMap.get(key);
@@ -253,21 +281,25 @@ function mergeCategories(categories: any[]): any[] {
 export async function POST(req: NextRequest) {
   try {
     const reqBody: RequestBody = await req.json();
-    const { imageUrl, userId, menuName, menuId, restaurantId, forceReprocess } = reqBody;
+    const { imageUrl, userId, menuName, menuId, restaurantId, forceReprocess } =
+      reqBody;
 
-if (!imageUrl || !userId || !menuName || !menuId) {
-  return NextResponse.json(
-    { message: 'Missing required fields' },
-    { status: 400 }
-  );
-}
+    if (!imageUrl || !userId || !menuName || !menuId) {
+      return NextResponse.json(
+        { message: "Missing required fields" },
+        { status: 400 },
+      );
+    }
 
     // Check for cached results
     const cachedImageUrl = await getCachedImageUrl(userId, menuName);
     if (cachedImageUrl && !forceReprocess) {
-      const existingMenuData = await getVertexAiResultsByRestaurant(userId, menuName);
+      const existingMenuData = await getVertexAiResultsByRestaurant(
+        userId,
+        menuName,
+      );
       if (existingMenuData) {
-        console.log('Existing menu data found. Returning cached data.');
+        console.log("Existing menu data found. Returning cached data.");
         return NextResponse.json(
           {
             menuData: existingMenuData.menuData,
@@ -276,7 +308,7 @@ if (!imageUrl || !userId || !menuName || !menuId) {
             cached: true,
             timestamp: existingMenuData.timestamp,
           },
-          { status: 200 }
+          { status: 200 },
         );
       }
     }
@@ -286,7 +318,7 @@ if (!imageUrl || !userId || !menuName || !menuId) {
         try {
           const auth = new GoogleAuth({
             keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
-            scopes: ['https://www.googleapis.com/auth/cloud-platform'],
+            scopes: ["https://www.googleapis.com/auth/cloud-platform"],
           });
           const client = await auth.getClient();
           await client.getAccessToken();
@@ -294,38 +326,44 @@ if (!imageUrl || !userId || !menuName || !menuId) {
           // Download image from original bucket or URL
           let imageBuffer: Buffer;
           try {
-            if (imageUrl.startsWith('gs://')) {
+            if (imageUrl.startsWith("gs://")) {
               // Handle gs:// URLs
-              const bucketName = imageUrl.split('/')[2];
-              const fileName = imageUrl.split('/').slice(3).join('/');
+              const bucketName = imageUrl.split("/")[2];
+              const fileName = imageUrl.split("/").slice(3).join("/");
               const bucket = storage.bucket(bucketName);
               const file = bucket.file(fileName);
               [imageBuffer] = await file.download();
-            } else if (imageUrl.startsWith('https://storage.googleapis.com')) {
+            } else if (imageUrl.startsWith("https://storage.googleapis.com")) {
               // Handle storage.googleapis.com URLs
               const parsedUrl = new URL(imageUrl);
-              const bucketName = parsedUrl.pathname.split('/')[1];
-              const fileName = decodeURIComponent(parsedUrl.pathname.split('/').slice(2).join('/'));
+              const bucketName = parsedUrl.pathname.split("/")[1];
+              const fileName = decodeURIComponent(
+                parsedUrl.pathname.split("/").slice(2).join("/"),
+              );
               const bucket = storage.bucket(bucketName);
               const file = bucket.file(fileName);
               [imageBuffer] = await file.download();
             } else {
               // Handle other URLs via axios
-              const imageResponse = await axios.get(imageUrl, { responseType: 'arraybuffer' });
+              const imageResponse = await axios.get(imageUrl, {
+                responseType: "arraybuffer",
+              });
               imageBuffer = Buffer.from(imageResponse.data);
             }
           } catch (downloadError: unknown) {
-            console.error('Error downloading image:', downloadError);
+            console.error("Error downloading image:", downloadError);
             if (downloadError instanceof Error) {
-              throw new Error(`Failed to download image: ${downloadError.message}`);
+              throw new Error(
+                `Failed to download image: ${downloadError.message}`,
+              );
             } else {
-              throw new Error('Failed to download image: Unknown error');
+              throw new Error("Failed to download image: Unknown error");
             }
           }
 
           const optimizedImageBuffer = await sharp(imageBuffer)
             .resize({ width: 2560 })
-            .toFormat('png')
+            .toFormat("png")
             .png({ quality: 80 })
             .toBuffer();
 
@@ -333,12 +371,14 @@ if (!imageUrl || !userId || !menuName || !menuId) {
           const processedFileName = `${userId}/${menuName}_processed.png`;
           const processedFile = processedMenuBucket.file(processedFileName);
           await processedFile.save(optimizedImageBuffer, {
-            metadata: { contentType: 'image/png' },
+            metadata: { contentType: "image/png" },
           });
           const processedImageUrl = `gs://${processedMenuBucket.name}/${processedFileName}`;
 
           const vertexAI = new VertexAI({ project: projectId, location });
-          const generativeModel = vertexAI.getGenerativeModel({ model: modelId });
+          const generativeModel = vertexAI.getGenerativeModel({
+            model: modelId,
+          });
 
           // Prepare the base prompt
           const basePrompt = `You are an AI assistant that extracts data from menu images and outputs JSON. Analyze the menu image provided and output only the JSON representation of the menu in the specified format, without any explanations, code snippets, or additional text. Ensure you capture all details, including prices, descriptions, and categories.
@@ -411,52 +451,68 @@ Now, analyze the following image and output the JSON accordingly, capturing as m
 
           let combinedMenuData: any = {
             restaurant_info: {
-              name: { original: '', english: '' },
-              address: { original: '', english: '' },
-              operating_hours: '',
-              phone_number: '',
-              website: '',
-              social_media: '',
-              description: { original: '', english: '' },
-              additional_notes: '',
+              name: { original: "", english: "" },
+              address: { original: "", english: "" },
+              operating_hours: "",
+              phone_number: "",
+              website: "",
+              social_media: "",
+              description: { original: "", english: "" },
+              additional_notes: "",
             },
             categories: [],
-            other_info: '',
+            other_info: "",
           };
 
           const totalChunks = 3;
-          const chunkBuffers = await splitImageIntoChunks(optimizedImageBuffer, totalChunks);
+          const chunkBuffers = await splitImageIntoChunks(
+            optimizedImageBuffer,
+            totalChunks,
+          );
 
-          const chunkPromises = chunkBuffers.map(chunkBuffer =>
-            limit(() => processImageChunksWithRetry([chunkBuffer], generativeModel, basePrompt))
+          const chunkPromises = chunkBuffers.map((chunkBuffer) =>
+            limit(() =>
+              processImageChunksWithRetry(
+                [chunkBuffer],
+                generativeModel,
+                basePrompt,
+              ),
+            ),
           );
 
           console.log(`Processing ${chunkBuffers.length} chunks...`);
 
           const chunkMenuDataArray = await Promise.all(chunkPromises);
 
-          console.log(`Processed ${chunkMenuDataArray.length} chunks successfully.`);
+          console.log(
+            `Processed ${chunkMenuDataArray.length} chunks successfully.`,
+          );
 
           for (const chunkMenuData of chunkMenuDataArray) {
             combinedMenuData.restaurant_info = {
               ...combinedMenuData.restaurant_info,
               ...chunkMenuData.restaurant_info,
             };
-            combinedMenuData.categories.push(...(chunkMenuData.categories || []));
-            combinedMenuData.other_info += ' ' + (chunkMenuData.other_info || '');
+            combinedMenuData.categories.push(
+              ...(chunkMenuData.categories || []),
+            );
+            combinedMenuData.other_info +=
+              " " + (chunkMenuData.other_info || "");
           }
 
-          combinedMenuData.categories = mergeCategories(combinedMenuData.categories);
+          combinedMenuData.categories = mergeCategories(
+            combinedMenuData.categories,
+          );
 
           const restaurantName: string =
             combinedMenuData.restaurant_info?.name?.original ||
             menuName ||
-            'Unknown Restaurant';
+            "Unknown Restaurant";
 
-          console.log('Processing menuId:', menuId);
+          console.log("Processing menuId:", menuId);
           let processingId;
           try {
-         processingId = await saveVertexAiResults(
+            processingId = await saveVertexAiResults(
               userId,
               combinedMenuData,
               menuId,
@@ -466,36 +522,46 @@ Now, analyze the following image and output the JSON accordingly, capturing as m
             );
             await saveImageUrlCache(userId, menuName, processedImageUrl);
           } catch (saveError) {
-            console.error('Error saving results:', saveError);
+            console.error("Error saving results:", saveError);
             throw saveError;
           }
 
-          console.log('Combined menu data:', JSON.stringify(combinedMenuData, null, 2));
-          console.log(`Processed menu with ${apiCallCount} API call(s) to Vertex AI.`);
+          console.log(
+            "Combined menu data:",
+            JSON.stringify(combinedMenuData, null, 2),
+          );
+          console.log(
+            `Processed menu with ${apiCallCount} API call(s) to Vertex AI.`,
+          );
 
-          resolve(NextResponse.json(
-            {
-              menuData: combinedMenuData,
-              processingId: menuId,
-              apiCallCount,
-              cached: false,
-              timestamp: new Date().toISOString(),
-            },
-            { status: 200 }
-          ));
+          resolve(
+            NextResponse.json(
+              {
+                menuData: combinedMenuData,
+                processingId: menuId,
+                apiCallCount,
+                cached: false,
+                timestamp: new Date().toISOString(),
+              },
+              { status: 200 },
+            ),
+          );
         } catch (error: any) {
-          console.error('Error in Vertex AI processing:', error);
-          let errorMessage = 'An error occurred during processing';
+          console.error("Error in Vertex AI processing:", error);
+          let errorMessage = "An error occurred during processing";
           if (error.response) {
             errorMessage += `: ${error.response.status} ${error.response.statusText}`;
-            console.error('Error response data:', error.response.data);
+            console.error("Error response data:", error.response.data);
           }
           resolve(NextResponse.json({ error: errorMessage }, { status: 500 }));
         }
       });
     });
   } catch (error: any) {
-    console.error('Error in API route:', error);
-    return NextResponse.json({ error: 'An error occurred in the API route' }, { status: 500 });
+    console.error("Error in API route:", error);
+    return NextResponse.json(
+      { error: "An error occurred in the API route" },
+      { status: 500 },
+    );
   }
 }

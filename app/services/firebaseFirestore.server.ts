@@ -1,6 +1,6 @@
 // app/services/firebaseFirestore.server.ts
 
-import { doc, serverTimestamp, setDoc } from "firebase/firestore";
+import { doc, serverTimestamp, setDoc, updateDoc, getDoc } from "firebase/firestore";
 import { db } from "@/config/firebaseConfig";
 import { processedMenuBucket } from "@/config/googleCloudConfig";
 
@@ -11,7 +11,8 @@ export async function saveVertexAiResults(
   menuId: string,
   restaurantId: string,
   menuName: string,
-  imageUrl: string
+  imageUrl: string,
+  restaurantName: string,
 ) {
   const globalMenuRef = doc(db, "menus", menuId);
   const restaurantRef = doc(db, "restaurants", restaurantId);
@@ -25,6 +26,7 @@ export async function saveVertexAiResults(
     uploadedBy: userId,
     originalImageUrl: imageUrl,
     processedImageUrl: `gs://${processedMenuBucket.name}/${userId}/${menuId}_processed.png`,
+    restaurantName,
   };
 
   // Save menu under restaurant
@@ -41,8 +43,9 @@ export async function saveVertexAiResults(
       menuName,
       imageUrl,
       timestamp: serverTimestamp(),
+      restaurantName,
     },
-    { merge: true }
+    { merge: true },
   );
 
   // Save user contributions
@@ -56,9 +59,12 @@ export async function saveVertexAiResults(
       menuName,
       imageUrl,
       timestamp: serverTimestamp(),
+      restaurantName,
     },
-    { merge: true }
+    { merge: true },
   );
 
   return menuId;
 }
+
+

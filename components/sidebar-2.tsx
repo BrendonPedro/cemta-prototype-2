@@ -1,4 +1,4 @@
-'use client'
+"use client";
 
 import Link from "next/link";
 import Image from "next/image";
@@ -24,7 +24,7 @@ export const Sidebar2 = ({ className }: Props) => {
     <div
       className={cn(
         "flex h-full lg:w-[256px] lg:fixed left-0 top-0 px-4 border-r-2 flex-col ",
-        className
+        className,
       )}
     >
       <div className="flex items-center gap-x-0">
@@ -81,7 +81,11 @@ export const Sidebar2 = ({ className }: Props) => {
             </div>
           )}
         </div>
-        <SidebarItem label="Menu Analyzer" href="/menuAnalyzer" iconSrc="/menu.png" />
+        <SidebarItem
+          label="Menu Analyzer"
+          href="/menuAnalyzer"
+          iconSrc="/menu.png"
+        />
         <SidebarItem
           label="Find Restaurants"
           href="/findRestaurants"
@@ -100,5 +104,3 @@ export const Sidebar2 = ({ className }: Props) => {
     </div>
   );
 };
-
-

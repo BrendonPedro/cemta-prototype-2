@@ -6,7 +6,9 @@ interface DocumentAiResultsDisplayProps {
   userId: string;
 }
 
-const DocumentAiResultsDisplay: React.FC<DocumentAiResultsDisplayProps> = ({ userId }) => {
+const DocumentAiResultsDisplay: React.FC<DocumentAiResultsDisplayProps> = ({
+  userId,
+}) => {
   const [menu, setMenu] = useState<Menu | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -46,9 +48,20 @@ const DocumentAiResultsDisplay: React.FC<DocumentAiResultsDisplayProps> = ({ use
         {menu.items.map((item: MenuItem, index: number) => (
           <div key={index} className="mb-4 p-2 bg-white rounded shadow">
             <h3 className="text-lg font-semibold">{item.name}</h3>
-            <p className="text-green-600 font-medium">${typeof item.price === 'number' ? item.price.toFixed(2) : item.price}</p>
-            {item.description && <p className="text-sm text-gray-600">{item.description}</p>}
-            {item.category && <p className="text-xs text-gray-500 mt-1">Category: {item.category}</p>}
+            <p className="text-green-600 font-medium">
+              $
+              {typeof item.price === "number"
+                ? item.price.toFixed(2)
+                : item.price}
+            </p>
+            {item.description && (
+              <p className="text-sm text-gray-600">{item.description}</p>
+            )}
+            {item.category && (
+              <p className="text-xs text-gray-500 mt-1">
+                Category: {item.category}
+              </p>
+            )}
           </div>
         ))}
       </div>

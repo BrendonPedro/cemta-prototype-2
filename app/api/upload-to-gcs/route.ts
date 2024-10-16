@@ -1,30 +1,37 @@
 // app/api/upload-to-gcs/route.ts
 
-import { NextRequest, NextResponse } from 'next/server';
-import { originalMenuBucket } from '@/config/googleCloudConfig';
-import admin from '@/config/firebaseAdmin';
-import { DecodedIdToken } from 'firebase-admin/auth';
-import Busboy from 'busboy';
-import { saveImageUrlCache } from '@/app/services/firebaseFirestore';
+import { NextRequest, NextResponse } from "next/server";
+import { originalMenuBucket } from "@/config/googleCloudConfig";
+import admin from "@/config/firebaseAdmin";
+import { DecodedIdToken } from "firebase-admin/auth";
+import Busboy from "busboy";
+import { saveImageUrlCache } from "@/app/services/firebaseFirestore";
 
 export async function POST(req: NextRequest) {
   return new Promise<NextResponse>(async (resolve, reject) => {
     try {
       // Authentication
-      const authHeader = req.headers.get('authorization');
-      if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        console.error('Missing or invalid authorization header');
-        return resolve(NextResponse.json({ message: 'Unauthorized' }, { status: 401 }));
+      const authHeader = req.headers.get("authorization");
+      if (!authHeader || !authHeader.startsWith("Bearer ")) {
+        console.error("Missing or invalid authorization header");
+        return resolve(
+          NextResponse.json({ message: "Unauthorized" }, { status: 401 }),
+        );
       }
 
-      const token = authHeader.split('Bearer ')[1];
+      const token = authHeader.split("Bearer ")[1];
       let decodedToken: DecodedIdToken;
       try {
         decodedToken = await admin.auth().verifyIdToken(token);
-        console.log('Token verified:', decodedToken);
+        console.log("Token verified:", decodedToken);
       } catch (error) {
-        console.error('Error verifying Firebase ID token:', error);
-        return resolve(NextResponse.json({ message: 'Invalid token', error: getErrorMessage(error) }, { status: 401 }));
+        console.error("Error verifying Firebase ID token:", error);
+        return resolve(
+          NextResponse.json(
+            { message: "Invalid token", error: getErrorMessage(error) },
+            { status: 401 },
+          ),
+        );
       }
 
       // Convert Headers to Plain Object
@@ -37,46 +44,65 @@ export async function POST(req: NextRequest) {
       const bb = Busboy({ headers: headersObj });
       const fileWritePromises: Promise<void>[] = [];
       let fileUploaded = false;
-      let fileUrl = '';
-      let fileName = '';
+      let fileUrl = "";
+      let fileName = "";
 
-      bb.on('file', (fieldname: string, file: NodeJS.ReadableStream, info: { filename: string; encoding: string; mimeType: string }) => {
-        const { filename, mimeType } = info;
-        fileName = `${Date.now()}-${decodedToken.uid}-${filename}`;
-        const fileStream = originalMenuBucket.file(fileName).createWriteStream({
-          resumable: false,
-          contentType: mimeType,
-        });
+      bb.on(
+        "file",
+        (
+          fieldname: string,
+          file: NodeJS.ReadableStream,
+          info: { filename: string; encoding: string; mimeType: string },
+        ) => {
+          const { filename, mimeType } = info;
+          fileName = `${Date.now()}-${decodedToken.uid}-${filename}`;
+          const fileStream = originalMenuBucket
+            .file(fileName)
+            .createWriteStream({
+              resumable: false,
+              contentType: mimeType,
+            });
 
-        file.pipe(fileStream);
+          file.pipe(fileStream);
 
-        fileStream.on('finish', () => {
-          fileUploaded = true;
-          fileUrl = `https://storage.googleapis.com/${originalMenuBucket.name}/${fileName}`;
-        });
+          fileStream.on("finish", () => {
+            fileUploaded = true;
+            fileUrl = `https://storage.googleapis.com/${originalMenuBucket.name}/${fileName}`;
+          });
 
-        fileWritePromises.push(
-          new Promise((resolve, reject) => {
-            fileStream.on('finish', resolve);
-            fileStream.on('error', reject);
-          })
-        );
-      });
+          fileWritePromises.push(
+            new Promise((resolve, reject) => {
+              fileStream.on("finish", resolve);
+              fileStream.on("error", reject);
+            }),
+          );
+        },
+      );
 
-      bb.on('finish', async () => {
+      bb.on("finish", async () => {
         try {
           await Promise.all(fileWritePromises);
           if (!fileUploaded) {
-            return resolve(NextResponse.json({ message: 'No file uploaded' }, { status: 400 }));
+            return resolve(
+              NextResponse.json(
+                { message: "No file uploaded" },
+                { status: 400 },
+              ),
+            );
           }
-          
+
           // Save the image URL to cache
           await saveImageUrlCache(decodedToken.uid, fileName, fileUrl);
-          
+
           resolve(NextResponse.json({ url: fileUrl }, { status: 200 }));
         } catch (error) {
-          console.error('Error during file upload:', error);
-          resolve(NextResponse.json({ message: 'File upload failed', error: getErrorMessage(error) }, { status: 500 }));
+          console.error("Error during file upload:", error);
+          resolve(
+            NextResponse.json(
+              { message: "File upload failed", error: getErrorMessage(error) },
+              { status: 500 },
+            ),
+          );
         }
       });
 
@@ -89,11 +115,21 @@ export async function POST(req: NextRequest) {
         }
         bb.end();
       } else {
-        resolve(NextResponse.json({ message: 'Failed to get reader from request body' }, { status: 400 }));
+        resolve(
+          NextResponse.json(
+            { message: "Failed to get reader from request body" },
+            { status: 400 },
+          ),
+        );
       }
     } catch (error) {
-      console.error('Internal server error:', error);
-      resolve(NextResponse.json({ message: 'Internal server error', error: getErrorMessage(error) }, { status: 500 }));
+      console.error("Internal server error:", error);
+      resolve(
+        NextResponse.json(
+          { message: "Internal server error", error: getErrorMessage(error) },
+          { status: 500 },
+        ),
+      );
     }
   });
 }

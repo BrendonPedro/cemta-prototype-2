@@ -1,11 +1,11 @@
 // app/hooks/useClerkFirebaseAuth.ts
 
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { useAuth, useUser } from '@clerk/nextjs';
-import { initializeApp, FirebaseApp } from 'firebase/app';
-import { getAuth, signInWithCustomToken, User } from 'firebase/auth';
+import { useEffect, useState } from "react";
+import { useAuth, useUser } from "@clerk/nextjs";
+import { initializeApp, FirebaseApp } from "firebase/app";
+import { getAuth, signInWithCustomToken, User } from "firebase/auth";
 import {
   getFirestore,
   doc,
@@ -14,12 +14,12 @@ import {
   getDoc,
   FieldValue,
   Timestamp,
-} from 'firebase/firestore';
-import { firebaseConfig } from '@/config/firebaseConfig';
+} from "firebase/firestore";
+import { firebaseConfig } from "@/config/firebaseConfig";
 
 interface RoleRequest {
-  requestedRole: 'partner' | 'validator' | null;
-  status: 'pending' | 'approved' | 'rejected' | null;
+  requestedRole: "partner" | "validator" | null;
+  status: "pending" | "approved" | "rejected" | null;
 }
 
 interface UserData {
@@ -29,7 +29,7 @@ interface UserData {
     user_photo_url: string;
     user_nationality: string;
     user_birthdate: string;
-    role: 'user' | 'admin' | 'partner' | 'validator';
+    role: "user" | "admin" | "partner" | "validator";
     roleRequest?: RoleRequest | null;
   };
   preferences: {
@@ -53,7 +53,7 @@ interface PublicUserMetadata {
   vegetarian?: string;
   vegan?: string;
   favoriteCuisines?: string[];
-  role?: 'user' | 'admin' | 'partner' | 'validator';
+  role?: "user" | "admin" | "partner" | "validator";
   roleRequest?: RoleRequest | null;
 }
 
@@ -62,19 +62,21 @@ const useClerkFirebaseAuth = () => {
   const { isLoaded: userLoaded, user } = useUser();
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [firebaseApp, setFirebaseApp] = useState<FirebaseApp | null>(null);
-  const [userRole, setUserRole] = useState<'user' | 'admin' | 'partner' | 'validator'>('user');
+  const [userRole, setUserRole] = useState<
+    "user" | "admin" | "partner" | "validator"
+  >("user");
   const [roleRequest, setRoleRequest] = useState<RoleRequest | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
   const setUserRoleInFirestore = async (
     userId: string,
-    role: 'user' | 'admin' | 'partner' | 'validator'
+    role: "user" | "admin" | "partner" | "validator",
   ) => {
     if (firebaseApp) {
       const db = getFirestore(firebaseApp);
-      const userRef = doc(db, 'users', userId);
-      await setDoc(userRef, { 'user_info.role': role }, { merge: true });
+      const userRef = doc(db, "users", userId);
+      await setDoc(userRef, { "user_info.role": role }, { merge: true });
       setUserRole(role);
     }
   };
@@ -94,20 +96,20 @@ const useClerkFirebaseAuth = () => {
 
       if (userLoaded && user) {
         try {
-          const token = await getToken({ template: 'integration_firebase' });
+          const token = await getToken({ template: "integration_firebase" });
           if (token && firebaseApp) {
             const auth = getAuth(firebaseApp);
             const userCredential = await signInWithCustomToken(auth, token);
             setFirebaseUser(userCredential.user);
 
             const db = getFirestore(firebaseApp);
-            const userRef = doc(db, 'users', userCredential.user.uid);
+            const userRef = doc(db, "users", userCredential.user.uid);
 
             const userSnapshot = await getDoc(userRef);
             const publicMetadata = user.publicMetadata as PublicUserMetadata;
 
             // Set default role to 'user' if not already set
-            let role = publicMetadata.role || 'user';
+            let role = publicMetadata.role || "user";
 
             // If the role is not set in Clerk, update it
             if (!publicMetadata.role) {
@@ -129,17 +131,17 @@ const useClerkFirebaseAuth = () => {
                 user_name: user.username,
                 user_email: user.primaryEmailAddress?.emailAddress,
                 user_photo_url: user.imageUrl,
-                user_nationality: publicMetadata.nationality || '',
-                user_birthdate: publicMetadata.birthdate || '',
+                user_nationality: publicMetadata.nationality || "",
+                user_birthdate: publicMetadata.birthdate || "",
                 role: role,
                 roleRequest: roleRequestData,
               },
               preferences: {
                 allergens: publicMetadata.allergens || [],
                 dietary_restrictions: publicMetadata.dietaryRestrictions || [],
-                likes_spicy: publicMetadata.likesSpicy || '',
-                vegetarian: publicMetadata.vegetarian || '',
-                vegan: publicMetadata.vegan || '',
+                likes_spicy: publicMetadata.likesSpicy || "",
+                vegetarian: publicMetadata.vegetarian || "",
+                vegan: publicMetadata.vegan || "",
                 favorite_cuisines: publicMetadata.favoriteCuisines || [],
               },
               updated_at: serverTimestamp(),
@@ -154,8 +156,8 @@ const useClerkFirebaseAuth = () => {
               if (firestoreRole !== role) {
                 await setDoc(
                   userRef,
-                  { 'user_info.role': role },
-                  { merge: true }
+                  { "user_info.role": role },
+                  { merge: true },
                 );
               }
             }
@@ -164,12 +166,12 @@ const useClerkFirebaseAuth = () => {
             await setDoc(userRef, userData, { merge: true });
           }
         } catch (error) {
-          console.error('Error signing in with custom token:', error);
-          setError('Firebase authentication failed. Please try again.');
+          console.error("Error signing in with custom token:", error);
+          setError("Firebase authentication failed. Please try again.");
         }
       } else {
         setFirebaseUser(null);
-        setUserRole('user');
+        setUserRole("user");
         setRoleRequest(null);
       }
 

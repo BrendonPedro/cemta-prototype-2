@@ -1,8 +1,9 @@
 // app/shared/components/ValidationBadge.tsx
+
 import React from "react";
 import { CheckCircle, AlertCircle, Shield } from "lucide-react";
 
-type ValidationStatus = "community" | "restaurant" | "validator" | "full";
+type ValidationStatus = "community" | "restaurant" | "validator" | "cemta";
 
 interface ValidationBadgeProps {
   status: ValidationStatus;
@@ -25,7 +26,11 @@ const ValidationBadge: React.FC<ValidationBadgeProps> = ({ status }) => {
       color: "text-green-500",
       text: "Validator Approved",
     },
-    full: { icon: Shield, color: "text-purple-500", text: "Fully Validated" },
+    cemta: {
+      icon: Shield,
+      color: "text-purple-500",
+      text: "CEMTA Validated",
+    },
   };
 
   const { icon: Icon, color, text } = badgeConfig[status];
