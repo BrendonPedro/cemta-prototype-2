@@ -1,6 +1,9 @@
+
 // app/menu-details/layout.tsx
 
-import React from "react";
+"use client";
+
+import React, { useState } from "react";
 import Image from "next/image";
 import { AuthProvider } from "@/components/AuthProvider";
 import { Header } from "@/app/(marketing)/header";
@@ -14,14 +17,23 @@ type Props = {
 };
 
 const MenuDetailsLayout = ({ children, showBackgroundImage = true }: Props) => {
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  const handleSidebarToggle = (isCollapsed: boolean) => {
+    setIsSidebarCollapsed(isCollapsed);
+  };
+
   return (
     <AuthProvider>
       <div className="min-h-screen flex flex-col bg-gradient-to-br from-customTeal to-white">
         <Header />
         <div className="flex flex-grow">
-           <div className="hidden md:block"></div>
-          <SidebarWrapper />
-          <main className="flex-grow relative p-6 transition-all duration-300">
+          <SidebarWrapper onSidebarToggle={handleSidebarToggle} />
+          <main
+            className={`flex-grow relative p-6 transition-all duration-300 ${
+              isSidebarCollapsed ? "ml-20" : "ml-64"
+            }`}
+          >
             {showBackgroundImage && (
               <div className="fixed inset-0 flex items-center justify-center opacity-5 pointer-events-none">
                 <Image

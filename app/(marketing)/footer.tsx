@@ -1,11 +1,14 @@
-// Footer.tsx
+// app/shared/components/Footer.tsx
 
-import React from "react";
+import React, { forwardRef } from "react";
 import Link from "next/link";
 
-export const Footer = () => {
+export const Footer = forwardRef<HTMLElement>((props, ref) => {
   return (
-    <footer className="bg-gray-900 bg-opacity-90 text-white py-12  rounded-t-3xl mt-20">
+    <footer
+      ref={ref}
+      className="bg-gray-900 bg-opacity-90 text-white py-12 rounded-t-3xl mt-20"
+    >
       <div className="container mx-auto px-6">
         <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
           <div className="mb-8 md:mb-0">
@@ -140,4 +143,6 @@ export const Footer = () => {
       </div>
     </footer>
   );
-};
+});
+
+Footer.displayName = "Footer";

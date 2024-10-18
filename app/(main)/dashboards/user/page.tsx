@@ -1,4 +1,6 @@
-// /dashboards/user/page.tsx
+
+// app/(main)/dashboards/user/page.tsx
+
 "use client";
 
 import React from "react";
@@ -13,9 +15,11 @@ export default function UserDashboardPage() {
   }
 
   return (
-    <div>
-      {/* Main content */}
-      <FindRestaurantsAndMenus />
+    <div className="min-h-screen flex flex-col">
+      {/* This div ensures the full usage of the width */}
+      <main className="flex-grow px-6 py-6">
+        <FindRestaurantsAndMenus />
+      </main>
     </div>
   );
 }

@@ -1,5 +1,3 @@
-// components/MenuSearch.tsx
-
 "use client";
 
 import React, { useState } from "react";
@@ -19,7 +17,7 @@ interface SearchResult {
 
 interface MenuSummary {
   id: string;
-  menuName: string;
+  menuName: string | { original: string; english: string };
   timestamp: any;
 }
 
@@ -76,6 +74,19 @@ const MenuSearch: React.FC<MenuSearchProps> = ({ onMenuSelect }) => {
     }
   };
 
+  // Safe rendering function for menu name
+  const renderMenuName = (
+    menuName: string | { original: string; english: string }
+  ) => {
+    if (typeof menuName === "string") {
+      return menuName;
+    }
+    if (menuName && typeof menuName === "object" && "original" in menuName) {
+      return `${menuName.original} (${menuName.english})`;
+    }
+    return "Unnamed Menu";
+  };
+
   return (
     <div>
       <Input
@@ -119,7 +130,7 @@ const MenuSearch: React.FC<MenuSearchProps> = ({ onMenuSelect }) => {
                   onClick={() => handleSelectMenu(menu.id)}
                   className="w-full text-left"
                 >
-                  {menu.menuName}
+                  {renderMenuName(menu.menuName)}
                 </Button>
               </li>
             ))}

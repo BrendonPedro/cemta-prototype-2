@@ -1,10 +1,10 @@
-//find-restaurants/page.tsx
+// app/(marketing)/find-restaurants/page.tsx
 
 import React from "react";
 import FindRestaurantsAndMenus from "@/app/(marketing)/find-restaurants/FindRestaurantsAndMenus";
 import { AuthProvider } from "@/components/AuthProvider";
 
-const MenuAnalyzerPage = () => {
+const FindRestaurantsAndMenusPage = () => {
   return (
     <AuthProvider>
       <div>
@@ -14,4 +14,4 @@ const MenuAnalyzerPage = () => {
   );
 };
 
-export default MenuAnalyzerPage;
+export default FindRestaurantsAndMenusPage;

@@ -47,7 +47,6 @@ export default function Home() {
 
     fetchUserData();
   }, [firebaseToken]);
-
   if (loading) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -57,29 +56,29 @@ export default function Home() {
   }
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen py-12">
+    <div className="flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] py-12">
       <div className="text-center mb-12">
-        <h1 className="cemta-title font-bold text-6xl md:text-9xl bg-clip-text text-transparent bg-gradient-to-r from-customTeal to-customBlack">
+        <h1 className="cemta-title font-bold text-6xl md:text-8xl bg-clip-text text-transparent bg-gradient-to-r from-customTeal to-customBlack">
           CEMTA
         </h1>
-        <p className="text-3xl md:text-4xl font-bold text-gray-700 mt-4 max-w-2xl mx-auto">
+        <p className="text-2xl md:text-3xl font-bold text-gray-700 mt-4 max-w-2xl mx-auto">
           <em>Revolutionizing the Dining Experience</em>
         </p>
       </div>
 
-      <div className="flex flex-col items-center gap-y-6 max-w-md w-full bg-transparent p-8 rounded-lg">
+      <div className="flex flex-col items-center gap-y-6 w-full max-w-md bg-transparent p-8 rounded-lg">
         <ClerkLoading>
           <Loader className="h-8 w-8 text-customTeal animate-spin" />
         </ClerkLoading>
         <ClerkLoaded>
           <SignedOut>
             <SignUpButton mode="modal">
-              <Button size="lg" variant="nextButton" className="w-auto">
+              <Button size="lg" variant="nextButton" className="w-full">
                 Get Started
               </Button>
             </SignUpButton>
             <SignInButton mode="modal">
-              <Button size="lg" variant="nextButton2" className="w-auto">
+              <Button size="lg" variant="nextButton2" className="w-full">
                 I already have an account
               </Button>
             </SignInButton>
@@ -91,10 +90,10 @@ export default function Home() {
                   userRole === "admin"
                     ? "/dashboards/admin"
                     : userRole === "partner"
-                      ? "/dashboards/partner"
-                      : userRole === "validator"
-                        ? "/dashboards/validator"
-                        : "/dashboards/user"
+                    ? "/dashboards/partner"
+                    : userRole === "validator"
+                    ? "/dashboards/validator"
+                    : "/dashboards/user"
                 }
               >
                 Continue to{" "}

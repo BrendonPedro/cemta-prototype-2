@@ -1,3 +1,5 @@
+// app/menu-details/[id]/page.tsx
+
 import React from "react";
 import MenuDetailsPage from "@/components/MenuDetailsPage";
 

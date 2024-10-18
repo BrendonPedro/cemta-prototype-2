@@ -393,9 +393,9 @@ export default function FindRestaurantsAndMenus() {
   const isLastPage = currentPage === 1 || restaurants.length <= 10;
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="flex flex-col lg:flex-row gap-6 p-6">
-        <Card className="w-full lg:w-3/5 bg-gradient-to-br from-gray-50 to-gray-100 shadow-xl">
+    <div className="h-full flex flex-col">
+      <div className="flex-grow flex flex-col lg:flex-row gap-6">
+        <Card className="w-full lg:w-3/5 bg-gradient-to-br from-gray-50 to-gray-100 shadow-xl overflow-auto">
           <CardHeader>
             <CardTitle className="text-3xl font-bold text-center mb-6">
               <motion.span className="relative inline-block">
@@ -463,7 +463,7 @@ export default function FindRestaurantsAndMenus() {
                           All Restaurants
                         </DropdownMenuItem>
                         {Array.from(
-                          new Set(restaurants.map((r) => r.name)),
+                          new Set(restaurants.map((r) => r.name))
                         ).map((name) => (
                           <DropdownMenuItem
                             key={name}
@@ -650,7 +650,7 @@ export default function FindRestaurantsAndMenus() {
         </Card>
 
         {/* Map section */}
-        <Card className="w-full lg:w-2/5 bg-gradient-to-br from-gray-50 to-gray-100 shadow-xl">
+        <Card className="w-full lg:w-2/5 bg-gradient-to-br from-gray-50 to-gray-100 shadow-xl flex flex-col">
           <CardHeader>
             <CardTitle className="text-2xl font-bold text-center mb-4">
               <span className="text-customTeal">Restaurant Locations</span>

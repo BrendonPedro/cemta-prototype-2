@@ -1,6 +1,8 @@
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
 
 /* Custom CSS to hide inactive TabsContent components */
 [data-state="inactive"][role="tabpanel"] {
@@ -252,14 +254,60 @@
   left: 120px;
 }
 
+/* Add these custom utility classes to your globals.css file */
+
+.content-center-with-sidebar {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: calc(100vh - 4rem); /* Adjust based on your header height */
+  width: calc(100% - 16rem); /* Adjust based on your expanded sidebar width */
+  margin-left: 16rem; /* Should match your sidebar width */
+  transition: all 0.3s ease-in-out;
+}
+
+.content-center-with-sidebar.sidebar-collapsed {
+  width: calc(100% - 5rem); /* Adjust based on your collapsed sidebar width */
+  margin-left: 5rem; /* Should match your collapsed sidebar width */
+}
+
+.content-container {
+  max-width: 64rem; /* Adjust as needed */
+  width: 100%;
+  padding: 2rem;
+}
+
+@media (max-width: 1024px) {
+  .content-center-with-sidebar {
+    width: calc(100% - 12rem);
+    margin-left: 12rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .content-center-with-sidebar {
+    width: calc(100% - 10rem);
+    margin-left: 10rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .content-center-with-sidebar {
+    width: 100%;
+    margin-left: 0;
+  }
+}
+
 /* Styles for the sidebar component - keeping it server-side */
 
 .sidebar-wrapper {
-  position: sticky;
+  position: fixed;
   top: 4rem; /* Adjust for header height */
   height: calc(100vh - 4rem); /* Adjust for header height */
   overflow-y: auto;
-  z-index: 10;
+  z-index: 100;
+  width: 16rem; /* Default sidebar width */
+  transition: width 0.3s ease-in-out;
 }
 
 .sidebar {
@@ -267,7 +315,7 @@
   flex-direction: column;
   height: auto;
   transition: all 0.2s ease-in-out;
-  width: 16rem;
+  width: 100%; /* Ensure sidebar takes up the full width of its container */
   overflow-x: hidden;
   background-color: white;
   border-right: 1px solid #e5e7eb;
@@ -289,7 +337,7 @@
   opacity: 0;
   transform: translateX(-10px);
   position: absolute;
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .sidebar-collapsed {
@@ -309,6 +357,78 @@
 .sidebar-wrapper {
   -ms-overflow-style: none; /* IE and Edge */
   scrollbar-width: none; /* Firefox */
+}
+
+/* Responsive adjustments */
+
+/* On small screens, adjust sidebar width */
+@media (max-width: 1024px) {
+  .sidebar-wrapper {
+    width: 12rem; /* Smaller width for medium-sized screens (tablets, etc.) */
+  }
+
+  #sidebar-toggle:checked ~ .sidebar {
+    width: 4rem;
+  }
+}
+
+@media (max-width: 768px) {
+  .sidebar-wrapper {
+    width: 10rem; /* Further reduce width for smaller screens */
+  }
+
+  #sidebar-toggle:checked ~ .sidebar {
+    width: 4rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .sidebar-wrapper {
+    width: 100vw; /* Full screen width on mobile */
+    left: 0;
+    top: 0;
+    height: 100vh;
+    z-index: 100; /* Ensure it's still visible */
+  }
+
+  .sidebar {
+    width: 100vw;
+  }
+
+#sidebar-toggle:checked ~ .main-content {
+  margin-left: 5rem; /* Adjust content for the collapsed sidebar */
+}
+
+
+  /* Adjust the content behind the sidebar */
+  .main-content {
+    margin-left: 0; /* Ensure content fills screen width when sidebar is collapsed */
+  }
+}
+
+/* Main content styling */
+.main-content {
+  margin-left: 16rem; /* Make space for the sidebar */
+  transition: margin-left 0.2s ease-in-out; /* Smooth transition */
+}
+
+/* Responsive behavior */
+@media (max-width: 1024px) {
+  .main-content {
+    margin-left: 12rem; /* Match the sidebar width on smaller screens */
+  }
+}
+
+@media (max-width: 768px) {
+  .main-content {
+    margin-left: 10rem; /* Further reduce the margin for smaller screens */
+  }
+}
+
+@media (max-width: 640px) {
+  .main-content {
+    margin-left: 0; /* On very small screens, the sidebar might overlay the content, so remove the margin */
+  }
 }
 
 /* carousel.css */

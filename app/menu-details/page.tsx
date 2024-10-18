@@ -1,3 +1,5 @@
+// app/menu-details/page.tsx
+
 "use client";
 
 import React from "react";
@@ -19,3 +21,4 @@ export default function MenuDetailsPage() {
     </div>
   );
 }
+
