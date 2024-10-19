@@ -56,10 +56,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           throw new Error("Authentication failed. Could not get custom token");
         }
 
-        const auth = getAuth();
-        const userCredential = await signInWithCustomToken(auth, customToken);
-        const idToken = await userCredential.user.getIdToken();
-        setFirebaseToken(idToken);
+          console.log("Obtained custom token from Clerk");
+
+    const auth = getAuth();
+    console.log("Signing in with custom token");
+    const userCredential = await signInWithCustomToken(auth, customToken);
+    console.log("Signed in with custom token");
+    const idToken = await userCredential.user.getIdToken();
+    setFirebaseToken(idToken);
+    console.log("Firebase ID token obtained");
 
         // Fetch user role and role request from Firestore
         if (user) {

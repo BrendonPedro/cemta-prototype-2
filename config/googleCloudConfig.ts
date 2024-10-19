@@ -35,7 +35,7 @@ function getBucketName(envVar: string | undefined): string {
 // Document AI Buckets
 const labeledBucketName =
   process.env.GOOGLE_CLOUD_STORAGE_BUCKET_LABELED?.replace("gs://", "");
-const unlabeledBucketName = process.env.GOOGLE_CLOUD_STORAGE_BUCKET?.replace(
+const unlabeledBucketName = process.env.GOOGLE_CLOUD_STORAGE_BUCKET_ORIGINAL_MENUS?.replace(
   "gs://",
   "",
 );
@@ -47,7 +47,7 @@ if (!labeledBucketName) {
 }
 
 if (!unlabeledBucketName) {
-  throw new Error("Missing GOOGLE_CLOUD_STORAGE_BUCKET environment variable");
+  throw new Error("Missing GOOGLE_CLOUD_STORAGE_BUCKET_ORIGINAL_MENUS environment variable");
 }
 
 const labeledBucket = storage.bucket(labeledBucketName);

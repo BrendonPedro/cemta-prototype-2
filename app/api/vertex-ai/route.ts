@@ -519,6 +519,7 @@ Now, analyze the following image and output the JSON accordingly, capturing as m
               restaurantId,
               menuName,
               imageUrl,
+              restaurantName,
             );
             await saveImageUrlCache(userId, menuName, processedImageUrl);
           } catch (saveError) {

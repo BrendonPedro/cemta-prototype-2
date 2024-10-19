@@ -28,7 +28,7 @@ const MenuUpload: React.FC<MenuUploadProps> = ({ onUpload, onFileChange }) => {
       setLoading(true);
 
       try {
-        // Check if the image already exists in cache
+        console.log("Checking image cache...");
         const checkResponse = await fetch("/api/check-image-cache", {
           method: "POST",
           headers: {
@@ -38,17 +38,23 @@ const MenuUpload: React.FC<MenuUploadProps> = ({ onUpload, onFileChange }) => {
           body: JSON.stringify({ fileName: selectedFile.name }),
         });
 
-        const { exists, url } = await checkResponse.json();
+        if (!checkResponse.ok) {
+          throw new Error(`HTTP error! status: ${checkResponse.status}`);
+        }
 
-        if (exists) {
+        const checkResult = await checkResponse.json();
+        console.log("Check image cache result:", checkResult);
+
+        if (checkResult.exists) {
           // Use the cached URL
-          onUpload(url, preview, selectedFile.name);
+          onUpload(checkResult.url, preview, selectedFile.name);
         } else {
           // Upload the file if it doesn't exist in cache
+          console.log("Uploading to GCS...");
           const formData = new FormData();
           formData.append("file", selectedFile);
 
-          const response = await fetch("/api/upload-to-gcs", {
+          const uploadResponse = await fetch("/api/upload-to-gcs", {
             method: "POST",
             headers: {
               Authorization: `Bearer ${firebaseToken}`,
@@ -56,12 +62,14 @@ const MenuUpload: React.FC<MenuUploadProps> = ({ onUpload, onFileChange }) => {
             body: formData,
           });
 
-          if (!response.ok) {
-            throw new Error("Failed to upload to Google Cloud Storage");
+          if (!uploadResponse.ok) {
+            throw new Error(`HTTP error! status: ${uploadResponse.status}`);
           }
 
-          const { url } = await response.json();
-          onUpload(url, preview, selectedFile.name);
+          const uploadResult = await uploadResponse.json();
+          console.log("Upload result:", uploadResult);
+
+          onUpload(uploadResult.url, preview, selectedFile.name);
         }
       } catch (error) {
         console.error("Upload failed", error);
@@ -69,7 +77,7 @@ const MenuUpload: React.FC<MenuUploadProps> = ({ onUpload, onFileChange }) => {
         setLoading(false);
       }
     },
-    [onFileChange, firebaseToken, onUpload],
+    [onFileChange, firebaseToken, onUpload]
   );
 
   const onDrop = useCallback(
