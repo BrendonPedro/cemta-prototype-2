@@ -50,7 +50,7 @@ function addToQueue(task: () => Promise<any>) {
 }
 
 // Initialize Vertex AI
-const projectId = "cemta-prototype-2";
+const projectId = "cemta-prototype-3";
 const location = "us-central1";
 const modelId = "gemini-1.5-pro-002";
 
