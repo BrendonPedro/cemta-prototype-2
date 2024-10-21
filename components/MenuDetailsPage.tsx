@@ -69,7 +69,7 @@ interface MenuDetailsPageProps {
 
 const MenuDetailsPage: React.FC<MenuDetailsPageProps> = ({ id }) => {
   const router = useRouter();
-  const { userId } = useAuth();
+  const { userId, firebaseToken } = useAuth();
   const { user } = useUser();
   const [menuData, setMenuData] = useState<MenuData | null>(null);
   const [coordinates, setCoordinates] = useState<{
@@ -93,6 +93,47 @@ const MenuDetailsPage: React.FC<MenuDetailsPageProps> = ({ id }) => {
   const [franchiseOptions, setFranchiseOptions] = useState<string[]>([]);
   const [selectedFranchise, setSelectedFranchise] = useState("");
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [signedImageUrl, setSignedImageUrl] = useState<string | null>(null);
+  const [imageError, setImageError] = useState(false);
+  const [isDetailsCollapsed, setIsDetailsCollapsed] = useState(false);
+
+  // Define fetchSignedUrl function
+  const fetchSignedUrl = useCallback(
+    async (imageUrl: string) => {
+      if (!firebaseToken || !imageUrl) return;
+      try {
+        const response = await fetch(
+          `/api/get-signed-url?filePath=${encodeURIComponent(imageUrl)}`,
+          {
+            headers: {
+              Authorization: `Bearer ${firebaseToken}`,
+            },
+          }
+        );
+        if (response.ok) {
+          const { signedUrl } = await response.json();
+          setSignedImageUrl(signedUrl);
+          setImageError(false); // Reset error state if successful
+        } else {
+          console.error("Failed to fetch signed URL");
+          setSignedImageUrl(imageUrl); // Fallback to original URL
+          setImageError(false); // We'll still try to load the image
+        }
+      } catch (error) {
+        console.error("Error fetching signed URL:", error);
+        setSignedImageUrl(imageUrl); // Fallback to original URL
+        setImageError(false); // We'll still try to load the image
+      }
+    },
+    [firebaseToken]
+  );
+  
+  // useEffect for fetching the signed URL
+  useEffect(() => {
+    if (menuData?.imageUrl) {
+      fetchSignedUrl(menuData.imageUrl);
+    }
+  }, [menuData, fetchSignedUrl]);
 
   const { isLoaded } = useJsApiLoader({
     id: "google-map-script",
@@ -122,12 +163,30 @@ const MenuDetailsPage: React.FC<MenuDetailsPageProps> = ({ id }) => {
             validation_status = "restaurant";
           }
 
-          data.menuData.restaurant_info.validation_status = validation_status;
-          data.restaurantValidated = restaurantValidated;
-          data.validatorValidated = validatorValidated;
+          // Parse menuData if it's a string
+          let parsedMenuData =
+            typeof data.menuData === "string"
+              ? JSON.parse(data.menuData)
+              : data.menuData;
 
-          setMenuData(data as MenuData);
-          setRestaurantNameInput(data.restaurantName || data.menuData.restaurant_info.name.original || "");
+          // Ensure restaurant_info exists
+          if (!parsedMenuData.restaurant_info) {
+            parsedMenuData.restaurant_info = {};
+          }
+
+          parsedMenuData.restaurant_info.validation_status = validation_status;
+
+          setMenuData({
+            ...data,
+            menuData: parsedMenuData,
+            restaurantValidated,
+            validatorValidated,
+          });
+          setRestaurantNameInput(
+            data.restaurantName ||
+            parsedMenuData.restaurant_info.name?.original ||
+            ""
+          );
           setPreviewUrl(data.imageUrl || null);
         } else {
           setError("Menu data not found.");
@@ -230,24 +289,24 @@ const MenuDetailsPage: React.FC<MenuDetailsPageProps> = ({ id }) => {
     }
   };
 
-const handleRestaurantNameInputChange = async (inputValue: string) => {
-  setRestaurantNameInput(inputValue);
-  if (inputValue && inputValue.length > 1) {
-    setIsLoadingSuggestions(true);
-    try {
-      const suggestions = await searchRestaurantsByName(inputValue);
-      setRestaurantSuggestions(suggestions);
-    } catch (error) {
-      console.error("Error fetching restaurant suggestions:", error);
-    } finally {
-      setIsLoadingSuggestions(false);
+  const handleRestaurantNameInputChange = async (inputValue: string) => {
+    setRestaurantNameInput(inputValue);
+    if (inputValue && inputValue.length > 1) {
+      setIsLoadingSuggestions(true);
+      try {
+        const suggestions = await searchRestaurantsByName(inputValue);
+        setRestaurantSuggestions(suggestions);
+      } catch (error) {
+        console.error("Error fetching restaurant suggestions:", error);
+      } finally {
+        setIsLoadingSuggestions(false);
+      }
+    } else {
+      setRestaurantSuggestions([]);
     }
-  } else {
-    setRestaurantSuggestions([]);
-  }
-};
+  };
 
-   useEffect(() => {
+  useEffect(() => {
     if (menuData?.restaurantId) {
       getMenusByRestaurantId(menuData.restaurantId).then(setAssociatedMenus);
     }
@@ -298,6 +357,12 @@ const handleRestaurantNameInputChange = async (inputValue: string) => {
   };
 
 
+  // Handle image updates
+  const handleImageUpdate = (newImageUrl: string) => {
+    setMenuData(prev => prev ? { ...prev, imageUrl: newImageUrl } : null);
+    fetchSignedUrl(newImageUrl);
+  };
+  
   const handleFranchiseSearch = async (input: string) => {
     if (input.length > 1) {
       const options = await searchRestaurantsByName(input);
@@ -330,7 +395,7 @@ const handleRestaurantNameInputChange = async (inputValue: string) => {
     return <div>No menu ID provided</div>;
   }
 
- if (isLoading) {
+  if (isLoading) {
     return (
       <div className="flex justify-center items-center h-screen">
         <Spinner className="mr-2 h-6 w-6 text-teal-500" />
@@ -380,178 +445,208 @@ const handleRestaurantNameInputChange = async (inputValue: string) => {
   return (
     <div className="menu-details-page">
       <Card className="w-full mt-0">
-        <CardContent className="p-4">
-          <div className="flex flex-col md:flex-row md:space-x-6">
-            {/* Left Side - Image Preview */}
-            <div className="w-full md:w-1/2">
-              <Card>
-                <CardHeader className="flex justify-between items-center">
-                  <CardTitle>Menu Preview</CardTitle>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setIsImageCollapsed(!isImageCollapsed)}
-                  >
-                    {isImageCollapsed ? (
-                      <>
-                        <ChevronDown className="mr-2 h-4 w-4" /> Show
-                      </>
-                    ) : (
-                      <>
-                        <ChevronUp className="mr-2 h-4 w-4" /> Hide
-                      </>
-                    )}
-                  </Button>
-                </CardHeader>
-         {!isImageCollapsed && menuData.imageUrl && (
-  <CardContent>
-    <div className="flex justify-center items-center bg-gray-100 rounded-lg p-2">
-      <Image
-        src={menuData.imageUrl}
-        alt="Menu Preview"
-        width={400}
-        height={600}
-        style={{ objectFit: "contain" }}
-        className="max-w-full h-auto max-h-[60vh]"
-      />
-    </div>
-  </CardContent>
-)}
-              </Card>
-            </div>
-
-            {/* Right Side - Restaurant Info and Actions */}
-            <div className="w-full md:w-1/2 mt-4 md:mt-0">
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-xl font-bold mb-2">
-                    {isEditingName ? (
-                      <Combobox
-                        value={restaurantNameInput}
-                        onChange={setRestaurantNameInput}
-                        suggestions={restaurantSuggestions}
-                        onInputChange={handleRestaurantNameInputChange}
-                        isLoading={isLoadingSuggestions}
-                        placeholder="Enter or select a restaurant name"
-                      />
-                    ) : (
-                      menuData.restaurantName || "Unknown"
-                    )}
-                  </CardTitle>
-                  {validationStatus && (
-                    <ValidationBadge status={validationStatus} />
-                  )}
-                </CardHeader>
-                <CardContent>
-                  {/* Restaurant Info */}
-                  <div className="space-y-2 mb-4">
-                    {menuData.menuData.restaurant_info.address?.original && (
-                      <p className="text-gray-700">
-                        <strong>Address:</strong>{" "}
-                        {menuData.menuData.restaurant_info.address.original}
-                      </p>
-                    )}
-                    {menuData.menuData.restaurant_info.phone_number && (
-                      <p className="text-gray-700">
-                        <strong>Phone:</strong>{" "}
-                        {menuData.menuData.restaurant_info.phone_number}
-                      </p>
-                    )}
-                    {menuData.menuData.restaurant_info.operating_hours && (
-                      <p className="text-gray-700">
-                        <strong>Operating Hours:</strong>{" "}
-                        {menuData.menuData.restaurant_info.operating_hours}
-                      </p>
-                    )}
-                    <p className="text-gray-600">
-                      <strong>Processed on:</strong>{" "}
-                      {timestamp
-                        ? format(new Date(timestamp), "PPpp")
-                        : "Unknown"}
-                    </p>
-                  </div>
-
-                  {/* Action Buttons */}
-                  <div className="space-y-2">
-                    {isEditingName ? (
-                      <div className="flex space-x-2">
-                        <Button onClick={handleRestaurantNameChange}>Save</Button>
-                        <Button variant="nextButton2" onClick={() => setIsEditingName(false)}>Cancel</Button>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <CardTitle>Menu Details</CardTitle>
+          <Button
+            variant="ghostTeal"
+            size="sm"
+            onClick={() => setIsDetailsCollapsed(!isDetailsCollapsed)}
+            aria-label={
+              isDetailsCollapsed
+                ? "Expand menu details"
+                : "Collapse menu details"
+            }
+          >
+            {isDetailsCollapsed ? (
+              <>
+                <ChevronDown className="mr-2 h-4 w-4" /> Expand Details
+              </>
+            ) : (
+              <>
+                <ChevronUp className="mr-2 h-4 w-4" /> Collapse Details
+              </>
+            )}
+          </Button>
+        </CardHeader>
+        <CardContent>
+          <div
+            className={`transition-all duration-300 ease-in-out ${isDetailsCollapsed ? 'h-0 overflow-hidden' : 'h-auto'
+              }`}
+          >
+            <div className="flex flex-col md:flex-row md:space-x-6 mb-6">
+              {/* Image Preview */}
+              <div className="w-full md:w-1/2">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Menu Preview</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    {signedImageUrl && (
+                      <div className="flex justify-center items-center bg-gray-100 rounded-lg p-2">
+                        {imageError ? (
+                          <div className="text-red-500">
+                            Failed to load image
+                          </div>
+                        ) : (
+                          <Image
+                            src={signedImageUrl}
+                            alt="Menu Preview"
+                            width={400}
+                            height={600}
+                            unoptimized
+                            loader={({ src }) => src}
+                            style={{ objectFit: "contain" }}
+                            className="max-w-full h-auto max-h-[60vh]"
+                            onError={() => setImageError(true)}
+                          />
+                        )}
                       </div>
-                    ) : (
-                      <Button onClick={() => setIsEditingName(true)}>Edit Restaurant Name</Button>
                     )}
-                    <Button
-                      onClick={handleReprocess}
-                      variant="default"
-                      className="w-full"
-                    >
-                      Update Menu
-                    </Button>
-                    {isAdminOrValidator && (
-                      <Button
-                        variant="primary"
-                        className="w-full"
-                        onClick={handleValidateMenu}
-                      >
-                        Validate Menu
-                      </Button>
-                    )}
-                    <Button onClick={() => setShowLinkDialog(true)} className="w-full">
-                      Link to Franchise
-                    </Button>
-                  </div>
+                  </CardContent>
+                </Card>
+              </div>
 
-                  {/* Map */}
-                  {isLoaded && coordinates && (
-                    <div className="mt-4">
-                      <div className="h-48 w-full">
-                        <GoogleMap
-                          mapContainerStyle={{ width: "100%", height: "100%" }}
-                          center={coordinates}
-                          zoom={16}
-                        >
-                          <Marker position={coordinates} />
-                        </GoogleMap>
-                      </div>
+              {/* Restaurant Info */}
+              <div className="w-full md:w-1/2 mt-4 md:mt-0">
+                <Card>
+                  <CardHeader>
+                    <CardTitle>
+                      {menuData?.restaurantName || "Unknown Restaurant"}
+                    </CardTitle>
+                    {validationStatus && (
+                      <ValidationBadge status={validationStatus} />
+                    )}
+                  </CardHeader>
+                  <CardContent>
+                    {/* Restaurant Info */}
+                    <div className="space-y-2 mb-4">
+                      {menuData.menuData.restaurant_info.address?.original && (
+                        <p className="text-gray-700">
+                          <strong>Address:</strong>{" "}
+                          {menuData.menuData.restaurant_info.address.original}
+                        </p>
+                      )}
+                      {menuData.menuData.restaurant_info.phone_number && (
+                        <p className="text-gray-700">
+                          <strong>Phone:</strong>{" "}
+                          {menuData.menuData.restaurant_info.phone_number}
+                        </p>
+                      )}
+                      {menuData.menuData.restaurant_info.operating_hours && (
+                        <p className="text-gray-700">
+                          <strong>Operating Hours:</strong>{" "}
+                          {menuData.menuData.restaurant_info.operating_hours}
+                        </p>
+                      )}
+                      <p className="text-gray-600">
+                        <strong>Processed on:</strong>{" "}
+                        {timestamp
+                          ? format(new Date(timestamp), "PPpp")
+                          : "Unknown"}
+                      </p>
                     </div>
-                  )}
 
-                  {/* Search Functionality */}
-                  <div className="mt-6">
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>Find Other Menus</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <MenuSearch />
-                      </CardContent>
-                    </Card>
-                  </div>
-                </CardContent>
-              </Card>
+                    {/* Action Buttons */}
+                    <div className="space-y-2">
+                      {isEditingName ? (
+                        <div className="flex space-x-2">
+                          <Button onClick={handleRestaurantNameChange}>
+                            Save
+                          </Button>
+                          <Button
+                            variant="nextButton2"
+                            onClick={() => setIsEditingName(false)}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      ) : (
+                        <Button onClick={() => setIsEditingName(true)}>
+                          Edit Restaurant Name
+                        </Button>
+                      )}
+                      <Button
+                        onClick={handleReprocess}
+                        variant="default"
+                        className="w-full"
+                      >
+                        Update Menu
+                      </Button>
+                      {isAdminOrValidator && (
+                        <Button
+                          variant="primary"
+                          className="w-full"
+                          onClick={handleValidateMenu}
+                        >
+                          Validate Menu
+                        </Button>
+                      )}
+                      <Button
+                        onClick={() => setShowLinkDialog(true)}
+                        className="w-full"
+                      >
+                        Link to Franchise
+                      </Button>
+                    </div>
 
-              {/* Alert Messages */}
-              {alert && (
-                <Alert variant={alert.type} className="mt-4">
-                  <AlertTitle>
-                    {alert.type === "default" ? "Notice" : "Error"}
-                  </AlertTitle>
-                  <AlertDescription>{alert.message}</AlertDescription>
-                </Alert>
-              )}
+                    {/* Map */}
+                    {isLoaded && coordinates && (
+                      <div className="mt-4">
+                        <div className="h-48 w-full">
+                          <GoogleMap
+                            mapContainerStyle={{
+                              width: "100%",
+                              height: "100%",
+                            }}
+                            center={coordinates}
+                            zoom={16}
+                          >
+                            <Marker position={coordinates} />
+                          </GoogleMap>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Search Functionality */}
+                    <div className="mt-6">
+                      <Card>
+                        <CardHeader>
+                          <CardTitle>Find Other Menus</CardTitle>
+                        </CardHeader>
+                        <CardContent>
+                          <MenuSearch />
+                        </CardContent>
+                      </Card>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Alert Messages */}
+                {alert && (
+                  <Alert variant={alert.type} className="mt-4">
+                    <AlertTitle>
+                      {alert.type === "default" ? "Notice" : "Error"}
+                    </AlertTitle>
+                    <AlertDescription>{alert.message}</AlertDescription>
+                  </Alert>
+                )}
+              </div>
             </div>
+
+            {/* Add a separator */}
+            <hr className="my-6 border-gray-200" />
           </div>
 
           {/* Menu Data Display */}
           <div className="w-full mt-6">
             <MenuDataDisplay
-              menuData={menuData.menuData}
-              menuName={`${menuData.restaurantName || menuData.menuData.restaurant_info.name.original}${
-                menuData.menuData.restaurant_info.name.english
+              menuData={menuData!.menuData}
+              menuName={`${menuData?.restaurantName ||
+                menuData?.menuData.restaurant_info.name.original
+                }${menuData?.menuData.restaurant_info.name.english
                   ? ` - ${menuData.menuData.restaurant_info.name.english}`
                   : ""
-              }`}
+                }`}
             />
           </div>
         </CardContent>
@@ -587,6 +682,6 @@ const handleRestaurantNameInputChange = async (inputValue: string) => {
       </Dialog>
     </div>
   );
-};
+}
 
 export default MenuDetailsPage;

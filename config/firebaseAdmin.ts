@@ -1,4 +1,5 @@
 // config/firebaseAdmin.ts
+
 import admin from "firebase-admin";
 import { readFileSync } from "fs";
 
@@ -20,8 +21,9 @@ if (!admin.apps.length) {
     console.log("Firebase Admin SDK initialized successfully");
   } catch (error) {
     console.error("Error initializing Firebase Admin SDK:", error);
-    throw error; // Re-throw the error to prevent the app from starting with an improperly initialized Firebase Admin
+    throw error;
   }
 }
 
 export default admin;
+export const auth = admin.auth();

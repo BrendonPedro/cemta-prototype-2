@@ -20,11 +20,11 @@ export async function saveVertexAiResults(
   const userContributionRef = doc(db, "users", userId, "contributions", menuId);
   const timestamp = new Date().toISOString();
 
-  const dataToSave = {
-    menuData: JSON.stringify(menuData),
+   const dataToSave = {
+    menuData: menuData,
     timestamp,
     uploadedBy: userId,
-    originalImageUrl: imageUrl,
+    imageUrl, // Changed from originalImageUrl to imageUrl for consistency
     processedImageUrl: `gs://${processedMenuBucket.name}/${userId}/${menuId}_processed.png`,
     restaurantName,
   };
@@ -36,14 +36,12 @@ export async function saveVertexAiResults(
   await setDoc(
     globalMenuRef,
     {
+      ...dataToSave, // Spread the dataToSave object to ensure consistency
       userId,
-      menuData,
       menuId,
       restaurantId,
       menuName,
-      imageUrl,
       timestamp: serverTimestamp(),
-      restaurantName,
     },
     { merge: true },
   );
@@ -52,19 +50,15 @@ export async function saveVertexAiResults(
   await setDoc(
     userContributionRef,
     {
+      ...dataToSave, // Spread the dataToSave object to ensure consistency
       userId,
-      menuData,
       menuId,
       restaurantId,
       menuName,
-      imageUrl,
       timestamp: serverTimestamp(),
-      restaurantName,
     },
     { merge: true },
   );
 
   return menuId;
 }
-
-

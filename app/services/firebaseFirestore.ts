@@ -209,21 +209,19 @@ export async function getVertexAiResults(userId: string, menuId: string) {
   if (menuSnap.exists()) {
     const data = menuSnap.data();
     if (data.userId === userId) {
-      const menuData =
-        typeof data.menuData === "string"
-          ? JSON.parse(data.menuData)
-          : data.menuData;
- return {
-    menuData: data.menuData,
-    processingId: menuSnap.id,
-    timestamp: data.timestamp
-      ? data.timestamp.toDate().toISOString()
-      : new Date().toISOString(),
-    restaurantValidated: data.restaurantValidated || false,
-    validatorValidated: data.validatorValidated || false,
-    restaurantName: data.restaurantName || data.menuData.restaurant_info.name.original,
-    imageUrl: data.imageUrl || null,
-  };
+      // If menuData is stored as a string, parse it
+      const menuData = typeof data.menuData === 'string' ? JSON.parse(data.menuData) : data.menuData;
+      return {
+        menuData,
+        processingId: menuSnap.id,
+        timestamp: data.timestamp
+          ? data.timestamp.toDate().toISOString()
+          : new Date().toISOString(),
+        restaurantValidated: data.restaurantValidated || false,
+        validatorValidated: data.validatorValidated || false,
+        restaurantName: data.restaurantName || menuData?.restaurant_info?.name?.original,
+        imageUrl: data.imageUrl || null,
+      };
     } else {
       console.error("Unauthorized access to menu data. User ID mismatch.");
       throw new Error("Unauthorized access to menu data");
@@ -378,7 +376,7 @@ export async function getCachedRestaurantsForLocation(
     console.log("Cached data found for this location.");
     const data = docSnap.data();
     const cacheTime = data.cachedAt?.toMillis() || 0;
-    const CACHE_DURATION = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
+    const CACHE_DURATION = 60 * 24 * 60 * 60 * 1000; // 60 days in milliseconds
 
     if (Date.now() - cacheTime < CACHE_DURATION) {
       return data.restaurants;

@@ -452,7 +452,7 @@ const MenuAnalyzer = () => {
                           <Button variant="nextButton2">Open Menu</Button>
                         </Link>
                         <Button
-                          variant="cemta"
+                          variant="nextButton3"
                           onClick={() => handleProcessing(true)}
                         >
                           Reprocess Menu

@@ -22,13 +22,13 @@ export async function uploadOriginalMenu(
   });
 
   // Return a signed URL that expires in 15 minutes
-  const [url] = await file.getSignedUrl({
-    version: "v4",
-    action: "read",
+ const [signedUrl] = await file.getSignedUrl({
+    version: 'v4',
+    action: 'read',
     expires: Date.now() + 15 * 60 * 1000, // 15 minutes
   });
 
-  return url;
+  return signedUrl;
 }
 
 export async function uploadProcessedMenu(
@@ -46,13 +46,13 @@ export async function uploadProcessedMenu(
   });
 
   // Return a signed URL that expires in 1 hour
-  const [url] = await file.getSignedUrl({
+  const [signedUrl] = await file.getSignedUrl({
     version: "v4",
     action: "read",
     expires: Date.now() + 60 * 60 * 1000, // 1 hour
   });
 
-  return url;
+  return signedUrl;
 }
 
 export async function uploadRestaurantImage(
