@@ -5,6 +5,7 @@ import {
   originalMenuBucket,
   processedMenuBucket,
   restaurantImagesBucket,
+  yelpMenuBucket,
 } from "@/config/googleCloudConfig";
 
 export async function uploadOriginalMenu(
@@ -22,7 +23,7 @@ export async function uploadOriginalMenu(
   });
 
   // Return a signed URL that expires in 15 minutes
- const [signedUrl] = await file.getSignedUrl({
+  const [signedUrl] = await file.getSignedUrl({
     version: 'v4',
     action: 'read',
     expires: Date.now() + 15 * 60 * 1000, // 15 minutes
@@ -71,25 +72,44 @@ export async function uploadRestaurantImage(
   return `https://storage.googleapis.com/${restaurantImagesBucket.name}/${fileName}`;
 }
 
-export async function uploadImageToBucket(
-  fileName: string,
+export async function uploadYelpMenu(
+  userId: string,
+  restaurantId: string,
   imageBuffer: Buffer,
   contentType: string,
 ): Promise<string> {
-  const file = restaurantImagesBucket.file(fileName);
+  const fileName = `${userId}/${restaurantId}/${Date.now()}_yelp_menu.jpg`;
+  const file = yelpMenuBucket.file(fileName);
 
   await file.save(imageBuffer, {
     metadata: { contentType },
     public: true,
   });
 
-  return `https://storage.googleapis.com/${restaurantImagesBucket.name}/${fileName}`;
+  return `https://storage.googleapis.com/${yelpMenuBucket.name}/${fileName}`;
+}
+
+export async function uploadImageToBucket(
+  fileName: string,
+  imageBuffer: Buffer,
+  contentType: string,
+  bucket = restaurantImagesBucket // Default to restaurant images bucket
+): Promise<string> {
+  const file = bucket.file(fileName);
+
+  await file.save(imageBuffer, {
+    metadata: { contentType },
+    public: true,
+  });
+
+  return `https://storage.googleapis.com/${bucket.name}/${fileName}`;
 }
 
 export async function getImageFromBucket(
   fileName: string,
+  bucket = restaurantImagesBucket // Default to restaurant images bucket
 ): Promise<Buffer | null> {
-  const file = restaurantImagesBucket.file(fileName);
+  const file = bucket.file(fileName);
 
   try {
     const [fileContent] = await file.download();

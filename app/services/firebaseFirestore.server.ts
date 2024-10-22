@@ -13,6 +13,7 @@ export async function saveVertexAiResults(
   menuName: string,
   imageUrl: string,
   restaurantName: string,
+  yelpId?: string
 ) {
   const globalMenuRef = doc(db, "menus", menuId);
   const restaurantRef = doc(db, "restaurants", restaurantId);
@@ -20,45 +21,58 @@ export async function saveVertexAiResults(
   const userContributionRef = doc(db, "users", userId, "contributions", menuId);
   const timestamp = new Date().toISOString();
 
-   const dataToSave = {
+  const dataToSave = {
     menuData: menuData,
     timestamp,
     uploadedBy: userId,
-    imageUrl, // Changed from originalImageUrl to imageUrl for consistency
+    imageUrl,
     processedImageUrl: `gs://${processedMenuBucket.name}/${userId}/${menuId}_processed.png`,
     restaurantName,
+    menuSource: yelpId ? 'yelp' : 'user', // Add source tracking
+    yelpId, // Add Yelp ID if available
   };
 
   // Save menu under restaurant
   await setDoc(menuRef, dataToSave, { merge: true });
 
-  // Also save menu under 'menus/{menuId}' for consistency
+    // Update restaurant document with Yelp info if available
+  if (yelpId) {
+    await updateDoc(restaurantRef, {
+      yelpId,
+      yelpLastUpdated: timestamp,
+      menuSource: 'yelp'
+    });
+  }
+
+ // Save to global menus collection
   await setDoc(
     globalMenuRef,
     {
-      ...dataToSave, // Spread the dataToSave object to ensure consistency
+      ...dataToSave,
       userId,
       menuId,
       restaurantId,
       menuName,
       timestamp: serverTimestamp(),
     },
-    { merge: true },
+    { merge: true }
   );
 
-  // Save user contributions
+  // Save to user contributions
   await setDoc(
     userContributionRef,
     {
-      ...dataToSave, // Spread the dataToSave object to ensure consistency
+      ...dataToSave,
       userId,
       menuId,
       restaurantId,
       menuName,
       timestamp: serverTimestamp(),
     },
-    { merge: true },
+    { merge: true }
   );
 
   return menuId;
 }
+
+

@@ -470,8 +470,9 @@ const MenuDetailsPage: React.FC<MenuDetailsPageProps> = ({ id }) => {
         </CardHeader>
         <CardContent>
           <div
-            className={`transition-all duration-300 ease-in-out ${isDetailsCollapsed ? 'h-0 overflow-hidden' : 'h-auto'
-              }`}
+            className={`transition-all duration-300 ease-in-out ${
+              isDetailsCollapsed ? "h-0 overflow-hidden" : "h-auto"
+            }`}
           >
             <div className="flex flex-col md:flex-row md:space-x-6 mb-6">
               {/* Image Preview */}
@@ -495,8 +496,14 @@ const MenuDetailsPage: React.FC<MenuDetailsPageProps> = ({ id }) => {
                             height={600}
                             unoptimized
                             loader={({ src }) => src}
-                            style={{ objectFit: "contain" }}
-                            className="max-w-full h-auto max-h-[60vh]"
+                            style={{
+                              objectFit: "contain",
+                              width: "auto",
+                              height: "auto",
+                              maxWidth: "100%",
+                              maxHeight: "60vh",
+                            }}
+                            className="max-w-full"
                             onError={() => setImageError(true)}
                           />
                         )}
@@ -641,12 +648,14 @@ const MenuDetailsPage: React.FC<MenuDetailsPageProps> = ({ id }) => {
           <div className="w-full mt-6">
             <MenuDataDisplay
               menuData={menuData!.menuData}
-              menuName={`${menuData?.restaurantName ||
+              menuName={`${
+                menuData?.restaurantName ||
                 menuData?.menuData.restaurant_info.name.original
-                }${menuData?.menuData.restaurant_info.name.english
+              }${
+                menuData?.menuData.restaurant_info.name.english
                   ? ` - ${menuData.menuData.restaurant_info.name.english}`
                   : ""
-                }`}
+              }`}
             />
           </div>
         </CardContent>

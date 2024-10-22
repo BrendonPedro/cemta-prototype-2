@@ -27,6 +27,25 @@ interface HistoricalMenu {
   // Add any other properties that your HistoricalMenu might have
 }
 
+// Add the CachedRestaurant interface
+export interface CachedRestaurant {
+  id: string;
+  name: string;
+  address: string;
+  rating: number;
+  latitude: number;
+  longitude: number;
+  menuCount: number;
+  county: string;
+  source: 'google' | 'yelp';
+  hasMenu: boolean;
+  imageUrl: string; // This must be required, not optional
+  yelpId?: string;
+  hasYelpData?: boolean;
+  hasGoogleData?: boolean;
+}
+
+
 interface MenuDetails {
   id: string;
   imageUrl: string;
@@ -77,6 +96,23 @@ interface MenuSummary {
   id: string;
   menuName: string;
   timestamp: any;
+}
+
+interface RestaurantDocument {
+  id: string;
+  name: string;
+  address: string;
+  rating: number;
+  timestamp: string;
+  yelpId?: string;
+  yelpLastUpdated?: string;
+  menuSource?: 'yelp' | 'google' | 'user';
+  imageUrl?: string;
+  location?: {
+    latitude: number;
+    longitude: number;
+  };
+  county?: string;
 }
 
 const RESTAURANT_DETAILS_COLLECTION = "restaurantDetails";
@@ -334,28 +370,39 @@ export async function saveRestaurantDetails(
   name: string,
   rating: number,
   address: string,
-) {
+  yelpId?: string
+): Promise<void> {
   const restaurantRef = doc(db, "restaurants", restaurantId);
 
-  await setDoc(restaurantRef, {
+const restaurantData: Omit<RestaurantDocument, 'id'> = {
     name,
     rating,
     address,
     timestamp: new Date().toISOString(),
-  });
+    ...(yelpId && { 
+      yelpId,
+      yelpLastUpdated: new Date().toISOString(),
+      menuSource: 'yelp' as const
+    })
+  };
+
+  await setDoc(restaurantRef, restaurantData);
 }
 
 // Get cached restaurant details from Firestore
-export async function getCachedRestaurantDetails(restaurantId: string) {
+export async function getCachedRestaurantDetails(
+  restaurantId: string
+): Promise<RestaurantDocument | null> {
   const restaurantRef = doc(db, "restaurants", restaurantId);
-
   const docSnap = await getDoc(restaurantRef);
 
   if (docSnap.exists()) {
-    return docSnap.data();
-  } else {
-    return null;
+    return {
+      id: docSnap.id,
+      ...docSnap.data(),
+    } as RestaurantDocument;
   }
+  return null;
 }
 
 function getLocationCacheKey(lat: number, lng: number): string {
@@ -366,20 +413,26 @@ function getLocationCacheKey(lat: number, lng: number): string {
 export async function getCachedRestaurantsForLocation(
   lat: number,
   lng: number,
-) {
+): Promise<CachedRestaurant[] | null> {
   const locationKey = getLocationCacheKey(lat, lng);
-  console.log(`Cache Key: ${locationKey}`);
   const cacheRef = doc(db, "locationCaches", locationKey);
   const docSnap = await getDoc(cacheRef);
 
   if (docSnap.exists()) {
-    console.log("Cached data found for this location.");
     const data = docSnap.data();
     const cacheTime = data.cachedAt?.toMillis() || 0;
     const CACHE_DURATION = 60 * 24 * 60 * 60 * 1000; // 60 days in milliseconds
 
+    const restaurants = data.restaurants as CachedRestaurant[];
+
+    // Check if 'county' is present in the first restaurant (assuming all have it if one does)
+    if (restaurants.length > 0 && !restaurants[0].county) {
+      console.log("Cached data missing 'county' field. Fetching new data.");
+      return null;
+    }
+
     if (Date.now() - cacheTime < CACHE_DURATION) {
-      return data.restaurants;
+      return restaurants;
     } else {
       console.log("Cached data expired. Fetching new data.");
     }
@@ -389,11 +442,12 @@ export async function getCachedRestaurantsForLocation(
   return null;
 }
 
+
 export async function saveCachedRestaurantsForLocation(
   lat: number,
   lng: number,
-  restaurants: any[],
-) {
+  restaurants: CachedRestaurant[],
+): Promise<void> {
   const locationKey = getLocationCacheKey(lat, lng);
   const cacheRef = doc(db, "locationCaches", locationKey);
 
@@ -582,7 +636,7 @@ export async function getCachedImageUrl(
   if (docSnap.exists()) {
     const data = docSnap.data();
     const cacheTime = data.cachedAt?.toMillis() || 0;
-    const CACHE_DURATION = 30 * 24 * 60 * 60 * 1000; // 30 days in milliseconds
+    const CACHE_DURATION = 60 * 24 * 60 * 60 * 1000; // 60 days in milliseconds
 
     if (Date.now() - cacheTime < CACHE_DURATION) {
       return data.imageUrl;
@@ -698,7 +752,7 @@ export async function searchRestaurants(
 
 // Function to get menus by restaurant ID
 export async function getMenusByRestaurantId(
-  restaurantId: string,
+  restaurantId: string
 ): Promise<MenuSummary[]> {
   const menusRef = collection(db, "menus");
   const q = query(menusRef, where("restaurantId", "==", restaurantId));
@@ -709,6 +763,7 @@ export async function getMenusByRestaurantId(
     return {
       id: doc.id,
       menuName: data.menuName || "Unnamed Menu",
+      imageUrl: data.imageUrl || null,
       timestamp: data.timestamp,
     };
   });
@@ -813,3 +868,20 @@ export async function getAssociatedFranchiseRestaurants(menuId: string): Promise
   }
   return [];
 }
+
+export async function checkExistingYelpMenu(
+  restaurantId: string,
+  yelpId: string
+): Promise<boolean> {
+  const menusRef = collection(db, "restaurants", restaurantId, "menus");
+  const q = query(
+    menusRef, 
+    where("menuSource", "==", "yelp"),
+    where("yelpId", "==", yelpId),
+    limit(1)
+  );
+  
+  const querySnapshot = await getDocs(q);
+  return !querySnapshot.empty;
+}
+

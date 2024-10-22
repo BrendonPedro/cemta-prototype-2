@@ -1,3 +1,5 @@
+// app/about-page/page.tsx
+
 "use client";
 
 import React, { useState, useEffect } from "react";
@@ -7,8 +9,6 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MapPin, Search, Camera, ChevronRight } from "lucide-react";
 import Link from "next/link";
-import { useSpring, animated } from "react-spring";
-import { useDrag } from "@use-gesture/react";
 import Image from "next/image";
 import axios from "axios";
 import {
@@ -26,7 +26,13 @@ interface Restaurant {
   rating: number;
   latitude: number;
   longitude: number;
-  photo_reference: string;
+  imageUrl: string;
+  hasMenu: boolean;
+  yelpId?: string | null;
+  hasYelpData?: boolean;
+  source: "google" | "yelp";
+  menuCount: number;
+  county: string;
 }
 
 interface RestaurantCardProps {
@@ -34,40 +40,42 @@ interface RestaurantCardProps {
 }
 
 const RestaurantCard: React.FC<RestaurantCardProps> = ({ restaurant }) => {
-  const imageUrl = restaurant.photo_reference
-    ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${restaurant.photo_reference}&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}`
-    : "https://images.unsplash.com/photo-1514933651103-005eec06c04b?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1074&q=80";
+  const imageUrl = restaurant.imageUrl;
 
   return (
-    <Card className="w-full h-full overflow-hidden rounded-3xl shadow-xl">
-      <div className="relative w-full h-56">
-        <Image
-          src={imageUrl}
-          alt={restaurant.name}
-          layout="fill"
-          objectFit="cover"
-          onError={(e) => {
-            console.error("Image load error:", e);
-            (e.target as HTMLImageElement).src =
-              "https://images.unsplash.com/photo-1514933651103-005eec06c04b?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1074&q=80";
-          }}
-        />
-      </div>
-      <CardContent className="p-6">
-        <h3 className="text-2xl font-semibold mb-3 text-gray-800">
-          {restaurant.name}
-        </h3>
-        <p className="text-gray-600 mb-4">{restaurant.address}</p>
-        <div className="flex items-center text-gray-500 mb-4">
-          <MapPin className="w-4 h-4 mr-2" />
-          <span>{restaurant.address}</span>
+    <Link href={`/restaurants/${restaurant.id}`} passHref>
+      <Card className="w-full h-full overflow-hidden rounded-3xl shadow-xl cursor-pointer">
+        <div className="relative w-full h-56">
+          <Image
+            src={imageUrl}
+            alt={restaurant.name}
+            layout="fill"
+            objectFit="cover"
+            onError={(e) => {
+              console.error("Image load error:", e);
+              (e.target as HTMLImageElement).src =
+                "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=1074&q=80";
+            }}
+          />
         </div>
-        <div className="flex items-center">
-          <span className="text-yellow-400 mr-1">★</span>
-          <span className="font-semibold">{restaurant.rating.toFixed(1)}</span>
-        </div>
-      </CardContent>
-    </Card>
+        <CardContent className="p-6">
+          <h3 className="text-2xl font-semibold mb-3 text-gray-800">
+            {restaurant.name}
+          </h3>
+          <p className="text-gray-600 mb-4">{restaurant.address}</p>
+          <div className="flex items-center text-gray-500 mb-4">
+            <MapPin className="w-4 h-4 mr-2" />
+            <span>{restaurant.county}</span>
+          </div>
+          <div className="flex items-center">
+            <span className="text-yellow-400 mr-1">★</span>
+            <span className="font-semibold">
+              {restaurant.rating.toFixed(1)}
+            </span>
+          </div>
+        </CardContent>
+      </Card>
+    </Link>
   );
 };
 
@@ -84,12 +92,12 @@ export default function AboutPage() {
         const position = await new Promise<GeolocationPosition>(
           (resolve, reject) => {
             navigator.geolocation.getCurrentPosition(resolve, reject);
-          },
+          }
         );
 
         const { latitude, longitude } = position.coords;
         const response = await axios.get(
-          `/api/nearby-restaurants?lat=${latitude}&lng=${longitude}&limit=5`,
+          `/api/nearby-restaurants?lat=${latitude}&lng=${longitude}&limit=5`
         );
         setRestaurants(response.data.restaurants);
         setLoading(false);
@@ -106,29 +114,12 @@ export default function AboutPage() {
   return (
     <div className="min-h-screen">
       <main className="container mx-auto px-6 py-12">
-        <section className="text-center mb-20">
-          <h1 className="text-5xl md:text-7xl font-bold mb-8 inline-block text-transparent bg-clip-text bg-gradient-to-r from-customBlack to-customTeal py-2">
-            Revolutionizing the Dining Experience
-          </h1>
-          <p className="text-xl md:text-2xl text-gray-700 mb-10">
-            Explore local cuisines, translate menus, and embark on global food
-            adventures.
-          </p>
-          <div className="flex flex-col md:flex-row justify-center items-center space-y-4 md:space-y-0 md:space-x-4">
-            <Input
-              className="max-w-md rounded-full text-lg py-6 px-6"
-              placeholder="Search for dishes, cuisines, or restaurants"
-            />
-            <Button className="bg-gradient-to-r from-customTeal to-customBlack hover:from-customBlack hover:to-customTeal text-white rounded-full text-lg py-6 px-8 transition-all duration-300 transform hover:scale-105">
-              <Search className="mr-2 h-5 w-5" /> Explore Flavors
-            </Button>
-          </div>
-        </section>
+        {/* ... existing sections ... */}
         <section className="mb-20">
           <h2 className="text-4xl font-bold text-customBlack mb-10 text-center">
             Trending Culinary Hotspots
           </h2>
-          <div className="w-full max-w-md mx-auto">
+          <div className="w-full max-w-6xl mx-auto px-4">
             {loading && (
               <p className="text-center">Loading nearby restaurants...</p>
             )}

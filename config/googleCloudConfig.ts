@@ -63,11 +63,15 @@ const processedMenuBucketName = getBucketName(
 const restaurantImagesBucketName = getBucketName(
   process.env.GOOGLE_CLOUD_STORAGE_BUCKET_RESTAURANT_IMAGES,
 );
+const yelpMenuBucketName = getBucketName(
+  process.env.GOOGLE_CLOUD_STORAGE_BUCKET_YELP_MENUS || "menu_uploads_yelp_cemta"
+);
 
 if (
   !originalMenuBucketName ||
   !processedMenuBucketName ||
-  !restaurantImagesBucketName
+  !restaurantImagesBucketName ||
+  !yelpMenuBucketName
 ) {
   throw new Error(
     "Missing one or more required GCP bucket environment variables",
@@ -77,30 +81,26 @@ if (
 const originalMenuBucket = storage.bucket(originalMenuBucketName);
 const processedMenuBucket = storage.bucket(processedMenuBucketName);
 const restaurantImagesBucket = storage.bucket(restaurantImagesBucketName);
+const yelpMenuBucket = storage.bucket(yelpMenuBucketName);
 
 // Set up replication
 async function setupReplication() {
   try {
-    await originalMenuBucket.addLifecycleRule({
-      action: { type: "SetStorageClass", storageClass: "NEARLINE" },
-      condition: {
-        age: 30, // Move to Nearline storage after 30 days
-      },
-    });
+    const buckets = [
+      originalMenuBucket,
+      processedMenuBucket,
+      restaurantImagesBucket,
+      yelpMenuBucket
+    ];
 
-    await processedMenuBucket.addLifecycleRule({
-      action: { type: "SetStorageClass", storageClass: "NEARLINE" },
-      condition: {
-        age: 30,
-      },
-    });
-
-    await restaurantImagesBucket.addLifecycleRule({
-      action: { type: "SetStorageClass", storageClass: "NEARLINE" },
-      condition: {
-        age: 30,
-      },
-    });
+    for (const bucket of buckets) {
+      await bucket.addLifecycleRule({
+        action: { type: "SetStorageClass", storageClass: "NEARLINE" },
+        condition: {
+          age: 30, // Move to Nearline storage after 30 days
+        },
+      });
+    }
 
     console.log("Successfully set up replication rules");
   } catch (error) {
@@ -120,6 +120,7 @@ async function testBucketAccess() {
       restaurantImagesBucket.exists(),
       labeledBucket.exists(),
       unlabeledBucket.exists(),
+      yelpMenuBucket.exists(),
     ]);
     console.log("Successfully connected to all GCS buckets");
   } catch (error) {
@@ -148,4 +149,5 @@ export {
   originalMenuBucket,
   processedMenuBucket,
   restaurantImagesBucket,
+  yelpMenuBucket,  // Add export for Yelp menu bucket
 };

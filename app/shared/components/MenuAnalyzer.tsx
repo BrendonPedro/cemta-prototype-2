@@ -392,8 +392,14 @@ const MenuAnalyzer = () => {
                       alt="Menu Preview"
                       width={400}
                       height={600}
-                      style={{ objectFit: "contain" }}
-                      className="max-w-full h-auto max-h-[60vh]"
+                      style={{
+                        objectFit: "contain",
+                        width: "auto",
+                        height: "auto",
+                        maxWidth: "100%",
+                        maxHeight: "60vh",
+                      }}
+                      className="max-w-full"
                     />
                   </div>
                 </div>
@@ -486,7 +492,9 @@ const MenuAnalyzer = () => {
                         <Button
                           variant="primary"
                           className="mt-2 w-full"
-                          onClick={() => updateRestaurantName(menuId, restaurantName)}
+                          onClick={() =>
+                            updateRestaurantName(menuId, restaurantName)
+                          }
                           disabled={!restaurantName.trim()}
                         >
                           Save Restaurant Name
