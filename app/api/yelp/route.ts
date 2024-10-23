@@ -2,28 +2,11 @@
 
 import { NextResponse } from "next/server";
 import axios from "axios";
+import { YelpBusiness } from "@/app/services/firebaseFirestore";
 
 interface YelpCategory {
   alias: string;
   title: string;
-}
-
-interface YelpBusiness {
-  id: string;
-  name: string;
-  categories: YelpCategory[];
-  coordinates: {
-    latitude: number;
-    longitude: number;
-  };
-  location: {
-    address1: string;
-    city: string;
-    state: string;
-    country: string;
-  };
-  rating: number;
-  photos?: string[];
 }
 
 interface YelpSearchResponse {

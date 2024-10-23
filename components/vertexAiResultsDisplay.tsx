@@ -36,7 +36,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertCircle, RefreshCw } from "lucide-react";
-import { Menu } from "@/types/menuTypes"; // Adjust the import path as necessary
+import {
+  MenuData,
+  MenuItem,
+  MenuCategory,
+  RestaurantInfo,
+  HistoryItem,
+} from "@/app/services/firebaseFirestore";
 import MenuDataDisplay from "./MenuDataDisplay";
 
 interface VertexAiResultsDisplayProps {
@@ -47,63 +53,6 @@ interface VertexAiResultsDisplayProps {
   processingError: string | null;
   existingMenuInfo: any | null;
   menuName: string;
-}
-
-interface MenuItem {
-  name: {
-    original: string;
-    pinyin: string;
-    english: string;
-  };
-  description: {
-    original: string;
-    english: string;
-  } | null;
-  price?: {
-    amount: number;
-    currency: string;
-  };
-  prices?: {
-    [key: string]: string;
-  };
-  popular: boolean;
-  chef_recommended: boolean;
-  spice_level: string;
-  allergy_alert: string;
-  upgrades: Array<{ name: string; price: string }>;
-  notes: string;
-}
-
-interface Category {
-  name: {
-    original: string;
-    pinyin: string;
-    english: string;
-  };
-  items: MenuItem[];
-}
-
-interface RestaurantInfo {
-  name: { original: string; english: string } | string;
-  address: { original: string; english: string } | string;
-  operating_hours: string;
-  phone_number: string;
-  website: string;
-  social_media: string;
-  description: { original: string; english: string } | string;
-  additional_notes: string;
-}
-
-interface MenuData {
-  restaurant_info: RestaurantInfo;
-  categories: Category[];
-  other_info: string;
-}
-
-interface HistoryItem {
-  id: string;
-  menuName: string;
-  timestamp: string;
 }
 
 const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
@@ -179,7 +128,7 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
             if (Array.isArray(results.menuData.categories)) {
               setSelectedCategories(
                 results.menuData.categories.map(
-                  (cat: Category) => cat.name.original,
+                  (cat: MenuCategory) => cat.name.original,
                 ),
               );
             } else {
@@ -276,7 +225,7 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
         if (Array.isArray(results.menuData.categories)) {
           setSelectedCategories(
             results.menuData.categories.map(
-              (cat: Category) => cat.name.original,
+              (cat: MenuCategory) => cat.name.original,
             ),
           );
         } else {

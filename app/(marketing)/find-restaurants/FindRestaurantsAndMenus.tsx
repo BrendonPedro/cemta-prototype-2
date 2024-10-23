@@ -52,26 +52,15 @@ import {
 import { searchYelpBusiness, getYelpBusinessPhotos } from '@/app/services/yelpService';
 import { MenuWarningDialog } from "@/components/ui/menu-warning-dialog";
 import axios from "axios";
-import { CachedRestaurant } from "@/app/services/firebaseFirestore";
+import {
+  Restaurant,
+  CachedRestaurant,
+ } from "@/app/services/firebaseFirestore";
 
 
 interface LatLngLiteral {
   lat: number;
   lng: number;
-}
-
-interface Restaurant {
-  id: string;
-  name: string;
-  menuCount: number;
-  address: string;
-  county: string;
-  latitude: number;
-  longitude: number;
-  rating: number; //
-  photoUrl?: string; // Add this to store the restaurant image URL for linking
-  menuImageUrl?: string | null; // Add this to store the menu image URL for linking
-  menuId?: string; // Add this to store the menu ID for linking
 }
 
 interface SelectedRestaurant {

@@ -17,17 +17,80 @@ import {
 } from "firebase/firestore";
 import { db } from "@/config/firebaseConfig";
 import geohash from "ngeohash";
-import { Menu } from "@/types/menuTypes";
 
-// Interfaces
-interface HistoricalMenu {
-  id: string;
-  restaurantName: string;
-  timestamp: string;
-  // Add any other properties that your HistoricalMenu might have
+
+// ======= Basic Types and Shared Interfaces =======
+// (Used across multiple components)
+export interface Location {
+  latitude: number;
+  longitude: number;
 }
 
-// Add the CachedRestaurant interface
+// (Used in RestaurantPage.tsx and firestore.ts)
+export interface Photo {
+  url: string;
+  source: "google" | "yelp";
+}
+
+// (Used in RestaurantPage.tsx)
+export interface BusinessHours {
+  day: string;
+  start: string;
+  end: string;
+}
+
+// ======= Restaurant Related Interfaces =======
+// (Used in RestaurantPage.tsx and firestore.ts)
+export interface RestaurantDocument {
+  id: string;
+  name: string;
+  address: string;
+  rating: number;
+  timestamp: string;
+  yelpId?: string;
+  yelpLastUpdated?: string;
+  menuSource?: 'yelp' | 'google' | 'user';
+  imageUrl?: string;
+  location?: Location;
+  county?: string;
+  phone?: string;
+  website?: string;
+  hours?: BusinessHours[];
+  priceLevel?: string;
+}
+
+// (Used in RestaurantPage.tsx)
+export interface RestaurantDetails {
+  id: string;
+  name: string;
+  address: string;
+  rating: number;
+  imageUrl?: string;
+  phone?: string;
+  website?: string;
+  hours?: BusinessHours[];
+  priceLevel?: string;
+  photos?: Photo[];
+  yelpId?: string;
+  location?: Location;
+}
+
+// (Used in FindRestaurantsAndMenus.tsx)
+export interface Restaurant {
+  id: string;
+  name: string;
+  menuCount: number;
+  address: string;
+  county: string;
+  latitude: number;
+  longitude: number;
+  rating: number;
+  photoUrl?: string;
+  menuImageUrl?: string | null;
+  menuId?: string;
+}
+
+// (Used in FindRestaurantsAndMenus.tsx and nearby-restaurants/route.ts)
 export interface CachedRestaurant {
   id: string;
   name: string;
@@ -39,14 +102,77 @@ export interface CachedRestaurant {
   county: string;
   source: 'google' | 'yelp';
   hasMenu: boolean;
-  imageUrl: string; // This must be required, not optional
+  imageUrl: string;
   yelpId?: string;
   hasYelpData?: boolean;
   hasGoogleData?: boolean;
 }
 
+// ======= Menu Related Interfaces =======
+// (Used in VertexAiResultsDisplay.tsx and MenuDataDisplay.tsx)
+export interface MenuItemName {
+  original: string;
+  pinyin: string;
+  english: string;
+}
 
-interface MenuDetails {
+export interface MenuItemDescription {
+  original: string;
+  english: string;
+}
+
+export interface MenuItemPrice {
+  amount: number;
+  currency: string;
+}
+
+export interface MenuUpgrade {
+  name: string;
+  price: string;
+}
+
+// (Used in VertexAiResultsDisplay.tsx, MenuDataDisplay.tsx, and vertex-ai/route.ts)
+export interface MenuItem {
+  name: MenuItemName;
+  description: MenuItemDescription | null;
+  price?: MenuItemPrice;
+  prices?: { [key: string]: string };
+  image_url?: string;
+  dietary_info?: string[];
+  sizes?: { [key: string]: string };
+  popular: boolean;
+  chef_recommended: boolean;
+  spice_level: string;
+  allergy_alert: string;
+  upgrades: MenuUpgrade[];
+  notes: string;
+}
+
+export interface MenuCategory {
+  name: MenuItemName;
+  items: MenuItem[];
+}
+
+// (Used in VertexAiResultsDisplay.tsx and vertex-ai/route.ts)
+export interface RestaurantInfo {
+  name: { original: string; english: string } | string;
+  address: { original: string; english: string } | string;
+  operating_hours: string;
+  phone_number: string;
+  website: string;
+  social_media: string;
+  description: { original: string; english: string } | string;
+  additional_notes: string;
+}
+
+export interface MenuData {
+  restaurant_info: RestaurantInfo;
+  categories: MenuCategory[];
+  other_info: string;
+}
+
+// (Used across multiple components including VertexAiResultsDisplay.tsx and process-menu-image/route.ts)
+export interface MenuDetails {
   id: string;
   imageUrl: string;
   userId: string;
@@ -54,66 +180,68 @@ interface MenuDetails {
   restaurantName: string;
   location?: string;
   timestamp: string;
-  menuData: {
-    restaurant_info: {
-      name: { original: string; english: string };
-      address: { original: string; english: string };
-      operating_hours: string;
-      phone_number: string;
-      website: string;
-      social_media: string;
-      description: { original: string; english: string };
-      additional_notes: string;
-    };
-    categories: Array<{
-      name: { original: string; english: string; pinyin: string };
-      items: Array<{
-        name: { original: string; english: string; pinyin: string };
-        price: { amount: number; currency: string };
-        description: { original: string; english: string };
-        image_url: string;
-        dietary_info: string[];
-        sizes: { [key: string]: string };
-        popular: boolean;
-        chef_recommended: boolean;
-        spice_level: string;
-        allergy_alert: string;
-        upgrades: Array<{ name: string; price: string }>;
-        notes: string;
-      }>;
-    }>;
-    other_info: string;
-  };
+  menuData: MenuData;
 }
 
-interface SearchResult {
+// (Used in RestaurantPage.tsx and firestore.ts)
+export interface MenuSummary {
+  id: string;
+  menuName: string;
+  imageUrl?: string;
+  timestamp: Date; // TODO: Change to string or Date
+}
+
+// ======= Yelp Related Interfaces =======
+// (Used in yelpService.ts and nearby-restaurants/route.ts)
+export interface YelpBusiness {
+  id: string;
+  name: string;
+  photos: string[];
+  rating: number;
+  display_phone?: string;
+  url?: string;
+  price_level?: string;
+  hours?: Array<{
+    hours_type: string;
+    open: Array<{
+      day: number;
+      start: string;
+      end: string;
+    }>;
+  }>;
+  location: {
+    address1: string;
+    city: string;
+    state: string;
+    country: string;
+    zip_code: string;
+  };
+  coordinates: Location;
+  categories: Array<{
+    alias: string;
+    title: string;
+  }>;
+}
+
+// ======= Search and History Related Interfaces =======
+// (Used in firestore.ts and search components)
+export interface SearchResult {
   id: string;
   restaurantName: string;
   location: string;
 }
 
-interface MenuSummary {
+// (Used in VertexAiResultsDisplay.tsx)
+export interface HistoryItem {
   id: string;
   menuName: string;
-  timestamp: any;
+  timestamp: string;
 }
 
-interface RestaurantDocument {
-  id: string;
-  name: string;
-  address: string;
-  rating: number;
-  timestamp: string;
-  yelpId?: string;
-  yelpLastUpdated?: string;
-  menuSource?: 'yelp' | 'google' | 'user';
-  imageUrl?: string;
-  location?: {
-    latitude: number;
-    longitude: number;
-  };
-  county?: string;
-}
+// ======= Type Aliases =======
+// (Used for backward compatibility)
+export type Menu = MenuDetails;
+export type LatLngLiteral = Location
 
 const RESTAURANT_DETAILS_COLLECTION = "restaurantDetails";
 

@@ -2,6 +2,34 @@
 import { Storage } from "@google-cloud/storage";
 import { DocumentProcessorServiceClient } from "@google-cloud/documentai";
 
+async function setupBucket(bucket: any) {
+  try {
+    // Make bucket publicly readable
+    await bucket.iam.updatePolicy({
+      bindings: [
+        {
+          role: 'roles/storage.objectViewer',
+          members: ['allUsers'],
+        },
+      ],
+    });
+
+    // Set CORS policy
+    await bucket.setCorsConfiguration([
+      {
+        maxAgeSeconds: 3600,
+        method: ['GET', 'HEAD'],
+        origin: ['*'],
+        responseHeader: ['Content-Type'],
+      },
+    ]);
+
+    console.log(`Successfully configured bucket ${bucket.name}`);
+  } catch (error) {
+    console.error(`Error configuring bucket ${bucket.name}:`, error);
+  }
+}
+
 const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID;
 const keyFilename = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 const primaryRegion = "asia-east1";
@@ -134,6 +162,12 @@ async function testBucketAccess() {
 // Initialize buckets and test access
 (async () => {
   try {
+    await Promise.all([
+      setupBucket(restaurantImagesBucket),
+      setupBucket(originalMenuBucket),
+      setupBucket(processedMenuBucket),
+      setupBucket(yelpMenuBucket),
+    ]);
     await setupReplication();
     await testBucketAccess();
   } catch (error) {

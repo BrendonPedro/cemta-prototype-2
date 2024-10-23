@@ -1,5 +1,3 @@
-// components/ui/carousel.tsx
-
 "use client";
 
 import * as React from "react";
@@ -62,6 +60,7 @@ const Carousel = React.forwardRef<
       },
       plugins
     );
+
     const [canScrollPrev, setCanScrollPrev] = React.useState(false);
     const [canScrollNext, setCanScrollNext] = React.useState(false);
 
@@ -100,7 +99,7 @@ const Carousel = React.forwardRef<
       };
     }, [api, onSelect]);
 
-    // Scaling effect using public API methods
+    // Enhanced scaling effect
     React.useEffect(() => {
       if (!api) return;
 
@@ -108,21 +107,35 @@ const Carousel = React.forwardRef<
 
       const scaleSlides = () => {
         const scrollProgress = api.scrollProgress();
+        const center =
+          api.scrollSnapList()[Math.floor(api.scrollSnapList().length / 2)];
 
         slides.forEach((slide, index) => {
           const slidePosition = api.scrollSnapList()[index];
           const distance = Math.abs(scrollProgress - slidePosition);
-          const scale = Math.max(0.85, 1 - distance * 0.3);
+
+          // Enhanced scaling effect with stronger center emphasis
+          const scale = Math.max(0.75, 1 - distance * 0.5);
+          const opacity = Math.max(0.5, 1 - distance * 0.5);
+          const zIndex = 1000 - Math.round(distance * 1000);
+
+          // Apply transformations
           slide.style.transform = `scale(${scale})`;
-          slide.style.zIndex = `${1000 - Math.round(distance * 1000)}`;
+          slide.style.opacity = `${opacity}`;
+          slide.style.zIndex = `${zIndex}`;
+
+          // Add transition for smooth scaling
+          slide.style.transition = "all 0.3s ease-out";
         });
       };
 
       api.on("scroll", scaleSlides);
+      api.on("select", scaleSlides);
       scaleSlides();
 
       return () => {
         api.off("scroll", scaleSlides);
+        api.off("select", scaleSlides);
       };
     }, [api]);
 
@@ -163,11 +176,7 @@ const CarouselContent = React.forwardRef<
 
   return (
     <div ref={carouselRef} className="overflow-hidden">
-      <div
-        ref={ref}
-        className={cn("flex -mx-2", className)} // Adjust negative margin
-        {...props}
-      />
+      <div ref={ref} className={cn("flex -mx-4 py-4", className)} {...props} />
     </div>
   );
 });
@@ -183,9 +192,9 @@ const CarouselItem = React.forwardRef<
       role="group"
       aria-roledescription="slide"
       className={cn(
-        "relative flex-shrink-0 px-2",
-        // Responsive widths
+        "relative flex-shrink-0 px-4",
         "flex-[0_0_80%] sm:flex-[0_0_60%] md:flex-[0_0_40%] lg:flex-[0_0_33.333%]",
+        "transition-all duration-300 ease-out",
         className
       )}
       {...props}

@@ -1,28 +1,7 @@
 // app/services/yelpService.ts
 
 import axios from 'axios';
-
-interface YelpBusiness {
-  id: string;
-  name: string;
-  photos: string[];
-  rating: number;
-  location: {
-    address1: string;
-    city: string;
-    state: string;
-    country: string;
-    zip_code: string;
-  };
-  coordinates: {
-    latitude: number;
-    longitude: number;
-  };
-  categories: {
-    alias: string;
-    title: string;
-  }[];
-}
+import { YelpBusiness } from './firebaseFirestore';
 
 export async function fetchYelpBusinessDirectly(
   name: string,
