@@ -58,6 +58,36 @@ async function setupBucket(bucket: Bucket, config: BucketConfig) {
   }
 }
 
+async function setupBucketWithRetry(bucket: Bucket, config: BucketConfig, maxRetries = 3): Promise<boolean> {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const [exists] = await bucket.exists();
+      if (!exists) {
+        console.error(`Bucket ${bucket.name} does not exist`);
+        return false;
+      }
+
+      await Promise.all([
+        config.isPublic && makeBucketPublic(bucket),
+        config.enableCors && bucket.setMetadata({ cors: CORS_CONFIG }),
+        bucket.addLifecycleRule(LIFECYCLE_RULE),
+      ]);
+
+      console.log(`Successfully configured bucket ${bucket.name}`);
+      return true;
+    } catch (error) {
+      console.error(`Attempt ${attempt} failed for bucket ${bucket.name}:`, error);
+      if (attempt === maxRetries) {
+        console.error(`Failed to initialize ${bucket.name} after ${maxRetries} attempts`);
+        return false;
+      }
+      // Exponential backoff
+      await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+    }
+  }
+  return false;
+}
+
 // Function to make bucket public using IAM policy
 async function makeBucketPublic(bucket: Bucket) {
   try {
@@ -188,4 +218,5 @@ export {
   processedMenuBucket,
   restaurantImagesBucket,
   yelpMenuBucket,
+  setupBucketWithRetry
 };

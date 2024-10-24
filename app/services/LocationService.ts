@@ -25,13 +25,17 @@ interface RequestCache {
   promise: Promise<any>;
 }
 
-const requestCache = new Map<string, RequestCache>();
 const CACHE_WINDOW = 2000; // 2 seconds
 
 // Add this helper function
+const CACHE_KEY_PRECISION = 6; // Adjust precision for nearby locations
+
+
 function getCacheKey(lat: number, lng: number): string {
-  // Round to 6 decimal places to avoid floating point precision issues
-  return `${lat.toFixed(6)},${lng.toFixed(6)}`;
+  // Round coordinates to reduce slight variations
+  const roundedLat = Number(lat.toFixed(CACHE_KEY_PRECISION));
+  const roundedLng = Number(lng.toFixed(CACHE_KEY_PRECISION));
+  return `${roundedLat},${roundedLng}`;
 }
 
 interface APIMetricsLog {
@@ -478,85 +482,104 @@ const processedImages = await processImagesInBatches(imageProcessingQueue);
   });
 }
 
+// Add logging to track cache hits/misses
+const requestCache = new Map<string, RequestCache>();
+
+let isProcessing = false;
 
 // Main export function
-export async function getLocationData(
-  lat: number,
-  lng: number,
-  apiKey: string
-) {
+export async function getLocationData(lat: number, lng: number, apiKey: string) {
   const cacheKey = getCacheKey(lat, lng);
   const now = Date.now();
   const cached = requestCache.get(cacheKey);
 
-  // If we have a cached request that's still fresh, return it
   if (cached && (now - cached.timestamp) < CACHE_WINDOW) {
+    console.log(`Request cache HIT for key: ${cacheKey}`);
     return cached.promise;
   }
 
+  console.log(`Request cache MISS for key: ${cacheKey}`);
+  
   // Create the new request
   const promise = (async () => {
-    const startTime = Date.now();
-    const gridKey = calculateGridKey(lat, lng);
-    const apiCallCount = { count: 0 };
-
-    const cachedData = await getCachedLocation(lat, lng);
-    if (cachedData) {
-      createAPILog(
-        gridKey,
-        true,
-        startTime,
-        { places: 0, geocoding: 0, photos: 0, yelp: 0 },
-        {
-          total: cachedData.restaurants.length,
-          fromCache: cachedData.restaurants.length,
-          withGooglePhotos: cachedData.restaurants.filter(r => r.hasGoogleData).length,
-          withYelpData: cachedData.restaurants.filter(r => r.hasYelpData).length
-        }
-      );
-      return { ...cachedData, cached: true, apiCallCount: 0 };
+    // Add a processing lock
+    if (isProcessing) {
+      console.log('Another request is already processing, waiting...');
+      await new Promise(resolve => setTimeout(resolve, 100));
     }
+    isProcessing = true;
 
-    const [county, restaurants] = await Promise.all([
-      getCountyName(lat, lng, apiKey, apiCallCount),
-      getNearbyRestaurants(lat, lng, apiKey, apiCallCount),
-    ]);
+    try {
+      const startTime = Date.now();
+      const gridKey = calculateGridKey(lat, lng);
+      const apiCallCount = { count: 0 };
+      let loggedMetrics = false;
 
-    const locationData: LocationCache = {
-      gridKey,
-      timestamp: Timestamp.now(),
-      geohash: gridKey,
-      county,
-      restaurants,
-      lastUpdated: {
-        county: Timestamp.now(),
-        restaurants: Timestamp.now(),
-        images: Timestamp.now(),
-      },
-      cached: false,
-    };
-
-    await setDoc(doc(db, 'locationCache', gridKey), locationData);
-
-    createAPILog(
-      gridKey,
-      false,
-      startTime,
-      {
-        places: 1,
-        geocoding: apiCallCount.count - 1,
-        photos: restaurants.filter(r => r.hasGoogleData).length,
-        yelp: restaurants.filter(r => r.hasYelpData).length
-      },
-      {
-        total: restaurants.length,
-        fromCache: 0,
-        withGooglePhotos: restaurants.filter(r => r.hasGoogleData).length,
-        withYelpData: restaurants.filter(r => r.hasYelpData).length
+      const cachedData = await getCachedLocation(lat, lng);
+      if (cachedData) {
+        createAPILog(
+          gridKey,
+          true,
+          startTime,
+          { places: 0, geocoding: 0, photos: 0, yelp: 0 },
+          {
+            total: cachedData.restaurants.length,
+            fromCache: cachedData.restaurants.length,
+            withGooglePhotos: cachedData.restaurants.filter(r => r.hasGoogleData).length,
+            withYelpData: cachedData.restaurants.filter(r => r.hasYelpData).length
+          }
+        );
+        return { ...cachedData, cached: true, apiCallCount: 0 };
       }
-    );
 
-    return { ...locationData, apiCallCount: apiCallCount.count };
+      const [county, restaurants] = await Promise.all([
+        getCountyName(lat, lng, apiKey, apiCallCount),
+        getNearbyRestaurants(lat, lng, apiKey, apiCallCount)
+      ]);
+
+      // Only log metrics once
+      if (!loggedMetrics) {
+        createAPILog(
+          gridKey,
+          false,
+          startTime,
+          {
+            places: 1,
+            geocoding: apiCallCount.count - 1,
+            photos: restaurants.filter(r => r.hasGoogleData).length,
+            yelp: restaurants.filter(r => r.hasYelpData).length
+          },
+          {
+            total: restaurants.length,
+            fromCache: 0,
+            withGooglePhotos: restaurants.filter(r => r.hasGoogleData).length,
+            withYelpData: restaurants.filter(r => r.hasYelpData).length
+          }
+        );
+        loggedMetrics = true;
+      }
+
+      const locationData = {
+        gridKey,
+        timestamp: Timestamp.now(),
+        geohash: gridKey,
+        county,
+        restaurants,
+        lastUpdated: {
+          county: Timestamp.now(),
+          restaurants: Timestamp.now(),
+          images: Timestamp.now(),
+        },
+        cached: false,
+      };
+
+      // Save to Firebase cache
+      await setDoc(doc(db, 'locationCache', gridKey), locationData);
+
+      return { ...locationData, apiCallCount: apiCallCount.count };
+    } finally {
+      isProcessing = false;
+    }
   })();
 
   // Cache the promise

@@ -564,50 +564,60 @@ function getLocationCacheKey(lat: number, lng: number): string {
   return geohash.encode(lat, lng, 5);
 }
 
+export const CACHE_CONSTANTS = {
+  COLLECTION_NAME: 'locationCaches',
+  DURATION: 60 * 24 * 60 * 60 * 1000, // 60 days
+  GEOHASH_PRECISION: 5
+};
+
 export async function getCachedRestaurantsForLocation(
   lat: number,
   lng: number,
 ): Promise<CachedRestaurant[] | null> {
   const locationKey = getLocationCacheKey(lat, lng);
-  const cacheRef = doc(db, "locationCaches", locationKey);
+  const cacheRef = doc(db, CACHE_CONSTANTS.COLLECTION_NAME, locationKey);
   const docSnap = await getDoc(cacheRef);
 
   if (docSnap.exists()) {
     const data = docSnap.data();
     const cacheTime = data.cachedAt?.toMillis() || 0;
-    const CACHE_DURATION = 60 * 24 * 60 * 60 * 1000; // 60 days in milliseconds
 
     const restaurants = data.restaurants as CachedRestaurant[];
 
-    // Check if 'county' is present in the first restaurant (assuming all have it if one does)
+    // Check if 'county' is present in the first restaurant
     if (restaurants.length > 0 && !restaurants[0].county) {
       console.log("Cached data missing 'county' field. Fetching new data.");
       return null;
     }
 
-    if (Date.now() - cacheTime < CACHE_DURATION) {
+    if (Date.now() - cacheTime < CACHE_CONSTANTS.DURATION) {
+      console.log(`Cache HIT in Firestore for location key: ${locationKey}`);
       return restaurants;
     } else {
-      console.log("Cached data expired. Fetching new data.");
+      console.log(`Cache EXPIRED in Firestore for location key: ${locationKey}`);
     }
   } else {
-    console.log("No cached data for this location.");
+    console.log(`Cache MISS in Firestore for location key: ${locationKey}`);
   }
   return null;
 }
 
-
+// Update saveCachedRestaurantsForLocation
 export async function saveCachedRestaurantsForLocation(
   lat: number,
   lng: number,
   restaurants: CachedRestaurant[],
 ): Promise<void> {
   const locationKey = getLocationCacheKey(lat, lng);
-  const cacheRef = doc(db, "locationCaches", locationKey);
+  const cacheRef = doc(db, CACHE_CONSTANTS.COLLECTION_NAME, locationKey);
 
+  console.log(`Saving cache to Firestore for location key: ${locationKey}`);
+  
   await setDoc(cacheRef, {
     restaurants,
     cachedAt: new Date(),
+    lastUpdated: new Date(),
+    geohash: locationKey,
   });
 }
 
