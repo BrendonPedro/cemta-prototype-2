@@ -33,8 +33,7 @@ import {
   CarouselPrevious,
 } from "@/components/ui/carousel";
 import {
-  searchYelpBusiness,
-  getYelpBusinessPhotos,
+  getYelpBusinessWithPhotos
 } from "@/app/services/yelpService";
 
 interface RestaurantPageProps {
@@ -67,7 +66,7 @@ const RestaurantPage: React.FC<RestaurantPageProps> = ({ restaurantId }) => {
          // Fetch Yelp data if available
          let yelpData: YelpBusiness | null = null;
          if (restaurantDetails.yelpId && restaurantDetails.location) {
-           yelpData = await searchYelpBusiness(
+           yelpData = await getYelpBusinessWithPhotos(
              restaurantDetails.name,
              restaurantDetails.location.latitude,
              restaurantDetails.location.longitude

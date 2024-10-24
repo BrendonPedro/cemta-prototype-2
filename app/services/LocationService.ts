@@ -19,22 +19,16 @@ import axios from 'axios';
 import geohash from "ngeohash";
 import { createOrUpdateRestaurant } from "./firebaseFirestore";
 import { measureAPICall, checkRateLimit } from '@/app/utils/apiUtils';
+import { saveCachedRestaurantsForLocation, getCachedRestaurantsForLocation } from "./firebaseFirestore";
 
 interface RequestCache {
   timestamp: number;
   promise: Promise<any>;
 }
 
-const CACHE_WINDOW = 2000; // 2 seconds
-
-// Add this helper function
-const CACHE_KEY_PRECISION = 6; // Adjust precision for nearby locations
-
-
 function getCacheKey(lat: number, lng: number): string {
-  // Round coordinates to reduce slight variations
-  const roundedLat = Number(lat.toFixed(CACHE_KEY_PRECISION));
-  const roundedLng = Number(lng.toFixed(CACHE_KEY_PRECISION));
+  const roundedLat = Number(lat.toFixed(CACHE_CONFIG.MEMORY.PRECISION));
+  const roundedLng = Number(lng.toFixed(CACHE_CONFIG.MEMORY.PRECISION));
   return `${roundedLat},${roundedLng}`;
 }
 
@@ -59,17 +53,6 @@ interface APIMetricsLog {
   };
   duration: number;
 }
-
-const CACHE_STRATEGIES = {
-  LOCATION: {
-    DURATION: 60 * 24 * 60 * 60 * 1000, // 60 days for location data
-    PRECISION: 6 // geohash precision
-  },
-  IMAGES: {
-    DURATION: 90 * 24 * 60 * 60 * 1000, // 90 days for images
-    MAX_SIZE: 1000 // maximum number of cached images
-  }
-};
 
 // function to handle logging
 function createAPILog(
@@ -148,18 +131,6 @@ interface LocationCache {
   cached?: boolean;
 }
 
-// Add these constant configurations at the top of your file
-const API_CONFIGS = {
-  PLACES_API: {
-    RATE_LIMIT: 500,
-    INTERVAL: 60000, // 1 minute
-    BATCH_SIZE: 10
-  },
-  IMAGES: {
-    MAX_CONCURRENT: 5,
-    MAX_RETRIES: 3
-  }
-};
 
 // Add this helper function for image processing
 async function processImagesInBatches(
@@ -167,19 +138,18 @@ async function processImagesInBatches(
 ): Promise<Map<string, string>> {
   const results = new Map<string, string>();
   
-  // Process images in smaller batches to avoid overwhelming the server
-  for (let i = 0; i < images.length; i += API_CONFIGS.IMAGES.MAX_CONCURRENT) {
-    const batch = images.slice(i, i + API_CONFIGS.IMAGES.MAX_CONCURRENT);
+  for (let i = 0; i < images.length; i += CACHE_CONFIG.IMAGES.MAX_CONCURRENT) {
+    const batch = images.slice(i, i + CACHE_CONFIG.IMAGES.MAX_CONCURRENT);
     const batchResults = await Promise.all(
       batch.map(async ({ url, restaurantId, source }) => {
         let retries = 0;
-        while (retries < API_CONFIGS.IMAGES.MAX_RETRIES) {
+        while (retries < CACHE_CONFIG.IMAGES.MAX_RETRIES) {
           try {
             const savedUrl = await saveRestaurantImage(url, restaurantId, source);
             return { restaurantId, url: savedUrl };
           } catch (error) {
             retries++;
-            if (retries === API_CONFIGS.IMAGES.MAX_RETRIES) {
+            if (retries === CACHE_CONFIG.IMAGES.MAX_RETRIES) {
               console.error(`Failed to save image after ${retries} attempts:`, error);
               return { restaurantId, url }; // Return original URL on failure
             }
@@ -199,55 +169,31 @@ async function processImagesInBatches(
   return results;
 }
 
-// Constants
-const CACHE_DURATION = 60 * 24 * 60 * 60 * 1000; // 60 days
-const GRID_SIZE = 0.02; // ~2km grid
-const GEOHASH_PRECISION = 6;
+// cache constants 
+const CACHE_CONFIG = {
+  MEMORY: {
+    WINDOW: 5000, // 5 seconds for memory cache
+    PRECISION: 6  // Coordinate precision for cache keys
+  },
+  LOCATION: {
+    DURATION: 60 * 24 * 60 * 60 * 1000, // 60 days for location data
+    PRECISION: 6  // geohash precision
+  },
+  IMAGES: {
+    DURATION: 90 * 24 * 60 * 60 * 1000, // 90 days for images
+    MAX_CONCURRENT: 5,
+    MAX_RETRIES: 3
+  },
+  API: {
+    PLACES_RATE_LIMIT: 500,
+    PLACES_INTERVAL: 60000, // 1 minute
+    BATCH_SIZE: 10
+  }
+};
 
 // Cache functions
 function calculateGridKey(lat: number, lng: number): string {
-  return geohash.encode(lat, lng, GEOHASH_PRECISION);
-}
-
-async function getCachedLocation(lat: number, lng: number): Promise<LocationCache | null> {
-  const gridKey = calculateGridKey(lat, lng);
-  const cacheRef = doc(db, 'locationCache', gridKey);
-  const cacheDoc = await getDoc(cacheRef);
-
-  if (cacheDoc.exists()) {
-    const data = cacheDoc.data() as LocationCache;
-    const dataTimestampMillis = getMillisFromTimestamp(data.timestamp);
-
-    if (Date.now() - dataTimestampMillis < CACHE_DURATION) {
-      await updateCacheMetrics(gridKey, 'hit');
-      return data;
-    }
-  }
-
-  await updateCacheMetrics(gridKey, 'miss');
-  return null;
-}
-
-function getMillisFromTimestamp(timestamp: any): number {
-  if (timestamp instanceof Timestamp) {
-    return timestamp.toMillis();
-  } else if (typeof timestamp === 'object' && timestamp.seconds !== undefined && timestamp.nanoseconds !== undefined) {
-    const ts = new Timestamp(timestamp.seconds, timestamp.nanoseconds);
-    return ts.toMillis();
-  } else if (typeof timestamp === 'number') {
-    return timestamp;
-  } else {
-    console.error('Invalid timestamp format:', timestamp);
-    throw new Error('Invalid timestamp format');
-  }
-}
-
-async function updateCacheMetrics(gridKey: string, type: 'hit' | 'miss'): Promise<void> {
-  const metricsRef = doc(db, 'cacheMetrics', gridKey);
-  await setDoc(metricsRef, {
-    [type]: increment(1),
-    lastAccess: Timestamp.now(),
-  }, { merge: true });
+  return geohash.encode(lat, lng, CACHE_CONFIG.LOCATION.PRECISION);
 }
 
 // Image handling
@@ -309,7 +255,7 @@ export async function getNearbyRestaurants(
   lng: number,
   apiKey: string,
   apiCallCount: { count: number }
-): Promise<CachedRestaurant[]> {
+): Promise<{ restaurants: CachedRestaurant[]; metrics: any }> {
   const startTime = Date.now();
   const metrics = {
     googlePhotos: 0,
@@ -318,9 +264,9 @@ export async function getNearbyRestaurants(
     restaurantsWithYelp: 0
   };
   // Check rate limit
-  if (!checkRateLimit('google-places', 500, 60000)) {
-    throw new Error('Rate limit exceeded for Google Places API');
-  }
+if (!checkRateLimit('google-places', CACHE_CONFIG.API.PLACES_RATE_LIMIT, CACHE_CONFIG.API.PLACES_INTERVAL)) {
+  throw new Error('Rate limit exceeded for Google Places API');
+}
 
   return await measureAPICall('google-places', async () => {
     const client = new Client({});
@@ -370,8 +316,8 @@ const processedImages = await processImagesInBatches(imageProcessingQueue);
 
     // Process restaurants in batches of 10 for better performance
     const restaurants: CachedRestaurant[] = [];
-    for (let i = 0; i < validPlaces.length; i += 10) {
-      const batch = validPlaces.slice(i, i + 10);
+ for (let i = 0; i < validPlaces.length; i += CACHE_CONFIG.API.BATCH_SIZE) {
+  const batch = validPlaces.slice(i, i + CACHE_CONFIG.API.BATCH_SIZE);
       const batchResults = await Promise.all(
         batch.map(async (place) => {
           if (!place.place_id || !place.name || !place.geometry?.location) {
@@ -460,140 +406,154 @@ const processedImages = await processImagesInBatches(imageProcessingQueue);
       restaurants.push(...validResults);
     }
     
-     createAPILog(
-    calculateGridKey(lat, lng),
-    false,
-    startTime,
-    {
+    return {
+    restaurants,
+    metrics: {
       places: 1,
       geocoding: apiCallCount.count - 1,
       photos: metrics.googlePhotos,
-      yelp: metrics.yelpCalls
-    },
-    {
-      total: restaurants.length,
-      fromCache: 0,
+      yelp: metrics.yelpCalls,
       withGooglePhotos: metrics.restaurantsWithPhotos,
       withYelpData: metrics.restaurantsWithYelp
     }
-  );
+  };
+});
+  }
 
-  return restaurants;
-  });
-}
-
-// Add logging to track cache hits/misses
-const requestCache = new Map<string, RequestCache>();
-
-let isProcessing = false;
+// Track ongoing requests by location
+const activeRequests = new Map<string, {
+  promise: Promise<any>;
+  timestamp: number;
+}>();
 
 // Main export function
 export async function getLocationData(lat: number, lng: number, apiKey: string) {
   const cacheKey = getCacheKey(lat, lng);
   const now = Date.now();
-  const cached = requestCache.get(cacheKey);
 
-  if (cached && (now - cached.timestamp) < CACHE_WINDOW) {
-    console.log(`Request cache HIT for key: ${cacheKey}`);
-    return cached.promise;
+  // Check if there's an active request for this location
+  const activeRequest = activeRequests.get(cacheKey);
+  if (activeRequest && (now - activeRequest.timestamp < 5000)) { // 5 second window
+    console.log(`Active request found for key: ${cacheKey}`);
+    return activeRequest.promise;
   }
 
-  console.log(`Request cache MISS for key: ${cacheKey}`);
+  console.log(`Starting new request for key: ${cacheKey}`);
   
-  // Create the new request
-  const promise = (async () => {
-    // Add a processing lock
-    if (isProcessing) {
-      console.log('Another request is already processing, waiting...');
-      await new Promise(resolve => setTimeout(resolve, 100));
-    }
-    isProcessing = true;
+const promise = (async () => {
+  const startTime = Date.now();
+  const requestMetrics = {
+    apiCalls: {
+      places: 0,
+      geocoding: 0,
+      photos: 0,
+      yelp: 0
+    },
+    logged: false
+  };
 
-    try {
-      const startTime = Date.now();
-      const gridKey = calculateGridKey(lat, lng);
-      const apiCallCount = { count: 0 };
-      let loggedMetrics = false;
+ try {
+    // Check cache first
+    const cachedRestaurants = await getCachedRestaurantsForLocation(lat, lng);
+    if (cachedRestaurants) {
+      const locationData = {
+          gridKey: calculateGridKey(lat, lng),
+          timestamp: now,
+          geohash: calculateGridKey(lat, lng),
+          county: cachedRestaurants[0]?.county || 'Unknown County',
+          restaurants: cachedRestaurants,
+          lastUpdated: {
+            county: now,
+            restaurants: now,
+            images: now,
+          },
+          cached: true,
+        };
 
-      const cachedData = await getCachedLocation(lat, lng);
-      if (cachedData) {
+    if (!requestMetrics.logged) {
         createAPILog(
-          gridKey,
+          locationData.gridKey,
           true,
           startTime,
           { places: 0, geocoding: 0, photos: 0, yelp: 0 },
           {
-            total: cachedData.restaurants.length,
-            fromCache: cachedData.restaurants.length,
-            withGooglePhotos: cachedData.restaurants.filter(r => r.hasGoogleData).length,
-            withYelpData: cachedData.restaurants.filter(r => r.hasYelpData).length
+            total: cachedRestaurants.length,
+            fromCache: cachedRestaurants.length,
+            withGooglePhotos: cachedRestaurants.filter(r => r.hasGoogleData).length,
+            withYelpData: cachedRestaurants.filter(r => r.hasYelpData).length
           }
         );
-        return { ...cachedData, cached: true, apiCallCount: 0 };
+        requestMetrics.logged = true;
       }
 
-      const [county, restaurants] = await Promise.all([
-        getCountyName(lat, lng, apiKey, apiCallCount),
-        getNearbyRestaurants(lat, lng, apiKey, apiCallCount)
-      ]);
+      return { ...locationData, apiCallCount: 0 };
+    }
 
-      // Only log metrics once
-      if (!loggedMetrics) {
-        createAPILog(
-          gridKey,
-          false,
-          startTime,
-          {
-            places: 1,
-            geocoding: apiCallCount.count - 1,
-            photos: restaurants.filter(r => r.hasGoogleData).length,
-            yelp: restaurants.filter(r => r.hasYelpData).length
-          },
-          {
-            total: restaurants.length,
-            fromCache: 0,
-            withGooglePhotos: restaurants.filter(r => r.hasGoogleData).length,
-            withYelpData: restaurants.filter(r => r.hasYelpData).length
-          }
-        );
-        loggedMetrics = true;
-      }
+ 
+    // Fetch new data
+    const apiCallCount = { count: 0 };
+    const [county, restaurantsResult] = await Promise.all([
+      getCountyName(lat, lng, apiKey, apiCallCount),
+      getNearbyRestaurants(lat, lng, apiKey, apiCallCount)
+    ]);
 
-      const locationData = {
-        gridKey,
-        timestamp: Timestamp.now(),
-        geohash: gridKey,
-        county,
-        restaurants,
-        lastUpdated: {
-          county: Timestamp.now(),
-          restaurants: Timestamp.now(),
-          images: Timestamp.now(),
+    const { restaurants, metrics: restaurantMetrics } = restaurantsResult;  // Rename to restaurantMetrics
+
+    // Save to cache
+    await saveCachedRestaurantsForLocation(lat, lng, restaurants);
+
+    const locationData = {
+      gridKey: calculateGridKey(lat, lng),
+      timestamp: now,
+      geohash: calculateGridKey(lat, lng),
+      county,
+      restaurants,
+      lastUpdated: {
+        county: now,
+        restaurants: now,
+        images: now,
+      },
+      cached: false
+    };
+
+    // Single API log for new data
+    if (!requestMetrics.logged) {
+      createAPILog(
+        locationData.gridKey,
+        false,
+        startTime,
+        {
+          places: restaurantMetrics.places,
+          geocoding: restaurantMetrics.geocoding,
+          photos: restaurantMetrics.photos,
+          yelp: restaurantMetrics.yelp
         },
-        cached: false,
-      };
-
-      // Save to Firebase cache
-      await setDoc(doc(db, 'locationCache', gridKey), locationData);
+        {
+          total: restaurants.length,
+          fromCache: 0,
+          withGooglePhotos: restaurantMetrics.withGooglePhotos,
+          withYelpData: restaurantMetrics.withYelpData
+        }
+      );
+      requestMetrics.logged = true;
+    }
 
       return { ...locationData, apiCallCount: apiCallCount.count };
     } finally {
-      isProcessing = false;
+      // Clean up the active request after completion
+      setTimeout(() => {
+        if (activeRequests.get(cacheKey)?.timestamp === now) {
+          activeRequests.delete(cacheKey);
+        }
+      }, 5000);
     }
   })();
 
-  // Cache the promise
-  requestCache.set(cacheKey, {
-    timestamp: now,
-    promise
+  // Store the active request
+  activeRequests.set(cacheKey, {
+    promise,
+    timestamp: now
   });
-
-  // Clean up old cache entries
-  for (const [key, value] of requestCache.entries()) {
-    if (now - value.timestamp > CACHE_WINDOW) {
-      requestCache.delete(key);
-    }
-  }
 
   return promise;
 }
