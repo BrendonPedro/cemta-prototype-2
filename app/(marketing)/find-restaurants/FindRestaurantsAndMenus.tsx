@@ -49,7 +49,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { searchYelpBusiness, getYelpBusinessPhotos } from '@/app/services/yelpService';
+import { getYelpBusinessWithPhotos } from "@/app/services/yelpService";
 import { MenuWarningDialog } from "@/components/ui/menu-warning-dialog";
 import axios from "axios";
 import {
@@ -103,6 +103,23 @@ const taiwanCounties = [
   "Kinmen County",
   "Lienchiang County",
 ];
+
+const useDebouncedCallback = (callback: Function, delay: number) => {
+  const timeoutRef = React.useRef<NodeJS.Timeout>();
+
+  return React.useCallback(
+    (...args: any[]) => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+      }
+
+      timeoutRef.current = setTimeout(() => {
+        callback(...args);
+      }, delay);
+    },
+    [callback, delay]
+  );
+};
 
 const determineCounty = (countyName: string): string => {
   if (taiwanCounties.includes(countyName)) {
@@ -223,60 +240,64 @@ const [center, setCenter] = useState<LatLngLiteral>({
     }
   };
 
-  const fetchNearbyRestaurants = useCallback(
-    async (lat: number, lng: number) => {
-      if (!userId) return;
+ const fetchNearbyRestaurants = useCallback(
+   async (lat: number, lng: number) => {
+     if (!userId) return;
 
-      setIsLoading(true);
-      setIsRefreshing(true);
-      setError(null);
+     setIsLoading(true);
+     setIsRefreshing(true);
+     setError(null);
 
-      try {
-        const response = await fetch(
-          `/api/nearby-restaurants?lat=${lat}&lng=${lng}&limit=20`
-        );
+     try {
+       const response = await fetch(
+         `/api/nearby-restaurants?lat=${lat}&lng=${lng}&limit=20`
+       );
 
-        if (!response.ok) {
-          throw new Error("Failed to fetch restaurants");
-        }
+       if (!response.ok) {
+         throw new Error("Failed to fetch restaurants");
+       }
 
-        const data = await response.json();
+       const data = await response.json();
 
-        if (data.error) {
-          throw new Error(data.error);
-        }
+       if (data.error) {
+         throw new Error(data.error);
+       }
 
-        const restaurants = data.restaurants.map((r: CachedRestaurant) => ({
-          id: r.id,
-          name: r.name,
-          address: r.address,
-          latitude: r.latitude,
-          longitude: r.longitude,
-          rating: r.rating,
-          menuCount: r.menuCount,
-          county: r.county,
-          photoUrl: r.imageUrl,
-        }));
+       const restaurants = data.restaurants.map((r: CachedRestaurant) => ({
+         id: r.id,
+         name: r.name,
+         address: r.address,
+         latitude: r.latitude,
+         longitude: r.longitude,
+         rating: r.rating,
+         menuCount: r.menuCount,
+         county: r.county,
+         photoUrl: r.imageUrl,
+       }));
 
-        setRestaurants(restaurants);
-        setFilteredRestaurants(restaurants); // Show all restaurants initially
-        setCenter({ lat, lng }); // Update the map center
-        setCurrentPage(0); // Reset to first page
+       setRestaurants(restaurants);
+       setFilteredRestaurants(restaurants);
+       setCenter({ lat, lng });
+       setCurrentPage(0);
+       setFocusedRestaurant(null);
+     } catch (error) {
+       console.error("Error fetching restaurants:", error);
+       setError(
+         error instanceof Error ? error.message : "Failed to fetch restaurants"
+       );
+     } finally {
+       setIsLoading(false);
+       setIsRefreshing(false);
+     }
+   },
+   [userId]
+ );
 
-        // Clear focused restaurant when fetching new locations
-        setFocusedRestaurant(null);
-      } catch (error) {
-        console.error("Error fetching restaurants:", error);
-        setError(
-          error instanceof Error ? error.message : "Failed to fetch restaurants"
-        );
-      } finally {
-        setIsLoading(false);
-        setIsRefreshing(false);
-      }
-    },
-    [userId]
-  );
+ // Use the debounced version for map clicks
+ const debouncedFetchRestaurants = useDebouncedCallback(
+   fetchNearbyRestaurants,
+   500
+ );
 
   // Helper function to process and merge results
   const processCombinedResults = async (
@@ -469,19 +490,19 @@ const handleRefreshLocation = () => {
 };
 
  // Update handleMapClick
- const handleMapClick = (event: google.maps.MapMouseEvent) => {
-   const clickedLatLng = event.latLng;
-   if (clickedLatLng) {
-     const newCenter = {
-       lat: clickedLatLng.lat(),
-       lng: clickedLatLng.lng(),
-     };
-     setPinLocation(newCenter);
-     setCenter(newCenter);
-     setFocusedRestaurant(null);
-     fetchNearbyRestaurants(newCenter.lat, newCenter.lng);
-   }
- };
+const handleMapClick = (event: google.maps.MapMouseEvent) => {
+  const clickedLatLng = event.latLng;
+  if (clickedLatLng) {
+    const newCenter = {
+      lat: clickedLatLng.lat(),
+      lng: clickedLatLng.lng(),
+    };
+    setPinLocation(newCenter);
+    setCenter(newCenter);
+    setFocusedRestaurant(null);
+    debouncedFetchRestaurants(newCenter.lat, newCenter.lng);
+  }
+};
  
  
   const handleRequestMenu = async (
@@ -498,15 +519,15 @@ const handleRefreshLocation = () => {
     try {
       setIsLoading(true);
 
-      // Check existing menu in your Firestore
+      // Check existing menu
       const existingMenu = await checkExistingMenuForRestaurant(restaurantId);
       if (existingMenu) {
         router.push(`/menu-details/${restaurantId}`);
         return;
       }
 
-      // Search Yelp
-      const yelpBusiness = await searchYelpBusiness(
+      // Use the new combined Yelp function
+      const yelpBusiness = await getYelpBusinessWithPhotos(
         restaurantName,
         latitude,
         longitude
@@ -916,7 +937,7 @@ const handleRefreshLocation = () => {
               <Button
                 onClick={handlePrevPage}
                 disabled={currentPage === 0}
-                className="bg-customTeal text-white"
+                className="bg-customTeal hover:bg-customTeal/90 text-white"
               >
                 Previous
               </Button>
@@ -928,7 +949,7 @@ const handleRefreshLocation = () => {
               <Button
                 onClick={handleNextPage}
                 disabled={isLastPage} // Disable Next button when on the last page (11-20)
-                className="bg-customTeal text-white"
+                className="bg-customTeal hover:bg-customTeal/90 text-white"
               >
                 Next
               </Button>

@@ -1,35 +1,95 @@
 // config/googleCloudConfig.ts
-import { Storage } from "@google-cloud/storage";
+
+import { Storage, Bucket, LifecycleRule } from "@google-cloud/storage";
 import { DocumentProcessorServiceClient } from "@google-cloud/documentai";
 
-async function setupBucket(bucket: any) {
-  try {
-    // Make bucket publicly readable
-    await bucket.iam.updatePolicy({
-      bindings: [
-        {
-          role: 'roles/storage.objectViewer',
-          members: ['allUsers'],
-        },
-      ],
-    });
+// Types for better type safety
+interface BucketConfig {
+  name: string;
+  isPublic: boolean;
+  enableCors: boolean;
+}
 
-    // Set CORS policy
-    await bucket.setCorsConfiguration([
-      {
-        maxAgeSeconds: 3600,
-        method: ['GET', 'HEAD'],
-        origin: ['*'],
-        responseHeader: ['Content-Type'],
-      },
+// Constants
+const CORS_CONFIG = [
+  {
+    maxAgeSeconds: 3600,
+    method: ['GET', 'HEAD'],
+    origin: ['*'],
+    responseHeader: ['Content-Type'],
+  },
+];
+
+const LIFECYCLE_RULE: LifecycleRule = {
+  action: {
+    type: "SetStorageClass",
+    storageClass: "NEARLINE",
+  },
+  condition: {
+    age: 30, // Move to Nearline storage after 30 days
+  },
+};
+
+async function setupBucket(bucket: Bucket, config: BucketConfig) {
+  try {
+    // Check if bucket exists first
+    const [exists] = await bucket.exists();
+    if (!exists) {
+      console.error(`Bucket ${bucket.name} does not exist`);
+      return false;
+    }
+
+    // Configure bucket in parallel
+    await Promise.all([
+      // Make public if needed using IAM policy
+      config.isPublic && makeBucketPublic(bucket),
+      // Set CORS if enabled
+      config.enableCors && bucket.setMetadata({ cors: CORS_CONFIG }),
+      // Set lifecycle rules
+      bucket.addLifecycleRule(LIFECYCLE_RULE),
     ]);
 
     console.log(`Successfully configured bucket ${bucket.name}`);
+    return true;
   } catch (error) {
     console.error(`Error configuring bucket ${bucket.name}:`, error);
+    // Implement retry logic or handle specific errors
+    return false;
   }
 }
 
+// Function to make bucket public using IAM policy
+async function makeBucketPublic(bucket: Bucket) {
+  try {
+    // Get the current IAM policy
+    const [policy] = await bucket.iam.getPolicy({ requestedPolicyVersion: 3 });
+
+    // Check if the binding already exists
+    const bindingExists = policy.bindings.some(binding =>
+      binding.role === 'roles/storage.objectViewer' &&
+      binding.members.includes('allUsers')
+    );
+
+    if (!bindingExists) {
+      // Add a binding to grant allUsers the storage.objectViewer role
+      policy.bindings.push({
+        role: 'roles/storage.objectViewer',
+        members: ['allUsers'],
+      });
+
+      // Set the updated IAM policy
+      await bucket.iam.setPolicy(policy);
+      console.log(`Bucket ${bucket.name} is now public.`);
+    } else {
+      console.log(`Bucket ${bucket.name} is already public.`);
+    }
+  } catch (error) {
+    console.error(`Error making bucket ${bucket.name} public:`, error);
+    throw error;
+  }
+}
+
+// Validate environment variables
 const projectId = process.env.GOOGLE_CLOUD_PROJECT_ID;
 const keyFilename = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 const primaryRegion = "asia-east1";
@@ -39,20 +99,14 @@ if (!projectId) {
 }
 
 if (!keyFilename) {
-  throw new Error(
-    "Missing GOOGLE_APPLICATION_CREDENTIALS environment variable",
-  );
+  throw new Error("Missing GOOGLE_APPLICATION_CREDENTIALS environment variable");
 }
 
-const storage = new Storage({
-  projectId,
-  keyFilename,
-});
+// Initialize Storage
+const storage = new Storage({ projectId, keyFilename });
+const documentAiClient = new DocumentProcessorServiceClient({ keyFilename });
 
-const documentAiClient = new DocumentProcessorServiceClient({
-  keyFilename,
-});
-
+// Helper function to clean bucket names
 function getBucketName(envVar: string | undefined): string {
   if (!envVar) {
     throw new Error(`Missing environment variable`);
@@ -60,118 +114,68 @@ function getBucketName(envVar: string | undefined): string {
   return envVar.replace("gs://", "");
 }
 
-// Document AI Buckets
-const labeledBucketName =
-  process.env.GOOGLE_CLOUD_STORAGE_BUCKET_LABELED?.replace("gs://", "");
-const unlabeledBucketName = process.env.GOOGLE_CLOUD_STORAGE_BUCKET_ORIGINAL_MENUS?.replace(
-  "gs://",
-  "",
-);
+// Initialize bucket names
+const bucketNames = {
+  labeled: getBucketName(process.env.GOOGLE_CLOUD_STORAGE_BUCKET_LABELED),
+  unlabeled: getBucketName(process.env.GOOGLE_CLOUD_STORAGE_BUCKET_ORIGINAL_MENUS),
+  originalMenu: getBucketName(process.env.GOOGLE_CLOUD_STORAGE_BUCKET_ORIGINAL_MENUS),
+  processedMenu: getBucketName(process.env.GOOGLE_CLOUD_STORAGE_BUCKET_PROCESSED_MENUS),
+  restaurantImages: getBucketName(process.env.GOOGLE_CLOUD_STORAGE_BUCKET_RESTAURANT_IMAGES),
+  yelpMenu: getBucketName(process.env.GOOGLE_CLOUD_STORAGE_BUCKET_YELP_MENUS || "menu_uploads_yelp_cemta"),
+};
 
-if (!labeledBucketName) {
-  throw new Error(
-    "Missing GOOGLE_CLOUD_STORAGE_BUCKET_LABELED environment variable",
+// Validate all bucket names
+Object.entries(bucketNames).forEach(([key, value]) => {
+  if (!value) {
+    throw new Error(`Missing bucket name for ${key}`);
+  }
+});
+
+// Initialize buckets
+const labeledBucket = storage.bucket(bucketNames.labeled);
+const unlabeledBucket = storage.bucket(bucketNames.unlabeled);
+const originalMenuBucket = storage.bucket(bucketNames.originalMenu);
+const processedMenuBucket = storage.bucket(bucketNames.processedMenu);
+const restaurantImagesBucket = storage.bucket(bucketNames.restaurantImages);
+const yelpMenuBucket = storage.bucket(bucketNames.yelpMenu);
+
+// Initialize all buckets with their configurations
+async function initializeBuckets() {
+  const bucketConfigs = [
+    { bucket: originalMenuBucket, config: { name: 'originalMenu', isPublic: false, enableCors: true } },
+    { bucket: processedMenuBucket, config: { name: 'processedMenu', isPublic: false, enableCors: true } },
+    { bucket: restaurantImagesBucket, config: { name: 'restaurantImages', isPublic: true, enableCors: true } },
+    { bucket: yelpMenuBucket, config: { name: 'yelpMenu', isPublic: true, enableCors: true } },
+    { bucket: labeledBucket, config: { name: 'labeled', isPublic: false, enableCors: false } },
+    { bucket: unlabeledBucket, config: { name: 'unlabeled', isPublic: false, enableCors: false } },
+  ];
+
+  const results = await Promise.allSettled(
+    bucketConfigs.map(({ bucket, config }) => setupBucket(bucket, config))
   );
-}
 
-if (!unlabeledBucketName) {
-  throw new Error("Missing GOOGLE_CLOUD_STORAGE_BUCKET_ORIGINAL_MENUS environment variable");
-}
-
-const labeledBucket = storage.bucket(labeledBucketName);
-const unlabeledBucket = storage.bucket(unlabeledBucketName);
-
-// Restaurant Image Cache Buckets
-const originalMenuBucketName = getBucketName(
-  process.env.GOOGLE_CLOUD_STORAGE_BUCKET_ORIGINAL_MENUS,
-);
-const processedMenuBucketName = getBucketName(
-  process.env.GOOGLE_CLOUD_STORAGE_BUCKET_PROCESSED_MENUS,
-);
-const restaurantImagesBucketName = getBucketName(
-  process.env.GOOGLE_CLOUD_STORAGE_BUCKET_RESTAURANT_IMAGES,
-);
-const yelpMenuBucketName = getBucketName(
-  process.env.GOOGLE_CLOUD_STORAGE_BUCKET_YELP_MENUS || "menu_uploads_yelp_cemta"
-);
-
-if (
-  !originalMenuBucketName ||
-  !processedMenuBucketName ||
-  !restaurantImagesBucketName ||
-  !yelpMenuBucketName
-) {
-  throw new Error(
-    "Missing one or more required GCP bucket environment variables",
-  );
-}
-
-const originalMenuBucket = storage.bucket(originalMenuBucketName);
-const processedMenuBucket = storage.bucket(processedMenuBucketName);
-const restaurantImagesBucket = storage.bucket(restaurantImagesBucketName);
-const yelpMenuBucket = storage.bucket(yelpMenuBucketName);
-
-// Set up replication
-async function setupReplication() {
-  try {
-    const buckets = [
-      originalMenuBucket,
-      processedMenuBucket,
-      restaurantImagesBucket,
-      yelpMenuBucket
-    ];
-
-    for (const bucket of buckets) {
-      await bucket.addLifecycleRule({
-        action: { type: "SetStorageClass", storageClass: "NEARLINE" },
-        condition: {
-          age: 30, // Move to Nearline storage after 30 days
-        },
-      });
+  // Log results
+  results.forEach((result, index) => {
+    const bucketName = bucketConfigs[index].config.name;
+    if (result.status === 'fulfilled') {
+      if (result.value) {
+        console.log(`Successfully initialized ${bucketName} bucket`);
+      } else {
+        console.warn(`Failed to initialize ${bucketName} bucket`);
+      }
+    } else {
+      console.error(`Error initializing ${bucketName} bucket:`, result.reason);
     }
-
-    console.log("Successfully set up replication rules");
-  } catch (error) {
-    console.error("Error setting up replication:", error);
-    throw new Error(
-      "Failed to set up replication. Check your permissions and bucket configuration.",
-    );
-  }
+  });
 }
 
-// Test bucket access
-async function testBucketAccess() {
-  try {
-    await Promise.all([
-      originalMenuBucket.exists(),
-      processedMenuBucket.exists(),
-      restaurantImagesBucket.exists(),
-      labeledBucket.exists(),
-      unlabeledBucket.exists(),
-      yelpMenuBucket.exists(),
-    ]);
-    console.log("Successfully connected to all GCS buckets");
-  } catch (error) {
-    console.error("Error accessing GCS buckets:", error);
-    throw new Error(
-      "Failed to access GCS buckets. Check your permissions and bucket names.",
-    );
-  }
-}
-
-// Initialize buckets and test access
+// Initialize everything
 (async () => {
   try {
-    await Promise.all([
-      setupBucket(restaurantImagesBucket),
-      setupBucket(originalMenuBucket),
-      setupBucket(processedMenuBucket),
-      setupBucket(yelpMenuBucket),
-    ]);
-    await setupReplication();
-    await testBucketAccess();
+    await initializeBuckets();
   } catch (error) {
     console.error("Error during initialization:", error);
+    // Log error but don't throw - allow application to continue
   }
 })();
 
@@ -183,5 +187,5 @@ export {
   originalMenuBucket,
   processedMenuBucket,
   restaurantImagesBucket,
-  yelpMenuBucket,  // Add export for Yelp menu bucket
+  yelpMenuBucket,
 };

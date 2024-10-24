@@ -13,7 +13,7 @@ import {
   getDocs,
   onSnapshot,
   DocumentData,
-  deleteDoc,
+  deleteDoc, writeBatch,
 } from "firebase/firestore";
 import { db } from "@/config/firebaseConfig";
 import geohash from "ngeohash";
@@ -179,7 +179,7 @@ export interface MenuDetails {
   menuName: string;
   restaurantName: string;
   location?: string;
-  timestamp: string;
+  timestamp: Date;
   menuData: MenuData;
 }
 
@@ -235,7 +235,7 @@ export interface SearchResult {
 export interface HistoryItem {
   id: string;
   menuName: string;
-  timestamp: string;
+  timestamp: Date;
 }
 
 // ======= Type Aliases =======
@@ -244,6 +244,32 @@ export type Menu = MenuDetails;
 export type LatLngLiteral = Location
 
 const RESTAURANT_DETAILS_COLLECTION = "restaurantDetails";
+
+export async function batchUpdateRestaurants(restaurants: CachedRestaurant[]): Promise<void> {
+  // Process in chunks of 500 (Firestore batch limit)
+  const chunkSize = 500;
+  for (let i = 0; i < restaurants.length; i += chunkSize) {
+    const chunk = restaurants.slice(i, Math.min(i + chunkSize, restaurants.length));
+    const batch = writeBatch(db);
+    
+    chunk.forEach(restaurant => {
+      const ref = doc(db, 'restaurants', restaurant.id);
+      batch.set(ref, {
+        name: restaurant.name,
+        address: restaurant.address,
+        rating: restaurant.rating,
+        location: {
+          latitude: restaurant.latitude,
+          longitude: restaurant.longitude,
+        },
+        county: restaurant.county,
+      }, { merge: true });
+    });
+
+    await batch.commit();
+  }
+}
+
 
 export async function saveDocumentAiResults(
   userId: string,
@@ -808,15 +834,12 @@ export async function saveMenuImageReferences(
   });
 }
 
+// Update the saveRestaurantImageReference function
 export async function saveRestaurantImageReference(
   restaurantId: string,
-  imageUrl: string,
-) {
-  const restaurantRef = doc(db, "restaurants", restaurantId);
-  await updateDoc(restaurantRef, {
-    imageUrl,
-    imageCachedAt: new Date(),
-  });
+  imageUrl: string
+): Promise<void> {
+  await createOrUpdateRestaurant(restaurantId, {}, imageUrl);
 }
 
 export async function getRestaurantDetails(
@@ -1013,3 +1036,34 @@ export async function checkExistingYelpMenu(
   return !querySnapshot.empty;
 }
 
+export async function createOrUpdateRestaurant(
+  restaurantId: string,
+  restaurantData: Partial<RestaurantDocument>,
+  imageUrl?: string
+): Promise<void> {
+  const restaurantRef = doc(db, "restaurants", restaurantId);
+  
+  try {
+    const docSnap = await getDoc(restaurantRef);
+    
+    if (!docSnap.exists()) {
+      // Create new restaurant document
+      await setDoc(restaurantRef, {
+        ...restaurantData,
+        ...(imageUrl && { imageUrl }),
+        timestamp: new Date().toISOString(),
+        createdAt: new Date(),
+      });
+    } else {
+      // Update existing restaurant document
+      await updateDoc(restaurantRef, {
+        ...restaurantData,
+        ...(imageUrl && { imageUrl }),
+        updatedAt: new Date(),
+      });
+    }
+  } catch (error) {
+    console.error(`Error creating/updating restaurant ${restaurantId}:`, error);
+    throw error;
+  }
+}

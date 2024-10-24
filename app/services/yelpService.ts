@@ -1,7 +1,74 @@
 // app/services/yelpService.ts
-
+import { db } from "@/config/firebaseConfig";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 import axios from 'axios';
 import { YelpBusiness } from './firebaseFirestore';
+
+interface YelpCache {
+  data: YelpBusiness;
+  timestamp: number;
+}
+
+const CACHE_DURATION = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
+
+async function getCachedYelpBusiness(
+  name: string, 
+  latitude: number, 
+  longitude: number
+): Promise<YelpBusiness | null> {
+  const cacheKey = `yelp_${name}_${latitude.toFixed(3)}_${longitude.toFixed(3)}`;
+  const cacheRef = doc(db, "yelpCache", cacheKey);
+  const cacheDoc = await getDoc(cacheRef);
+
+  if (cacheDoc.exists()) {
+    const cache = cacheDoc.data() as YelpCache;
+    if (Date.now() - cache.timestamp < CACHE_DURATION) {
+      return cache.data;
+    }
+  }
+  return null;
+}
+
+async function cacheYelpBusiness(
+  name: string,
+  latitude: number,
+  longitude: number,
+  data: YelpBusiness
+): Promise<void> {
+  const cacheKey = `yelp_${name}_${latitude.toFixed(3)}_${longitude.toFixed(3)}`;
+  const cacheRef = doc(db, "yelpCache", cacheKey);
+  await setDoc(cacheRef, {
+    data,
+    timestamp: Date.now()
+  });
+}
+
+export async function getYelpBusinessWithPhotos(
+  name: string,
+  latitude: number,
+  longitude: number
+): Promise<YelpBusiness | null> {
+  // Check cache first
+  const cachedData = await getCachedYelpBusiness(name, latitude, longitude);
+  if (cachedData) {
+    return cachedData;
+  }
+
+  // If not in cache, fetch from API
+  const business = await fetchYelpBusinessDirectly(name, latitude, longitude);
+  if (business?.id) {
+    const details = await fetchYelpBusinessDetailsDirectly(business.id);
+    const combinedData = {
+      ...business,
+      ...details
+    } as YelpBusiness;
+    
+    // Cache the result
+    await cacheYelpBusiness(name, latitude, longitude, combinedData);
+    return combinedData;
+  }
+  return null;
+}
 
 export async function fetchYelpBusinessDirectly(
   name: string,
@@ -72,60 +139,4 @@ export async function fetchYelpBusinessDetailsDirectly(
   }
 }
 
-export async function searchYelpBusiness(
-  name: string,
-  latitude: number,
-  longitude: number
-): Promise<YelpBusiness | null> {
-  if (typeof window === 'undefined') {
-    // Server-side code: Call Yelp API directly
-    return await fetchYelpBusinessDirectly(name, latitude, longitude);
-  } else {
-    // Client-side code: Call API route
-    try {
-      const params = new URLSearchParams({
-        name,
-        latitude: latitude.toString(),
-        longitude: longitude.toString(),
-      });
 
-      const response = await fetch(`/api/yelp?${params.toString()}`);
-
-      if (!response.ok) {
-        console.warn(`Yelp API request failed for ${name}`);
-        return null;
-      }
-
-      const data = await response.json();
-      return data.error ? null : data;
-    } catch (error) {
-      console.warn("Error searching Yelp:", error);
-      return null;
-    }
-  }
-}
-
-export async function getYelpBusinessPhotos(
-  yelpId: string
-): Promise<string[] | null> {
-  if (typeof window === 'undefined') {
-    // Server-side code: Call Yelp API directly
-    const business = await fetchYelpBusinessDetailsDirectly(yelpId);
-    return business?.photos || null;
-  } else {
-    // Client-side code: Call API route
-    try {
-      const response = await fetch(`/api/yelp/business/${encodeURIComponent(yelpId)}`);
-      if (!response.ok) {
-        console.error("Failed to fetch Yelp business details");
-        return null;
-      }
-
-      const data: YelpBusiness = await response.json();
-      return data.photos || null;
-    } catch (error) {
-      console.error("Error fetching Yelp photos:", error);
-      return null;
-    }
-  }
-}
