@@ -49,8 +49,9 @@ const RestaurantCard: React.FC<RestaurantCardProps> = ({ restaurant }) => {
           <Image
             src={imageUrl}
             alt={restaurant.name}
-            layout="fill"
-            objectFit="cover"
+            fill // Use fill instead of layout="fill"
+            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw" // Add sizes prop
+            className="object-cover" // Use className instead of objectFit
             onError={(e) => {
               console.error("Image load error:", e);
               (e.target as HTMLImageElement).src =
@@ -58,6 +59,7 @@ const RestaurantCard: React.FC<RestaurantCardProps> = ({ restaurant }) => {
             }}
           />
         </div>
+        
         <CardContent className="p-6">
           <h3 className="text-2xl font-semibold mb-3 text-gray-800">
             {restaurant.name}
