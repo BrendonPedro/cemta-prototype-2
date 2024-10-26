@@ -17,7 +17,7 @@ const MarketingLayout = ({ children, showBackgroundImage = true }: Props) => {
     <div className="min-h-screen flex flex-col bg-gradient-to-br from-customTeal to-white">
       <Header />
       <div className="flex flex-grow">
-        <SidebarWrapper />
+        <SidebarWrapper onSidebarToggle={() => {}} />
         <main className="flex-grow relative p-6 transition-all duration-300">
           {showBackgroundImage && (
             <div className="fixed inset-0 flex items-center justify-center opacity-5 pointer-events-none">

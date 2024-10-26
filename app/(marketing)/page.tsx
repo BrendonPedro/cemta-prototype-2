@@ -58,7 +58,7 @@ export default function Home() {
   return (
     <div className="flex flex-col items-center justify-center min-h-[calc(100vh-4rem)] py-12">
       <div className="text-center mb-12">
-        <h1 className="cemta-title font-bold text-6xl md:text-8xl bg-clip-text text-transparent bg-gradient-to-r from-customTeal to-customBlack">
+        <h1 className="cemta-title font-bold text-6xl md:text-9xl bg-gradient-to-r from-customTeal via-customBlack to-customTeal bg-clip-text text-transparent animate-gradient relative">
           CEMTA
         </h1>
         <p className="text-2xl md:text-3xl font-bold text-gray-700 mt-4 max-w-2xl mx-auto">

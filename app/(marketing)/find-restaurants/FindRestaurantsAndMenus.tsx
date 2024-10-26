@@ -2,7 +2,7 @@
 
 "use client";
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useRef, useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -13,22 +13,24 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Check, RefreshCw, ChevronDown, Info, MapPin } from "lucide-react";
+import { Check, RefreshCw, ChevronDown, Info, MapPin, Star } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAuth } from "@/components/AuthProvider";
 import { useAuth as useClerkAuth } from "@clerk/nextjs";
-import { GoogleMap, useJsApiLoader, Marker } from "@react-google-maps/api";
+import { useJsApiLoader, GoogleMap, Marker } from "@react-google-maps/api";
 import {
   getMenuCountForRestaurant,
   getCachedRestaurantDetails,
   saveRestaurantDetails,
   getCachedRestaurantsForLocation,
   saveCachedRestaurantsForLocation,
-  // **Add the missing import here**
   checkExistingMenuForRestaurant,
-} from "@/app/services/firebaseFirestore"; // Updated import
-import { useRouter } from 'next/navigation'; // Add this at the top
-import { Client as GoogleMapsClient } from "@googlemaps/google-maps-services-js"; // Add this import
+  
+} from "@/app/services/firebaseFirestore"; // Update import
+import { useRouter } from 'next/navigation'; 
+import { Client as GoogleMapsClient } from "@googlemaps/google-maps-services-js";
+import Image from "next/image";
+
 
 import {
   Tooltip,
@@ -75,6 +77,7 @@ interface GooglePlacePhoto {
   html_attributions?: string[];
 }
 
+
 const mapContainerStyle = {
   width: "100%",
   height: "400px",
@@ -105,20 +108,21 @@ const taiwanCounties = [
 ];
 
 const useDebouncedCallback = (callback: Function, delay: number) => {
-  const timeoutRef = React.useRef<NodeJS.Timeout>();
+  const timeoutRef = useRef<number | null>(null);
 
-  return React.useCallback(
+  const debouncedFunction = useCallback(
     (...args: any[]) => {
       if (timeoutRef.current) {
-        clearTimeout(timeoutRef.current);
+        window.clearTimeout(timeoutRef.current);
       }
-
-      timeoutRef.current = setTimeout(() => {
+      timeoutRef.current = window.setTimeout(() => {
         callback(...args);
       }, delay);
     },
     [callback, delay]
   );
+
+  return debouncedFunction;
 };
 
 const determineCounty = (countyName: string): string => {
@@ -131,34 +135,11 @@ const determineCounty = (countyName: string): string => {
 
 async function getCountyName(lat: number, lng: number): Promise<string> {
   try {
-    const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!;
-    if (!apiKey) {
-      throw new Error("Google Maps API key is not set");
-    }
+    const response = await fetch(`/api/maps/geocode?lat=${lat}&lng=${lng}`);
+    const data = await response.json();
 
-    const response = await axios.get(
-      "https://maps.googleapis.com/maps/api/geocode/json",
-      {
-        params: {
-          latlng: `${lat},${lng}`,
-          key: apiKey,
-          language: "en",
-        },
-      }
-    );
-
-    const results = response.data.results;
-    if (results.length > 0) {
-      const addressComponents = results[0].address_components;
-      const countyComponent = addressComponents.find((component: any) =>
-        component.types.includes("administrative_area_level_2")
-      );
-
-      if (countyComponent) {
-        return countyComponent.long_name;
-      }
-    }
-    return "Unknown County";
+    if (data.error) throw new Error(data.error);
+    return data.county || "Unknown County";
   } catch (error) {
     console.error("Error fetching county name:", error);
     return "Unknown County";
@@ -199,12 +180,10 @@ const [center, setCenter] = useState<LatLngLiteral>({
   const [selectedRestaurant, setSelectedRestaurant] =
     useState<Restaurant | null>(null);
   const [isLoadingLocation, setIsLoadingLocation] = useState(true);
-
-  const { isLoaded } = useJsApiLoader({
+  const { isLoaded, loadError } = useJsApiLoader({
     id: "google-map-script",
-    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!,
+    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!, // Use the libraries constant
   });
-
   // Add this function to fetch menu image from Google Places API
   const fetchMenuImageFromGoogle = async (placeId: string, apiKey: string) => {
     try {
@@ -300,159 +279,159 @@ const [center, setCenter] = useState<LatLngLiteral>({
  );
 
   // Helper function to process and merge results
-  const processCombinedResults = async (
-    googleResults: any[],
-    yelpResults: any[],
-    userId: string
-  ): Promise<CachedRestaurant[]> => {
-    const processedResults = new Map<string, CachedRestaurant>();
+const processCombinedResults = async (
+  googleResults: any[],
+  yelpResults: any[],
+  userId: string
+): Promise<CachedRestaurant[]> => {
+  const processedResults = new Map<string, CachedRestaurant>();
 
-    // Helper function to normalize restaurant names for comparison
-    const normalizeString = (str: string) =>
-      str.toLowerCase().replace(/[^a-z0-9]/g, "");
+  // Add this at the start of the function
+  const response = await fetch("/api/maps");
+  const { apiKey } = await response.json();
 
-    // Process Google results first as they're usually more reliable for location
-    for (const googleResult of googleResults) {
-      if (!googleResult?.name) continue;
+  // Helper function to normalize restaurant names for comparison
+  const normalizeString = (str: string) =>
+    str.toLowerCase().replace(/[^a-z0-9]/g, "");
 
-      const normalizedName = normalizeString(googleResult.name);
-      const latitude = googleResult.geometry?.location.lat;
-      const longitude = googleResult.geometry?.location.lng;
+  // Process Google results first as they're usually more reliable for location
+  for (const googleResult of googleResults) {
+    if (!googleResult?.name) continue;
+
+    const normalizedName = normalizeString(googleResult.name);
+    const latitude = googleResult.geometry?.location.lat;
+    const longitude = googleResult.geometry?.location.lng;
+
+    if (!latitude || !longitude) continue;
+
+    const countyName = await getCountyName(latitude, longitude);
+    const menuExists = await checkExistingMenuForRestaurant(googleResult.id);
+
+    processedResults.set(normalizedName, {
+      id: googleResult.id,
+      name: googleResult.name,
+      address: googleResult.vicinity || "Unknown address",
+      latitude,
+      longitude,
+      rating: googleResult.rating || 0,
+      menuCount: menuExists ? 1 : 0,
+      county: determineCounty(countyName),
+      source: "google",
+      hasGoogleData: true,
+      imageUrl: googleResult.photos?.[0]?.photo_reference
+        ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${googleResult.photos[0].photo_reference}&key=${apiKey}`
+        : "",
+      hasMenu: menuExists,
+    } as CachedRestaurant);
+  }
+
+  // Enhance with Yelp data
+  for (const yelpResult of yelpResults) {
+    if (!yelpResult?.name) continue;
+
+    const normalizedName = normalizeString(yelpResult.name);
+    const existing = processedResults.get(normalizedName);
+
+    if (existing) {
+      // Enhance existing Google data with Yelp data
+      processedResults.set(normalizedName, {
+        ...existing,
+        yelpId: yelpResult.id,
+        rating: Math.max(existing.rating, yelpResult.rating || 0),
+        imageUrl: existing.imageUrl || yelpResult.image_url || "",
+        hasYelpData: true,
+        photos: yelpResult.photos || [],
+      } as CachedRestaurant);
+    } else {
+      // Add new Yelp-only entry
+      const latitude = yelpResult.coordinates?.latitude;
+      const longitude = yelpResult.coordinates?.longitude;
 
       if (!latitude || !longitude) continue;
 
       const countyName = await getCountyName(latitude, longitude);
-      const menuExists = await checkExistingMenuForRestaurant(googleResult.id);
+      const menuExists = await checkExistingMenuForRestaurant(yelpResult.id);
 
       processedResults.set(normalizedName, {
-        id: googleResult.id,
-        name: googleResult.name,
-        address: googleResult.vicinity || "Unknown address",
+        id: yelpResult.id,
+        name: yelpResult.name,
+        address: yelpResult.location?.address1 || "Unknown address",
         latitude,
         longitude,
-        rating: googleResult.rating || 0,
+        rating: yelpResult.rating || 0,
         menuCount: menuExists ? 1 : 0,
         county: determineCounty(countyName),
-        source: "google",
-        hasGoogleData: true,
-        imageUrl: googleResult.photos?.[0]?.photo_reference
-          ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${googleResult.photos[0].photo_reference}&key=${process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY}`
-          : "",
+        source: "yelp",
+        hasYelpData: true,
+        yelpId: yelpResult.id,
+        imageUrl: yelpResult.image_url || "",
         hasMenu: menuExists,
+        photos: yelpResult.photos || [],
       } as CachedRestaurant);
     }
+  }
 
-    // Enhance with Yelp data
-    for (const yelpResult of yelpResults) {
-      if (!yelpResult?.name) continue;
+  return Array.from(processedResults.values());
+};
 
-      const normalizedName = normalizeString(yelpResult.name);
-      const existing = processedResults.get(normalizedName);
+  useEffect(() => {
+    if (authLoading || !firebaseToken || !userId) return;
 
-      if (existing) {
-        // Enhance existing Google data with Yelp data
-        processedResults.set(normalizedName, {
-          ...existing,
-          yelpId: yelpResult.id,
-          rating: Math.max(existing.rating, yelpResult.rating || 0),
-          imageUrl: existing.imageUrl || yelpResult.image_url || "",
-          hasYelpData: true,
-          photos: yelpResult.photos || [],
-        } as CachedRestaurant);
-      } else {
-        // Add new Yelp-only entry
-        const latitude = yelpResult.coordinates?.latitude;
-        const longitude = yelpResult.coordinates?.longitude;
+    setIsLoadingLocation(true);
 
-        if (!latitude || !longitude) continue;
+    const geolocationOptions = {
+      enableHighAccuracy: true,
+      timeout: 15000, // Increased to 15 seconds
+      maximumAge: 30000, // Cache location for 30 seconds
+    };
 
-        const countyName = await getCountyName(latitude, longitude);
-        const menuExists = await checkExistingMenuForRestaurant(yelpResult.id);
-
-        processedResults.set(normalizedName, {
-          id: yelpResult.id,
-          name: yelpResult.name,
-          address: yelpResult.location?.address1 || "Unknown address",
-          latitude,
-          longitude,
-          rating: yelpResult.rating || 0,
-          menuCount: menuExists ? 1 : 0,
-          county: determineCounty(countyName),
-          source: "yelp",
-          hasYelpData: true,
-          yelpId: yelpResult.id,
-          imageUrl: yelpResult.image_url || "",
-          hasMenu: menuExists,
-          photos: yelpResult.photos || [],
-        } as CachedRestaurant);
+    const locationTimeout = setTimeout(() => {
+      // Fallback if geolocation takes too long
+      if (isLoadingLocation) {
+        const fallbackCenter = { lat: 24.5601, lng: 120.8215 };
+        setCenter(fallbackCenter);
+        fetchNearbyRestaurants(fallbackCenter.lat, fallbackCenter.lng);
+        setError("Location request timed out. Showing Miaoli area.");
+        setIsLoadingLocation(false);
       }
-    }
+    }, 16000); // Slightly longer than geolocation timeout
 
-    return Array.from(processedResults.values());
-  };
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        clearTimeout(locationTimeout);
+        const { latitude, longitude } = position.coords;
+        const newCenter = { lat: latitude, lng: longitude };
+        setCenter(newCenter);
+        fetchNearbyRestaurants(latitude, longitude);
+        setIsLoadingLocation(false);
+        setError(null); // Clear any existing errors
+      },
+      (error) => {
+        clearTimeout(locationTimeout);
+        console.error("Geolocation error:", error);
+        const fallbackCenter = { lat: 24.5601, lng: 120.8215 };
+        setCenter(fallbackCenter);
+        fetchNearbyRestaurants(fallbackCenter.lat, fallbackCenter.lng);
 
-useEffect(() => {
-  if (authLoading || !firebaseToken || !userId) return;
-
-  setIsLoadingLocation(true);
-
-  const geolocationOptions = {
-    enableHighAccuracy: true,
-    timeout: 15000, // Increased to 15 seconds
-    maximumAge: 30000, // Cache location for 30 seconds
-  };
-
-  const locationTimeout = setTimeout(() => {
-    // Fallback if geolocation takes too long
-    if (isLoadingLocation) {
-      const fallbackCenter = { lat: 24.5601, lng: 120.8215 };
-      setCenter(fallbackCenter);
-      fetchNearbyRestaurants(fallbackCenter.lat, fallbackCenter.lng);
-      setError("Location request timed out. Showing Miaoli area.");
-      setIsLoadingLocation(false);
-    }
-  }, 16000); // Slightly longer than geolocation timeout
-
-  navigator.geolocation.getCurrentPosition(
-    (position) => {
-      clearTimeout(locationTimeout);
-      const { latitude, longitude } = position.coords;
-      const newCenter = { lat: latitude, lng: longitude };
-      setCenter(newCenter);
-      fetchNearbyRestaurants(latitude, longitude);
-      setIsLoadingLocation(false);
-      setError(null); // Clear any existing errors
-    },
-    (error) => {
-      clearTimeout(locationTimeout);
-      console.error("Geolocation error:", error);
-      const fallbackCenter = { lat: 24.5601, lng: 120.8215 };
-      setCenter(fallbackCenter);
-      fetchNearbyRestaurants(fallbackCenter.lat, fallbackCenter.lng);
-
-      // More descriptive error messages based on error code
-      const errorMessages = {
-        1: "Location access denied. Please enable location services to see nearby restaurants.",
-        2: "Location unavailable. Showing default area.",
-        3: "Location request timed out. Showing default area.",
-      };
-      setError(
-        errorMessages[error.code as keyof typeof errorMessages] ||
+        // More descriptive error messages based on error code
+        const errorMessages = {
+          1: "Location access denied. Please enable location services to see nearby restaurants.",
+          2: "Location unavailable. Showing default area.",
+          3: "Location request timed out. Showing default area.",
+        };
+        setError(
+          errorMessages[error.code as keyof typeof errorMessages] ||
           "Failed to get your location. Showing default area."
-      );
-      setIsLoadingLocation(false);
-    },
-    geolocationOptions
-  );
+        );
+        setIsLoadingLocation(false);
+      },
+      geolocationOptions
+    );
 
-  // Cleanup timeout on component unmount
-  return () => clearTimeout(locationTimeout);
-}, [
-  userId,
-  firebaseToken,
-  authLoading,
-  fetchNearbyRestaurants,
-  isLoadingLocation,
+    // Cleanup timeout on component unmount
+    return () => clearTimeout(locationTimeout);
+  }, [
+    userId, fetchNearbyRestaurants, isLoadingLocation, firebaseToken, authLoading,
 ]);
 
 // Also update handleRefreshLocation with similar improvements
@@ -503,7 +482,6 @@ const handleMapClick = (event: google.maps.MapMouseEvent) => {
     debouncedFetchRestaurants(newCenter.lat, newCenter.lng);
   }
 };
- 
  
   const handleRequestMenu = async (
     restaurantId: string,
@@ -1010,38 +988,77 @@ const handleMapClick = (event: google.maps.MapMouseEvent) => {
                     ))
                   )}
                 </GoogleMap>
-                {focusedRestaurant && (
-                  <div className="mt-4 text-center">
-                    <span className="text-gray-700">
-                      Address: {focusedRestaurant.address}
-                    </span>
-                    <br />
-                    <a
-                      href={`https://www.google.com/maps/search/?api=1&query=${focusedRestaurant.latitude},${focusedRestaurant.longitude}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-customTeal hover:underline flex items-center justify-center mt-2"
-                    >
-                      <MapPin className="mr-1 h-4 w-4" />
-                      View on Google Maps
-                    </a>
-                  </div>
-                )}
-                <div className="mt-2 text-center text-sm text-gray-500">
-                  Click on a restaurant to zoom in. All restaurants are shown by
-                  default.
-                  <br />
-                  {focusedRestaurant && (
-                    <Button
-                      onClick={resetFocus}
-                      size="sm"
-                      className="mt-2 text-customTeal"
-                    >
-                      Show All Restaurants
-                    </Button>
+
+                <div className="mt-4 space-y-4">
+                  {!focusedRestaurant ? (
+                    <p className="text-center text-sm text-gray-500">
+                      Click on a restaurant marker to view details
+                    </p>
+                  ) : (
+                    <>
+                      {/* Restaurant Image */}
+                      <div className="relative h-48 w-full rounded-lg overflow-hidden">
+                        <Image
+                          src={
+                            focusedRestaurant.photoUrl ||
+                            "/placeholder-restaurant.jpg"
+                          }
+                          alt={focusedRestaurant.name}
+                          fill
+                          className="object-cover transition-transform duration-300 hover:scale-105"
+                          sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                        />
+                      </div>
+
+                      {/* Restaurant Details */}
+                      <div className="text-center space-y-2">
+                        <h3 className="font-semibold text-lg text-gray-900">
+                          {focusedRestaurant.name}
+                        </h3>
+                        <span className="text-gray-700 block">
+                          Address: {focusedRestaurant.address}
+                        </span>
+                        {focusedRestaurant.rating > 0 && (
+                          <div className="flex items-center justify-center gap-1">
+                            <Star className="h-4 w-4 text-yellow-400" />
+                            <span className="text-gray-700">
+                              {focusedRestaurant.rating.toFixed(1)}
+                            </span>
+                          </div>
+                        )}
+                        {focusedRestaurant.menuCount > 0 && (
+                          <div className="text-sm text-gray-600">
+                            Available Menus: {focusedRestaurant.menuCount}
+                          </div>
+                        )}
+
+                        <div className="flex flex-col gap-2">
+                          <a
+                            href={`https://www.google.com/maps/search/?api=1&query=${focusedRestaurant.latitude},${focusedRestaurant.longitude}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-customTeal hover:underline flex items-center justify-center"
+                          >
+                            <MapPin className="mr-1 h-4 w-4" />
+                            View on Google Maps
+                          </a>
+                          <Button
+                            onClick={resetFocus}
+                            size="sm"
+                              className="w-auto mt-2 text-customTeal hover:bg-customTeal/10"
+                          >
+                            Show All Restaurants
+                          </Button>
+                        </div>
+                      </div>
+                    </>
                   )}
                 </div>
               </>
+            ) : loadError ? (
+              <div className="flex justify-center items-center h-[400px] bg-gray-100">
+                <p className="text-red-500">{String(loadError)}</p>
+              </div>
             ) : (
               <div className="flex justify-center items-center h-[400px] bg-gray-100">
                 <div className="text-center">

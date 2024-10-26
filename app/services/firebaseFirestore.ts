@@ -13,7 +13,9 @@ import {
   getDocs,
   onSnapshot,
   DocumentData,
-  deleteDoc, writeBatch,
+  deleteDoc,
+  writeBatch,
+  collectionGroup 
 } from "firebase/firestore";
 import { db } from "@/config/firebaseConfig";
 import geohash from "ngeohash";
@@ -229,6 +231,9 @@ export interface SearchResult {
   id: string;
   restaurantName: string;
   location: string;
+  imageUrl?: string;  
+  rating?: number;    
+  county?: string;    
 }
 
 // (Used in VertexAiResultsDisplay.tsx)
@@ -236,6 +241,13 @@ export interface HistoryItem {
   id: string;
   menuName: string;
   timestamp: Date;
+}
+
+// Used in restaurant/page.tsx and firestores
+export interface EnhancedSearchResult extends SearchResult {
+  county?: string;
+  rating?: number;
+  imageUrl?: string;
 }
 
 // ======= Type Aliases =======
@@ -891,24 +903,66 @@ export const updateValidationStatus = async (
 };
 
 // Function to search for restaurants
-export async function searchRestaurants(
-  searchTerm: string,
-): Promise<SearchResult[]> {
-  const restaurantsRef = collection(db, "restaurants");
+export async function searchRestaurants(searchTerm: string): Promise<SearchResult[]> {
+  const results = new Map<string, SearchResult>(); // Use Map to prevent duplicates by ID
 
-  const q = query(
-    restaurantsRef,
-    where("name", ">=", searchTerm),
-    where("name", "<=", searchTerm + "\uf8ff"),
-    limit(10),
-  );
+  try {
+    // First, search in restaurants collection
+    const restaurantsRef = collection(db, "restaurants");
+    const restaurantQuery = query(
+      restaurantsRef,
+      where("name", ">=", searchTerm.toLowerCase()),
+      where("name", "<=", searchTerm.toLowerCase() + "\uf8ff"),
+      limit(20)
+    );
 
-  const querySnapshot = await getDocs(q);
-  return querySnapshot.docs.map((doc) => ({
-    id: doc.id,
-    restaurantName: doc.data().name,
-    location: doc.data().address || "Unknown Location",
-  }));
+    // Process restaurant collection results
+    const restaurantSnapshot = await getDocs(restaurantQuery);
+    restaurantSnapshot.docs.forEach((doc) => {
+      const data = doc.data();
+      results.set(doc.id, {
+        id: doc.id,
+        restaurantName: data.name,
+        location: data.address || "Unknown Location",
+        imageUrl: data.imageUrl,
+        rating: data.rating,
+        county: data.county
+      });
+    });
+
+    // Then, search in locationCaches collection
+    const locationCachesRef = collection(db, CACHE_CONSTANTS.COLLECTION_NAME);
+    const locationCacheDocs = await getDocs(locationCachesRef);
+
+    // Process locationCaches results
+    for (const cacheDoc of locationCacheDocs.docs) {
+      const cacheData = cacheDoc.data();
+      if (cacheData.restaurants) {
+        cacheData.restaurants
+          .filter((restaurant: CachedRestaurant) => 
+            restaurant.name.toLowerCase().includes(searchTerm.toLowerCase())
+          )
+          .forEach((restaurant: CachedRestaurant) => {
+            // Only add if not already present or if present but with less information
+            if (!results.has(restaurant.id) || !results.get(restaurant.id)?.county) {
+              results.set(restaurant.id, {
+                id: restaurant.id,
+                restaurantName: restaurant.name,
+                location: restaurant.address,
+                imageUrl: restaurant.imageUrl,
+                rating: restaurant.rating,
+                county: restaurant.county
+              });
+            }
+          });
+      }
+    }
+
+    return Array.from(results.values());
+  } catch (error) {
+    console.error("Error searching restaurants:", error);
+    throw error;
+  }
 }
 
 // Function to get menus by restaurant ID

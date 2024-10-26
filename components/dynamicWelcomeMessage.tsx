@@ -24,7 +24,7 @@ const DynamicWelcomeMessage: React.FC<DynamicWelcomeMessageProps> = ({
   }, [fullText]);
 
   return (
-    <div className="mt-2 text-md font-medium text-teal-800 max-w-[400px] flex-wrap welcome-message">
+    <div className="mt-2 text-md font-medium text-black max-w-[400px] flex-wrap welcome-message">
       <span className="typing">{displayedText}</span>
     </div>
   );

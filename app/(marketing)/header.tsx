@@ -45,7 +45,7 @@ export const Header = forwardRef<HTMLElement, HeaderProps>(
     const navItems = [
       { href: "/", label: "Home" },
       { href: "/menuAnalyzer", label: "TranslateMenuPro" },
-      { href: "/find-restaurants", label: "Restaurants" },
+      { href: "/restaurants", label: "Restaurants" },
       { href: getDashboardUrl(userRole), label: "Dashboard" },
       { href: "/cemtaTeam", label: "CEMTA Team" },
       { href: "/about", label: "About" },

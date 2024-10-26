@@ -1,3 +1,5 @@
+// app/components/ui/carousel.tsx
+
 "use client";
 
 import * as React from "react";
@@ -5,7 +7,6 @@ import useEmblaCarousel, {
   type UseEmblaCarouselType,
 } from "embla-carousel-react";
 import { ArrowLeft, ArrowRight } from "lucide-react";
-
 import { cn } from "@/lib/utils";
 
 type CarouselApi = UseEmblaCarouselType[1];
@@ -57,6 +58,10 @@ const Carousel = React.forwardRef<
         axis: orientation === "horizontal" ? "x" : "y",
         align: "center",
         containScroll: "trimSnaps",
+        loop: false,
+        dragFree: false,
+        skipSnaps: false,
+        startIndex: 1, // Start with the second item (index 1)
       },
       plugins
     );
@@ -83,6 +88,7 @@ const Carousel = React.forwardRef<
       [api]
     );
 
+    //API setup effect
     React.useEffect(() => {
       if (!api || !setApi) {
         return;
@@ -90,6 +96,7 @@ const Carousel = React.forwardRef<
       setApi(api);
     }, [api, setApi]);
 
+    //select effect
     React.useEffect(() => {
       if (!api) return;
       api.on("select", onSelect);
@@ -99,43 +106,46 @@ const Carousel = React.forwardRef<
       };
     }, [api, onSelect]);
 
-    // Enhanced scaling effect
+    // Main carousel effect - handles all carousel UI updates
     React.useEffect(() => {
       if (!api) return;
 
       const slides = api.slideNodes();
 
-      const scaleSlides = () => {
-        const scrollProgress = api.scrollProgress();
-        const center =
-          api.scrollSnapList()[Math.floor(api.scrollSnapList().length / 2)];
+      const updateSlides = () => {
+        const selectedIndex = api.selectedScrollSnap();
+        const nextIndex = selectedIndex + 1; // Scale the next slide
 
         slides.forEach((slide, index) => {
-          const slidePosition = api.scrollSnapList()[index];
-          const distance = Math.abs(scrollProgress - slidePosition);
+          // Scale up the slide that's one position ahead
+          const isNextSlide = index === nextIndex;
 
-          // Enhanced scaling effect with stronger center emphasis
-          const scale = Math.max(0.75, 1 - distance * 0.5);
-          const opacity = Math.max(0.5, 1 - distance * 0.5);
-          const zIndex = 1000 - Math.round(distance * 1000);
+          const scale = isNextSlide ? 1.05 : 0.9;
+          const opacity = isNextSlide ? 1 : 0.7;
+          const zIndex = isNextSlide ? 2 : 1;
 
-          // Apply transformations
+          // Apply transformations with smooth transition
           slide.style.transform = `scale(${scale})`;
           slide.style.opacity = `${opacity}`;
           slide.style.zIndex = `${zIndex}`;
-
-          // Add transition for smooth scaling
           slide.style.transition = "all 0.3s ease-out";
         });
       };
 
-      api.on("scroll", scaleSlides);
-      api.on("select", scaleSlides);
-      scaleSlides();
+      // Set up event listeners for all carousel events
+      api.on("scroll", updateSlides);
+      api.on("select", updateSlides);
+      api.on("reInit", updateSlides);
+      api.on("resize", updateSlides);
+
+      // Initial update
+      updateSlides();
 
       return () => {
-        api.off("scroll", scaleSlides);
-        api.off("select", scaleSlides);
+        api.off("scroll", updateSlides);
+        api.off("select", updateSlides);
+        api.off("reInit", updateSlides);
+        api.off("resize", updateSlides);
       };
     }, [api]);
 
@@ -175,8 +185,8 @@ const CarouselContent = React.forwardRef<
   const { carouselRef } = useCarousel();
 
   return (
-    <div ref={carouselRef} className="overflow-hidden">
-      <div ref={ref} className={cn("flex -mx-4 py-4", className)} {...props} />
+    <div ref={carouselRef} className="overflow-visible">
+      <div ref={ref} className={cn("flex -mx-4", className)} {...props} />
     </div>
   );
 });

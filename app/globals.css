@@ -95,8 +95,8 @@
 }
 
 .welcome-message {
-  font-size: 1.2rem; /* Adjust as necessary */
-  color: #0b4e4da0; /* Custom Teal */
+  font-size: 1.5rem; /* Adjust as necessary */
+  color: #000000a0; 
   white-space: nowrap;
   overflow: hidden;
   border-right: 0.15em solid; /* Cursor effect */
@@ -118,10 +118,6 @@
 
 .cemta-title {
   transition: all 0.3s ease;
-}
-
-.cemta-title:hover {
-  animation: pulse 2s infinite;
 }
 
 @keyframes pulse {
@@ -431,108 +427,160 @@
   }
 }
 
-/* carousel.css */
-.slick-slide {
-  padding: 0 10px;
+/* Animation Keyframes
+-------------------------------------------------- */
+@keyframes gradient {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
 }
 
-.slick-prev,
-.slick-next {
-  z-index: 1;
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
-.slick-prev {
-  left: -25px;
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
 }
 
-.slick-next {
-  right: -25px;
+/* Animation Utilities
+-------------------------------------------------- */
+.animate-gradient {
+  background-size: 200% auto;
+  animation: gradient 8s linear infinite;
 }
 
-.slick-prev:before,
-.slick-next:before {
-  color: #333;
+.animate-fadeIn {
+  animation: fadeIn 0.5s ease-in-out;
 }
 
-.slick-dots {
-  bottom: -40px;
+.animate-pulse {
+  background: linear-gradient(
+    90deg,
+    #f0f0f0 25%,
+    #e0e0e0 50%,
+    #f0f0f0 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
 }
 
-.slick-dots li button:before {
-  font-size: 12px;
-  color: #333;
+/* Carousel Base Styles
+-------------------------------------------------- */
+.embla {
+  position: relative;
+  width: 100%;
+  overflow: visible;
 }
 
-.slick-dots li.slick-active button:before {
-  color: #0ea5e9;
+.embla__viewport {
+  overflow: visible;
+  padding: 1.5rem 0;
 }
 
-/* 
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+.embla__container {
+  backface-visibility: hidden;
+  display: flex;
+  touch-action: pan-y;
+  margin-left: calc(var(--slide-spacing) * -1);
+}
 
-@layer base {
-  html,
-  body {
-    padding: 0;
-    margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen,
-      Ubuntu, Cantarell, Fira Sans, Droid Sans, Helvetica Neue, sans-serif;
-    @apply bg-gradient bg-cover bg-[50%] bg-repeat h-full;
-  }
-  h1 {
-    @apply text-4xl font-bold text-white md:text-5xl lg:text-7xl;
-  }
-  a {
-    color: inherit;
-    text-decoration: none;
-  }
-  * {
-    box-sizing: border-box;
-  }
-  p {
-    @apply text-base font-medium;
-  }
-  h1,
-  h2,
-  h3,
-  h4,
-  h5,
-  h6,
-  hr,
-  p,
-  pre {
-    margin: 0;
-  } */
-/* button {
-    @apply w-fit cursor-pointer rounded-lg border-0 bg-teal-600 px-6 py-4 text-lg text-white hover:bg-gray-900;
-  }
-  button:focus {
-    @apply outline-dotted outline-1;
-  } 
-  p {
-    @apply m-0 text-2xl font-bold md:text-3xl;
-  }
-}*/
-/* 
-@layer components { */
-/* glass-morphism */
-/* .glass {
-    @apply border border-solid border-[hsla(0,0%,100%,0.2)] bg-gray-951 backdrop-blur-[10px] hover:border hover:border-solid hover:border-white;
-    -webkit-backdrop-filter: blur(10px);
-  }
+/* Carousel Slides
+-------------------------------------------------- */
+.embla__slide {
+  flex: 0 0 var(--slide-size);
+  min-width: 0;
+  position: relative;
+  transition: opacity 0.2s ease-in-out;
+}
 
-  .glass:hover {
-    @apply bg-gray-950;
-  }
-} */
+.embla__slide.is-selected {
+  opacity: 1;
+  transform: scale(1.1);
+  z-index: 2;
+}
 
-/* .gradient-text {
-  font-weight: bold;
-  text-align: center;
-  background: linear-gradient(90deg, #008080 0%, #000000 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  display: inline-block;
-} */
+.embla__slide-inner {
+  position: relative;
+  overflow: hidden;
+  height: 100%;
+}
+
+/* Carousel Navigation
+-------------------------------------------------- */
+.carousel-button {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 50;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background-color: rgba(255, 255, 255, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.carousel-button:hover {
+  background-color: var(--customTeal);
+  color: white;
+  transform: translateY(-50%) scale(1.1);
+}
+
+.carousel-button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* Navigation Button Positioning */
+button[data-carousel-button] {
+  @apply absolute z-30 h-12 w-12 rounded-full bg-white/70 shadow-md
+         flex items-center justify-center
+         transition-all duration-300 ease-in-out
+         hover:bg-customTeal hover:text-white;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+button[data-carousel-button="prev"] { left: -4rem; }
+button[data-carousel-button="next"] { right: -4rem; }
+
+.carousel-nav-button {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 50;
+  transition: all 0.3s ease;
+  opacity: 0;
+}
+
+.group:hover .carousel-nav-button {
+  opacity: 1;
+}
+
+.carousel-nav-button:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* Responsive Styles
+-------------------------------------------------- */
+@media (max-width: 768px) {
+  .embla__container {
+    margin-left: -0.5rem;
+  }
+  
+  .embla__slide {
+    flex: 0 0 100%;
+    padding: 0 0.25rem;
+  }
+  
+  .carousel-nav-button {
+    display: none;
+  }
+}
