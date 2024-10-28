@@ -1,0 +1,158 @@
+// lib/database-builder/cache.ts
+
+import { db } from '@/config/firebaseConfig';
+import { 
+  doc, 
+getDocs, 
+  getDoc,
+  setDoc, 
+  collection, 
+  query, 
+    where,
+    deleteDoc, 
+} from 'firebase/firestore';
+import type { CachedRestaurant } from '@/app/services/firebaseFirestore';
+import geohash from 'ngeohash';
+import { CONFIG } from './config';
+
+interface BuilderCache {
+  countyName: string;
+  townName: string;
+  geohash: string;
+  timestamp: number;
+  restaurants: CachedRestaurant[];
+  lastUpdated: {
+    restaurants: number;
+    images: number;
+  };
+}
+
+const BUILDER_CACHE_CONFIG = {
+  COLLECTION: 'databaseBuilderCache',
+  DURATION: 60 * 24 * 60 * 60 * 1000, // 60 days
+  GEOHASH_PRECISION: 6
+};
+
+function getBuilderCacheKey(lat: number, lng: number, countyName: string, townName: string): string {
+  const locationHash = geohash.encode(lat, lng, BUILDER_CACHE_CONFIG.GEOHASH_PRECISION);
+  return `${countyName.toLowerCase()}_${townName.toLowerCase()}_${locationHash}`;
+}
+
+export async function getCachedBuildData(
+  lat: number,
+  lng: number,
+  countyName: string,
+  townName: string
+): Promise<CachedRestaurant[] | null> {
+  const cacheKey = getBuilderCacheKey(lat, lng, countyName, townName);
+  const cacheRef = doc(db, BUILDER_CACHE_CONFIG.COLLECTION, cacheKey);
+  const docSnap = await getDoc(cacheRef);
+
+  if (docSnap.exists()) {
+    const data = docSnap.data() as BuilderCache;
+    const cacheTime = data.timestamp;
+
+    // Verify cache is still valid
+    if (Date.now() - cacheTime < BUILDER_CACHE_CONFIG.DURATION) {
+      console.log(`Cache HIT in builder cache for location key: ${cacheKey}`);
+      return data.restaurants;
+    } else {
+      console.log(`Cache EXPIRED in builder cache for location key: ${cacheKey}`);
+    }
+  }
+
+  console.log(`Cache MISS in builder cache for location key: ${cacheKey}`);
+  return null;
+}
+
+export async function saveBuildCache(
+  lat: number,
+  lng: number,
+  countyName: string,
+  townName: string,
+  restaurants: CachedRestaurant[]
+): Promise<void> {
+  const cacheKey = getBuilderCacheKey(lat, lng, countyName, townName);
+  const cacheRef = doc(db, BUILDER_CACHE_CONFIG.COLLECTION, cacheKey);
+
+  const cacheData: BuilderCache = {
+    countyName,
+    townName,
+    geohash: geohash.encode(lat, lng, BUILDER_CACHE_CONFIG.GEOHASH_PRECISION),
+    timestamp: Date.now(),
+    restaurants,
+    lastUpdated: {
+      restaurants: Date.now(),
+      images: Date.now()
+    }
+  };
+
+  await setDoc(cacheRef, cacheData);
+  console.log(`Saved to builder cache: ${cacheKey}`);
+}
+
+// Utility function to check cache coverage for a county
+export async function checkCountyCacheCoverage(countyName: string): Promise<{
+  totalAreas: number;
+  cachedAreas: number;
+  expiredAreas: number;
+  towns: Record<string, {
+    cached: number;
+    expired: number;
+    total: number;
+  }>;
+}> {
+  const cacheQuery = query(
+    collection(db, BUILDER_CACHE_CONFIG.COLLECTION),
+    where('countyName', '==', countyName)
+  );
+
+  const snapshot = await getDocs(cacheQuery);
+  const now = Date.now();
+  const coverage = {
+    totalAreas: 0,
+    cachedAreas: 0,
+    expiredAreas: 0,
+    towns: {} as Record<string, { cached: number; expired: number; total: number; }>
+  };
+
+  snapshot.forEach(doc => {
+    const data = doc.data() as BuilderCache;
+    const townName = data.townName;
+    
+    if (!coverage.towns[townName]) {
+      coverage.towns[townName] = { cached: 0, expired: 0, total: 0 };
+    }
+
+    coverage.totalAreas++;
+    coverage.towns[townName].total++;
+
+    if (now - data.timestamp < BUILDER_CACHE_CONFIG.DURATION) {
+      coverage.cachedAreas++;
+      coverage.towns[townName].cached++;
+    } else {
+      coverage.expiredAreas++;
+      coverage.towns[townName].expired++;
+    }
+  });
+
+  return coverage;
+}
+
+// Update the database builder server action to use the new cache
+export async function clearBuilderCache(countyName: string, townName?: string): Promise<void> {
+  const cacheQuery = townName 
+    ? query(
+        collection(db, BUILDER_CACHE_CONFIG.COLLECTION),
+        where('countyName', '==', countyName),
+        where('townName', '==', townName)
+      )
+    : query(
+        collection(db, BUILDER_CACHE_CONFIG.COLLECTION),
+        where('countyName', '==', countyName)
+      );
+
+  const snapshot = await getDocs(cacheQuery);
+  
+  await Promise.all(snapshot.docs.map(doc => deleteDoc(doc.ref)));
+}

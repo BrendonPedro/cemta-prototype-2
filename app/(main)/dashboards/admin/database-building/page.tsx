@@ -1,13 +1,13 @@
-// app/(main)/dashboards/admin/page.tsx
+// app/dashboards/admin/database-building/page.tsx
 "use client";
 
 import React from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { useRouter } from "next/navigation";
 import DatabaseBuildingMonitor from "@/components/DatabaseBuildingMonitor";
-import { counties } from "@/lib/data/counties"; // Updated import
+import { counties } from "@/lib/data/counties";// Import counties from admin page
 
-export default function AdminDashboard() {
+export default function DatabaseBuildingPage() {
   const { loading, userRole } = useAuth();
   const router = useRouter();
 
@@ -34,23 +34,13 @@ export default function AdminDashboard() {
     <div className="space-y-8">
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-semibold text-gray-800">
-          Admin Dashboard
+          Database Building
         </h1>
       </div>
 
-      <div className="grid grid-cols-1 gap-8">
-        {/* Database Building Section */}
-        <section className="bg-white rounded-lg shadow-lg p-6">
-          <h2 className="text-2xl font-semibold mb-4">Database Management</h2>
-          <DatabaseBuildingMonitor counties={counties} />
-        </section>
-
-        {/* Additional admin sections */}
-        <section className="bg-white rounded-lg shadow-lg p-6">
-          <h2 className="text-2xl font-semibold mb-4">Admin Controls</h2>
-          {/* Add your admin controls here */}
-        </section>
-      </div>
+      <section className="bg-white rounded-lg shadow-lg p-6">
+        <DatabaseBuildingMonitor counties={counties} />
+      </section>
     </div>
   );
 }

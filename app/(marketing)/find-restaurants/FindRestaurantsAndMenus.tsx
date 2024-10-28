@@ -722,7 +722,7 @@ const handleMapClick = (event: google.maps.MapMouseEvent) => {
             <Table className="table-auto w-full">
               <TableHeader>
                 <TableRow className="bg-customTeal/10">
-                  <TableHead className="text-customTeal w-2/5 text-left">
+                  <TableHead className="text-customTeal w-2/5 text-left hover:bg-customTeal/10">
                     Restaurant
                     <DropdownMenu>
                       <DropdownMenuTrigger className="inline-flex items-center ml-2">
@@ -745,7 +745,7 @@ const handleMapClick = (event: google.maps.MapMouseEvent) => {
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableHead>
-                  <TableHead className="text-customTeal w-1/6 text-center">
+                  <TableHead className="text-customTeal w-1/6 text-center hover:bg-customTeal/10">
                     Menus
                     <DropdownMenu>
                       <DropdownMenuTrigger className="inline-flex items-center ml-2">
@@ -775,7 +775,7 @@ const handleMapClick = (event: google.maps.MapMouseEvent) => {
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableHead>
-                  <TableHead className="text-customTeal w-1/5 text-center">
+                  <TableHead className="text-customTeal w-1/5 text-center hover:bg-customTeal/10">
                     Rating
                     <DropdownMenu>
                       <DropdownMenuTrigger className="inline-flex items-center ml-2">
@@ -805,7 +805,7 @@ const handleMapClick = (event: google.maps.MapMouseEvent) => {
                       </DropdownMenuContent>
                     </DropdownMenu>
                   </TableHead>
-                  <TableHead className="text-customTeal w-1/6 text-center">
+                  <TableHead className="text-customTeal w-1/6 text-center hover:bg-customTeal/10">
                     County
                     <DropdownMenu>
                       <DropdownMenuTrigger className="inline-flex items-center ml-2">
@@ -1045,7 +1045,7 @@ const handleMapClick = (event: google.maps.MapMouseEvent) => {
                           <Button
                             onClick={resetFocus}
                             size="sm"
-                              className="w-auto mt-2 text-customTeal hover:bg-customTeal/10"
+                            className="w-auto mt-2 text-customTeal hover:bg-customTeal/10"
                           >
                             Show All Restaurants
                           </Button>
