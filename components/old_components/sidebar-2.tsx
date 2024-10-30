@@ -24,7 +24,7 @@ export const Sidebar2 = ({ className }: Props) => {
     <div
       className={cn(
         "flex h-full lg:w-[256px] lg:fixed left-0 top-0 px-4 border-r-2 flex-col ",
-        className,
+        className
       )}
     >
       <div className="flex items-center gap-x-0">

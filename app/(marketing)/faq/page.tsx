@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import ProfileUpdateHandler from "@/components/ProfileUpdateHandler";
+import ProfileUpdateHandler from "@/components/unused/ProfileUpdateHandler";
 import { AuthProvider } from "@/components/AuthProvider";
 
 const faqPage = () => {

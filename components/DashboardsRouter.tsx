@@ -1,4 +1,4 @@
-// app/dashboards/dashboard-router.tsx
+// components/dashboard-router.tsx
 
 "use client";
 

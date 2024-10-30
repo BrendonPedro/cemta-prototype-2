@@ -1,4 +1,4 @@
-// app/lib/database-builder/firestore.ts
+// lib/database-builder/firestore.ts
 
 import { db } from "@/lib/database-builder/db";
 import { 
@@ -18,10 +18,25 @@ export async function saveRestaurantData(
 ): Promise<void> {
   const batch = writeBatch(db);
 
+  // Clean the restaurant data to replace undefined with null
+  const cleanedData = {
+    ...restaurantData,
+    yelpId: restaurantData.yelpId || null,  // Replace undefined with null
+    yelpRating: restaurantData.yelpRating || null,
+    priceLevel: restaurantData.priceLevel || null,
+    phone: restaurantData.phone || null,
+    website: restaurantData.website || null,
+    photos: restaurantData.photos || [],     // Ensure photos is always an array
+    menuCount: restaurantData.menuCount || 0,
+    countyName,
+    townName,
+    lastUpdated: serverTimestamp()
+  };
+
   // County document with town subcollection
   const countyRef = doc(db, CONFIG.FIRESTORE.COLLECTIONS.COUNTIES, countyName);
   const townRef = doc(countyRef, CONFIG.FIRESTORE.COLLECTIONS.TOWNS, townName);
-  const restaurantRef = doc(townRef, CONFIG.FIRESTORE.COLLECTIONS.RESTAURANTS, restaurantData.id);
+  const restaurantRef = doc(townRef, CONFIG.FIRESTORE.COLLECTIONS.RESTAURANTS, cleanedData.id);
 
   // Update county stats
   batch.set(countyRef, {
@@ -38,21 +53,11 @@ export async function saveRestaurantData(
   }, { merge: true });
 
   // Save restaurant data
-  batch.set(restaurantRef, {
-    ...restaurantData,
-    countyName,
-    townName,
-    lastUpdated: serverTimestamp()
-  });
+  batch.set(restaurantRef, cleanedData);
 
   // Also save to global restaurants collection for easy querying
-  const globalRestaurantRef = doc(db, CONFIG.FIRESTORE.COLLECTIONS.RESTAURANTS, restaurantData.id);
-  batch.set(globalRestaurantRef, {
-    ...restaurantData,
-    countyName,
-    townName,
-    lastUpdated: serverTimestamp()
-  });
+  const globalRestaurantRef = doc(db, CONFIG.FIRESTORE.COLLECTIONS.RESTAURANTS, cleanedData.id);
+  batch.set(globalRestaurantRef, cleanedData);
 
   await batch.commit();
 }

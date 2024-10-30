@@ -1,8 +1,9 @@
 // lib/database-builder/types.ts
 
-export interface Location {
-  lat: number;
-  lng: number;
+import type { Place, YelpBusiness } from './places';
+
+export interface Geometry {
+  location: Location;
 }
 
 export interface TownData {
@@ -22,12 +23,12 @@ export interface RestaurantData {
   address: string;
   location: Location;
   rating: number;
-  priceLevel?: string;
-  phone?: string;
-  website?: string;
+  priceLevel?: string | null;  
+  phone?: string | null;       
+  website?: string | null;     
   googlePlaceId: string;
-  yelpId?: string;
-  yelpRating?: number;
+  yelpId?: string | null;      
+  yelpRating?: number | null;  
   photos: string[];
   menuCount: number;
   lastUpdated: string;
@@ -95,3 +96,24 @@ export interface ValidateSetupResult {
   status?: ProcessingStatus;
   error?: string;
 }
+
+export interface Location {
+  lat: number;
+  lng: number;
+}
+
+export interface PlaceGeometry {
+  location: {
+    lat: () => number;  // Google Places API returns location as functions
+    lng: () => number;
+  };
+}
+
+export interface PlacePhoto {
+  photo_reference: string;
+  height: number;
+  width: number;
+  html_attributions: string[];
+}
+
+export type { Place, YelpBusiness };

@@ -1,11 +1,9 @@
-// app/dashboards/admin/database-building/page.tsx
+// app/(main)/dashboards/admin/database-building/page.tsx
 "use client";
 
-import React from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { useRouter } from "next/navigation";
 import DatabaseBuildingMonitor from "@/components/DatabaseBuildingMonitor";
-import { counties } from "@/lib/data/counties";// Import counties from admin page
 
 export default function DatabaseBuildingPage() {
   const { loading, userRole } = useAuth();
@@ -32,15 +30,10 @@ export default function DatabaseBuildingPage() {
 
   return (
     <div className="space-y-8">
-      <div className="flex justify-between items-center">
-        <h1 className="text-3xl font-semibold text-gray-800">
-          Database Building
-        </h1>
-      </div>
-
-      <section className="bg-white rounded-lg shadow-lg p-6">
-        <DatabaseBuildingMonitor counties={counties} />
-      </section>
+      <h1 className="text-3xl font-semibold text-gray-800">
+        Database Building Control Panel
+      </h1>
+      <DatabaseBuildingMonitor /> 
     </div>
   );
 }

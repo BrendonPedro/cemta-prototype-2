@@ -5,7 +5,7 @@
 import { 
   CountyData, 
   ProcessingStats, 
-  ProcessingStatus,  // Import from types.ts instead of defining here
+  ProcessingStatus,
   ValidateSetupResult,
   CachedRestaurant 
 } from '@/lib/database-builder/types';
@@ -21,25 +21,35 @@ import {
   where, 
   getDocs,
   orderBy, 
-  limit as firestoreLimit,  // Rename to avoid conflict
+  limit as firestoreLimit,
   serverTimestamp, 
   deleteDoc,
-} from 'firebase/firestore'
+} from 'firebase/firestore';
 import { 
   getCachedBuildData, 
   saveBuildCache, 
   checkCountyCacheCoverage, 
   clearBuilderCache 
 } from '@/lib/database-builder/cache';
+import type { EnhancedCountyData } from '@/lib/data/counties';
+
+interface ProcessingOptions {
+  selectedTowns?: string[];
+  force?: boolean;
+  updateExisting?: boolean;
+  clearCache?: boolean;
+  batchSize?: number;
+  delayBetweenBatches?: number;
+}
 
 export interface BuildDatabaseResult {
   success: boolean;
-  status: ProcessingStatus;
+  status?: ProcessingStatus;
   stats?: ProcessingStats;
   error?: string;
 }
 
-async function validateSetup(countyData: CountyData): Promise<ValidateSetupResult> {
+async function validateSetup(countyName: string): Promise<ValidateSetupResult> {
   const requiredEnvVars = [
     'GOOGLE_MAPS_API_KEY',
     'YELP_API_KEY',
@@ -49,7 +59,7 @@ async function validateSetup(countyData: CountyData): Promise<ValidateSetupResul
 
   for (const envVar of requiredEnvVars) {
     if (!process.env[envVar]) {
-      const errorStatus = createErrorStatus(countyData.name, `Missing ${envVar}`);
+      const errorStatus = createErrorStatus(countyName, `Missing ${envVar}`);
       return {
         success: false,
         status: errorStatus,
@@ -61,7 +71,7 @@ async function validateSetup(countyData: CountyData): Promise<ValidateSetupResul
   return { 
     success: true,
     status: {
-      countyName: countyData.name,
+      countyName,
       status: 'pending',
       progress: 0,
       startTime: new Date(),
@@ -70,33 +80,154 @@ async function validateSetup(countyData: CountyData): Promise<ValidateSetupResul
   };
 }
 
-function updateStats(current: ProcessingStats, newData: Partial<ProcessingStats>): ProcessingStats {
-  return {
-    totalProcessed: newData.totalProcessed || current.totalProcessed || 0,
-    successful: newData.successful || current.successful || 0,
-    failed: newData.failed || current.failed || 0,
-    cached: newData.cached || current.cached || 0,
-    apiCalls: {
-      google: newData.apiCalls?.google || current.apiCalls.google || 0,
-      yelp: newData.apiCalls?.yelp || current.apiCalls.yelp || 0
+export async function buildCountyDatabase(
+  county: EnhancedCountyData,
+  options: ProcessingOptions = {}
+): Promise<BuildDatabaseResult> {
+  let status: ProcessingStatus | undefined;
+
+  try {
+    const {
+      selectedTowns,
+      force = false,
+      clearCache = false,
+      batchSize = 5,
+      delayBetweenBatches = 5000
+    } = options;
+
+    // Validate setup
+    const validationResult = await validateSetup(county.name);
+    if (!validationResult.success) {
+      return {
+        success: false,
+        status: validationResult.status,
+        error: validationResult.error
+      };
     }
-  };
-}
 
-async function clearCache(countyName: string, townName?: string): Promise<void> {
-  const cacheQuery = townName 
-    ? query(
-        collection(db, 'databaseBuilderCache'),
-        where('countyName', '==', countyName),
-        where('townName', '==', townName)
-      )
-    : query(
-        collection(db, 'databaseBuilderCache'),
-        where('countyName', '==', countyName)
-      );
+    if (clearCache) {
+      await clearBuilderCache(county.name);
+    }
 
-  const snapshot = await getDocs(cacheQuery);
-  await Promise.all(snapshot.docs.map(doc => deleteDoc(doc.ref)));
+    // Filter towns if specific ones are selected
+    const townsToProcess = selectedTowns?.length 
+      ? county.towns.filter(town => selectedTowns.includes(town.name))
+      : county.towns;
+
+    // Process towns in batches
+    const batches = [];
+    for (let i = 0; i < townsToProcess.length; i += batchSize) {
+      batches.push(townsToProcess.slice(i, i + batchSize));
+    }
+
+    let totalStats: ProcessingStats = {
+      totalProcessed: 0,
+      successful: 0,
+      failed: 0,
+      cached: 0,
+      apiCalls: {
+        google: 0,
+        yelp: 0
+      }
+    };
+
+    // Initialize processing status
+    const status = await initializeProcessingStatus(county.name);
+
+    // Process each batch
+    for (let i = 0; i < batches.length; i++) {
+      const batchTowns = batches[i];
+      
+      for (const town of batchTowns) {
+        // Check cache first
+        const cachedData = !force 
+          ? await getCachedBuildData(
+              town.location.lat,
+              town.location.lng,
+              county.name,
+              town.name
+            )
+          : null;
+
+        if (cachedData) {
+          console.log(`Using cache for ${town.name}`);
+          totalStats.cached += cachedData.length;
+          totalStats.totalProcessed += cachedData.length;
+        } else {
+          const townData: CountyData = {
+            name: county.name,
+            towns: [town]
+          };
+
+          const townStats = await processCounty(townData, {
+            googleApiKey: process.env.GOOGLE_MAPS_API_KEY!,
+            yelpApiKey: process.env.YELP_API_KEY!,
+            projectId: process.env.GOOGLE_CLOUD_PROJECT_ID!,
+            keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS!
+          });
+
+          // Update total stats
+          totalStats = combineStats(totalStats, townStats);
+
+          // Cache the results
+          if (townStats.restaurants?.length) {
+            await saveBuildCache(
+              town.location.lat,
+              town.location.lng,
+              county.name,
+              town.name,
+              townStats.restaurants
+            );
+          }
+        }
+
+    // Update progress
+        const progress = Math.floor(((i + 1) / batches.length) * 100);
+        await updateProcessingStatus(county.name, {
+          ...status,
+          progress,
+          stats: totalStats
+        });
+      }
+
+      // Wait between batches if not the last batch
+      if (i < batches.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, delayBetweenBatches));
+      }
+    }
+
+     // Update final status
+    const finalStatus = {
+      ...status,
+      status: 'completed' as const,
+      progress: 100,
+      stats: totalStats,
+      lastUpdated: new Date()
+    };
+    await updateProcessingStatus(county.name, finalStatus);
+
+    // Revalidate paths
+    revalidatePath('/restaurants');
+    revalidatePath(`/counties/${county.name.toLowerCase()}`);
+    revalidatePath('/dashboard');
+
+    return {
+      success: true,
+      status: finalStatus,
+      stats: totalStats
+    };
+  } catch (error) {
+    console.error('Error building county database:', error);
+    // If status wasn't initialized, create a basic error status
+    const errorStatus: ProcessingStatus = status || {
+      countyName: county.name,
+      status: 'failed',
+      progress: 0,
+      startTime: new Date(),
+      lastUpdated: new Date()
+    };
+    return handleProcessingError(county.name, error, errorStatus);
+  }
 }
 
 async function initializeProcessingStatus(countyName: string): Promise<ProcessingStatus> {
@@ -134,112 +265,31 @@ async function updateProcessingStatus(
   );
 }
 
-export async function buildCountyDatabase(
-  countyData: CountyData,
-  options: {
-    force?: boolean;
-    updateExisting?: boolean;
-    clearCache?: boolean;
-  } = {}
-): Promise<BuildDatabaseResult> {
-  console.log(`Starting database build for ${countyData.name}`);
-
-  const validationResult = await validateSetup(countyData);
-  if (!validationResult.success || !validationResult.status) {
-    return {
-      success: false,
-      status: validationResult.status || createErrorStatus(countyData.name, 'Validation failed'),
-      error: validationResult.error || 'Unknown validation error'
-    };
-  }
-
-  if (options.clearCache) {
-    await clearBuilderCache(countyData.name);
-  }
-
-  const cacheCoverage = await checkCountyCacheCoverage(countyData.name);
-  console.log('Cache coverage:', cacheCoverage);
-
-  const status = await initializeProcessingStatus(countyData.name);
-  
-  try {
-    const totalTowns = countyData.towns.length;
-    for (let i = 0; i < totalTowns; i++) {
-      const town = countyData.towns[i];
-      const progress = Math.floor(((i + 1) / totalTowns) * 100);
-      
-      const cachedData = !options.force 
-        ? await getCachedBuildData(
-            town.location.lat,
-            town.location.lng,
-            countyData.name,
-            town.name
-          )
-        : null;
-
-      if (cachedData) {
-        console.log(`Using builder cache for ${town.name}`);
-        status.stats = status.stats ? updateStats(status.stats, {
-          cached: (status.stats.cached || 0) + cachedData.length,
-          totalProcessed: (status.stats.totalProcessed || 0) + cachedData.length
-        }) : {
-          totalProcessed: cachedData.length,
-          successful: 0,
-          failed: 0,
-          cached: cachedData.length,
-          apiCalls: { google: 0, yelp: 0 }
-        };
-      } else {
-        const townStats = await processCounty(
-          { name: countyData.name, towns: [town] },
-          {
-            googleApiKey: process.env.GOOGLE_MAPS_API_KEY!,
-            yelpApiKey: process.env.YELP_API_KEY!,
-            projectId: process.env.GOOGLE_CLOUD_PROJECT_ID!,
-            keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS!
-          }
-        );
-
-        if (townStats.restaurants && townStats.restaurants.length > 0) {
-          await saveBuildCache(
-            town.location.lat,
-            town.location.lng,
-            countyData.name,
-            town.name,
-            townStats.restaurants
-          );
-        }
-
-        status.stats = combineStats(status.stats, townStats);
-      }
-
-      status.progress = progress;
-      await updateProcessingStatus(countyData.name, status);
-    }
-
-    const finalStatus = {
-      ...status,
-      status: 'completed' as const,
-      progress: 100,
-      lastUpdated: new Date()
-    };
-    await updateProcessingStatus(countyData.name, finalStatus);
-
-    revalidatePath('/restaurants');
-    revalidatePath(`/counties/${countyData.name.toLowerCase()}`);
-    revalidatePath('/dashboard');
-
-    return {
-      success: true,
-      status: finalStatus,
-      stats: status.stats
-    };
-
-  } catch (error) {
-    return handleProcessingError(countyData.name, error, status);
-  }
+function createErrorStatus(countyName: string, error: string): ProcessingStatus {
+  return {
+    countyName,
+    status: 'failed',
+    progress: 0,
+    startTime: new Date(),
+    lastUpdated: new Date(),
+    error
+  };
 }
 
+function combineStats(existing: ProcessingStats, newStats: ProcessingStats): ProcessingStats {
+  return {
+    totalProcessed: existing.totalProcessed + newStats.totalProcessed,
+    successful: existing.successful + newStats.successful,
+    failed: existing.failed + newStats.failed,
+    cached: existing.cached + newStats.cached,
+    apiCalls: {
+      google: existing.apiCalls.google + newStats.apiCalls.google,
+      yelp: existing.apiCalls.yelp + newStats.apiCalls.yelp
+    }
+  };
+}
+
+// Update the handleProcessingError function to handle the status parameter correctly
 function handleProcessingError(
   countyName: string, 
   error: unknown, 
@@ -262,31 +312,6 @@ function handleProcessingError(
   };
 }
 
-function createErrorStatus(countyName: string, error: string): ProcessingStatus {
-  return {
-    countyName,
-    status: 'failed',
-    progress: 0,
-    startTime: new Date(),
-    lastUpdated: new Date(),
-    error
-  };
-}
-
-function combineStats(existing: ProcessingStats | undefined, newStats: ProcessingStats): ProcessingStats {
-  if (!existing) return newStats;
-  return {
-    totalProcessed: existing.totalProcessed + newStats.totalProcessed,
-    successful: existing.successful + newStats.successful,
-    failed: existing.failed + newStats.failed,
-    cached: existing.cached + newStats.cached,
-    apiCalls: {
-      google: existing.apiCalls.google + newStats.apiCalls.google,
-      yelp: existing.apiCalls.yelp + newStats.apiCalls.yelp
-    }
-  };
-}
-
 export async function getLatestProcessingStatus(countyName: string): Promise<ProcessingStatus | null> {
   const statusDoc = await getDoc(doc(db, 'processingStatus', countyName));
   if (!statusDoc.exists()) return null;
@@ -299,8 +324,6 @@ export async function getLatestProcessingStatus(countyName: string): Promise<Pro
   } as ProcessingStatus;
 }
 
-export type { ProcessingStatus };
-
 export async function getCountyProcessingHistory(
   countyName: string,
   historyLimit = 10
@@ -309,7 +332,7 @@ export async function getCountyProcessingHistory(
     collection(db, 'processingHistory'),
     where('countyName', '==', countyName),
     orderBy('startTime', 'desc'),
-    firestoreLimit(historyLimit)  // Use renamed import
+    firestoreLimit(historyLimit)
   );
 
   const snapshot = await getDocs(historyQuery);
@@ -320,3 +343,4 @@ export async function getCountyProcessingHistory(
   })) as ProcessingStatus[];
 }
 
+export type { ProcessingStatus };

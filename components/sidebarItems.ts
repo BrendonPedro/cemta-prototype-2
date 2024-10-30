@@ -37,7 +37,7 @@ export function getSidebarItemsByRole(userRole: UserRole): SidebarItem[] {
         dashboardItem,
         { name: "TranslateMenuPro", href: "/menuAnalyzer" },
         menuDetailsItem,
-        { name: "Overview", href: "/dashboards/admin" },
+        { name: "Overview", href: "/dashboards/admin/database-building" },
         { name: "User Management", href: "/dashboards/admin/user-management" },
         {
           name: "System Analytics",

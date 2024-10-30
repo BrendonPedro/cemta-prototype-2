@@ -3,6 +3,20 @@
 import { Storage, Bucket, LifecycleRule } from "@google-cloud/storage";
 import { DocumentProcessorServiceClient } from "@google-cloud/documentai";
 
+// Validate environment variables immediately
+if (!process.env.GOOGLE_CLOUD_STORAGE_BUCKET_RESTAURANT_IMAGES) {
+  console.error('Missing GOOGLE_CLOUD_STORAGE_BUCKET_RESTAURANT_IMAGES environment variable');
+}
+
+if (!process.env.GOOGLE_CLOUD_PROJECT_ID) {
+  console.error('Missing GOOGLE_CLOUD_PROJECT_ID environment variable');
+}
+
+if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+  console.error('Missing GOOGLE_APPLICATION_CREDENTIALS environment variable');
+}
+
+
 // Types for better type safety
 interface BucketConfig {
   name: string;

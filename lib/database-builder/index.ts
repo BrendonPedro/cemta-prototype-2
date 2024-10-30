@@ -5,9 +5,9 @@ import { Client } from '@googlemaps/google-maps-services-js';
 import type { CountyData, ProcessingStats, RestaurantData } from './types';
 import { CONFIG } from './config';
 import { fetchGooglePlaces, fetchYelpData } from './places';
-import { generateGridPoints, getGeohashKey } from './grid';
+import { generateGridPoints } from './grid';
 import { saveRestaurantData } from './firestore';
-import { uploadImage } from './storage';
+import { uploadImageWithRetry } from './storage';
 import axios from 'axios';
 
 export async function processCounty(
@@ -52,8 +52,8 @@ export async function processCounty(
 
           try {
             const location = {
-              lat: place.geometry.location.lat(),
-              lng: place.geometry.location.lng()
+              lat: place.geometry.location.lat,
+              lng: place.geometry.location.lng
             };
 
             const yelpData = await fetchYelpData(
@@ -63,29 +63,31 @@ export async function processCounty(
             );
             stats.apiCalls.yelp++;
 
-            // Process and save restaurant data
-            const restaurantData: RestaurantData = {
-              id: place.place_id,
-              name: place.name,
-              address: place.vicinity || 'Address not available',
-              location,
-              rating: place.rating || 0,
-              googlePlaceId: place.place_id,
-              yelpId: yelpData?.id,
-              yelpRating: yelpData?.rating,
-              photos: [] as string[],  // Explicitly type the array
-              menuCount: 0,
-              lastUpdated: new Date().toISOString(),
-              source: {
-                google: true,
-                yelp: !!yelpData
-              }
-            };
+                const restaurantData: RestaurantData = {
+                  id: place.place_id,
+                  name: place.name,
+                  address: place.vicinity || 'Address not available',
+                  location,
+                  rating: place.rating || 0,
+                  googlePlaceId: place.place_id,
+                  yelpId: yelpData?.id || null,        // Changed from undefined to null
+                  yelpRating: yelpData?.rating || null, // Changed from undefined to null
+                  priceLevel: null,                     // Initialize optional fields with null
+                  phone: null,
+                  website: null,
+                  photos: [],
+                  menuCount: 0,
+                  lastUpdated: new Date().toISOString(),
+                  source: {
+                    google: true,
+                    yelp: !!yelpData
+                  }
+                };
 
             // Process photos if available
             if (place.photos && Array.isArray(place.photos)) {
               for (const photo of place.photos) {
-                const photoReference = (photo as any).photo_reference;
+                const photoReference = photo.photo_reference;
                 if (!photoReference) continue;
 
                 try {
@@ -94,15 +96,16 @@ export async function processCounty(
                     { responseType: 'arraybuffer' }
                   );
 
-                  const imageUrl = await uploadImage(
+                  const imageUrl = await uploadImageWithRetry(
                     storage,
                     Buffer.from(response.data),
                     {
                       countyName: countyData.name,
                       townName: town.name,
                       restaurantId: place.place_id,
-                      filename: `${Date.now()}.jpg`,
-                      contentType: 'image/jpeg'
+                      filename: `${Date.now()}_google.jpg`,
+                      contentType: 'image/jpeg',
+                      source: 'google'
                     }
                   );
 
@@ -119,7 +122,6 @@ export async function processCounty(
             stats.successful++;
             stats.totalProcessed++;
 
-            // Respect API rate limits
             await new Promise(resolve => setTimeout(resolve, CONFIG.API.DELAY_BETWEEN_CALLS));
           } catch (error) {
             console.error(`Error processing place ${place.place_id}:`, error);
