@@ -9,9 +9,14 @@ import { useDropzone, Accept } from "react-dropzone";
 interface MenuUploadProps {
   onUpload: (uploadedUrl: string, previewUrl: string, fileName: string) => void;
   onFileChange: (file: File) => void;
+  restaurantId?: string; // Optional - if uploading for a specific restaurant
 }
 
-const MenuUpload: React.FC<MenuUploadProps> = ({ onUpload, onFileChange }) => {
+const MenuUpload: React.FC<MenuUploadProps> = ({
+  onUpload,
+  onFileChange,
+  restaurantId,
+}) => {
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -28,7 +33,7 @@ const MenuUpload: React.FC<MenuUploadProps> = ({ onUpload, onFileChange }) => {
       setLoading(true);
 
       try {
-        console.log("Checking image cache...");
+        // First check cache
         const checkResponse = await fetch("/api/check-image-cache", {
           method: "POST",
           headers: {
@@ -46,15 +51,28 @@ const MenuUpload: React.FC<MenuUploadProps> = ({ onUpload, onFileChange }) => {
         console.log("Check image cache result:", checkResult);
 
         if (checkResult.exists) {
-          // Use the cached URL
+          // Use cached URL
           onUpload(checkResult.url, preview, selectedFile.name);
         } else {
-          // Upload the file if it doesn't exist in cache
-          console.log("Uploading to GCS...");
+          // Upload with new storage route
           const formData = new FormData();
+
+          // Add the file
           formData.append("file", selectedFile);
 
-          const uploadResponse = await fetch("/api/upload-to-gcs", {
+          // Add metadata
+          formData.append(
+            "metadata",
+            JSON.stringify({
+              type: "menu",
+              source: "user",
+              filename: selectedFile.name,
+              contentType: selectedFile.type,
+              restaurantId: restaurantId, // Include if available
+            })
+          );
+
+          const uploadResponse = await fetch("/api/storage", {
             method: "POST",
             headers: {
               Authorization: `Bearer ${firebaseToken}`,
@@ -63,7 +81,9 @@ const MenuUpload: React.FC<MenuUploadProps> = ({ onUpload, onFileChange }) => {
           });
 
           if (!uploadResponse.ok) {
-            throw new Error(`HTTP error! status: ${uploadResponse.status}`);
+            throw new Error(
+              `Upload failed with status: ${uploadResponse.status}`
+            );
           }
 
           const uploadResult = await uploadResponse.json();
@@ -77,7 +97,7 @@ const MenuUpload: React.FC<MenuUploadProps> = ({ onUpload, onFileChange }) => {
         setLoading(false);
       }
     },
-    [onFileChange, firebaseToken, onUpload]
+    [onFileChange, firebaseToken, onUpload, restaurantId]
   );
 
   const onDrop = useCallback(
@@ -86,7 +106,7 @@ const MenuUpload: React.FC<MenuUploadProps> = ({ onUpload, onFileChange }) => {
         handleFileSelection(acceptedFiles[0]);
       }
     },
-    [handleFileSelection],
+    [handleFileSelection]
   );
 
   const acceptedFileTypes: Accept = {

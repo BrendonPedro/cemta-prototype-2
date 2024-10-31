@@ -12,6 +12,10 @@ export async function GET(request: Request) {
   const lng = searchParams.get("lng");
   const limit = parseInt(searchParams.get("limit") || "20", 10);
 
+    // Get the token from the request headers
+  const authHeader = request.headers.get("authorization");
+  const firebaseToken = authHeader?.split("Bearer ")[1] || null;
+
   if (!lat || !lng) {
     return NextResponse.json(
       { error: "Latitude and longitude are required" },
@@ -28,7 +32,7 @@ export async function GET(request: Request) {
     const parsedLat = parseFloat(lat);
     const parsedLng = parseFloat(lng);
 
-    const data = await getLocationData(parsedLat, parsedLng, apiKey);
+    const data = await getLocationData(parsedLat, parsedLng, apiKey, firebaseToken);
 
     console.log(`Data cached: ${data.cached}, Grid Key: ${data.gridKey}`);
     if (!data.cached) {

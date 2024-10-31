@@ -1,6 +1,6 @@
 // lib/database-builder/types.ts
 
-import type { Place, YelpBusiness } from './places';
+import type { Place, YelpBusiness } from './services/places';
 
 export interface Geometry {
   location: Location;
@@ -56,27 +56,6 @@ export interface CachedRestaurant {
   hasGoogleData?: boolean;
 }
 
-export interface ProcessingStatus {
-  countyName: string;
-  status: 'pending' | 'processing' | 'completed' | 'failed';
-  progress: number;
-  startTime: Date;
-  lastUpdated: Date;
-  error?: string;
-  stats?: ProcessingStats;
-}
-
-export interface ProcessingStats {
-  totalProcessed: number;
-  successful: number;
-  failed: number;
-  cached: number;
-  restaurants?: CachedRestaurant[];  // Updated to use CachedRestaurant type
-  apiCalls: {
-    google: number;
-    yelp: number;
-  };
-}
 
 export interface CountyStats {
   name: string;
@@ -117,3 +96,68 @@ export interface PlacePhoto {
 }
 
 export type { Place, YelpBusiness };
+
+// interfaces for rate limiting and progress tracking
+export interface FetchProgress {
+  googleCallsMade: number;
+  yelpCallsMade: number;
+  restaurantsProcessed: number;
+  totalFound: number;
+  status: 'idle' | 'running' | 'paused' | 'completed' | 'error';
+  currentLocation: Location | null;
+  error: string | null;
+  lastBatchResults: Place[];
+}
+
+export interface GridProcessingOptions {
+  maxGoogleCalls?: number;
+  maxYelpCalls?: number;
+  batchSize?: number;
+  signal?: AbortSignal;
+}
+
+export interface BatchProcessingResult {
+  results: Place[];
+  progress: FetchProgress;
+  error?: string;
+}
+
+// ProcessingStats includes progress tracking
+export interface ProcessingStats {
+  totalProcessed: number;
+  successful: number;
+  failed: number;
+  cached: number;
+  restaurants?: CachedRestaurant[];
+  apiCalls: {
+    google: number;
+    yelp: number;
+  };
+  progress?: FetchProgress;
+}
+
+export interface ProcessingStatus {
+  countyName: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  progress: number;
+  startTime: Date;
+  lastUpdated: Date;
+  error?: string;
+  stats?: ProcessingStats;
+}
+
+// interfaces for error handling
+export interface ApiError {
+  response?: {
+    status: number;
+    data?: any;
+  };
+  message: string;
+}
+
+export interface ProcessingError extends Error {
+  response?: {
+    status: number;
+    data?: any;
+  };
+}

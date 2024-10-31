@@ -21,6 +21,7 @@ import { createOrUpdateRestaurant } from "./firebaseFirestore";
 import { measureAPICall, checkRateLimit } from '@/app/utils/apiUtils';
 import { saveCachedRestaurantsForLocation, getCachedRestaurantsForLocation } from "./firebaseFirestore";
 
+
 interface RequestCache {
   timestamp: number;
   promise: Promise<any>;
@@ -132,12 +133,23 @@ interface LocationCache {
 }
 
 
-// Add this helper function for image processing
+// Update the processImagesInBatches function in locationService.ts
+
 async function processImagesInBatches(
-  images: { url: string; restaurantId: string; source: 'google' | 'yelp' }[]
+  images: { url: string; restaurantId: string; source: 'google' | 'yelp' }[],
+  firebaseToken: string | null // Add token as parameter
 ): Promise<Map<string, string>> {
   const results = new Map<string, string>();
   
+  if (!firebaseToken) {
+    console.error('No Firebase token provided');
+    // Return original URLs if no token
+    images.forEach(({ url, restaurantId }) => {
+      results.set(restaurantId, url);
+    });
+    return results;
+  }
+
   for (let i = 0; i < images.length; i += CACHE_CONFIG.IMAGES.MAX_CONCURRENT) {
     const batch = images.slice(i, i + CACHE_CONFIG.IMAGES.MAX_CONCURRENT);
     const batchResults = await Promise.all(
@@ -145,9 +157,36 @@ async function processImagesInBatches(
         let retries = 0;
         while (retries < CACHE_CONFIG.IMAGES.MAX_RETRIES) {
           try {
-            const savedUrl = await saveRestaurantImage(url, restaurantId, source);
-            return { restaurantId, url: savedUrl };
+            const baseUrl = typeof window !== 'undefined' 
+              ? window.location.origin 
+              : 'http://localhost:3000';
+
+            const response = await fetch(`${baseUrl}/api/storage`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${firebaseToken}`
+              },
+              body: JSON.stringify({
+                imageUrl: url,
+                metadata: {
+                  type: 'restaurant',
+                  source,
+                  restaurantId,
+                  filename: `${Date.now()}_${source}.jpg`,
+                  contentType: 'image/jpeg'
+                }
+              })
+            });
+
+            if (!response.ok) {
+              throw new Error(`Failed to upload image: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+            return { restaurantId, url: data.url };
           } catch (error) {
+            console.error(`Attempt ${retries + 1} failed:`, error);
             retries++;
             if (retries === CACHE_CONFIG.IMAGES.MAX_RETRIES) {
               console.error(`Failed to save image after ${retries} attempts:`, error);
@@ -156,9 +195,10 @@ async function processImagesInBatches(
             await new Promise(resolve => setTimeout(resolve, 1000 * retries));
           }
         }
+        return { restaurantId, url }; // Fallback to original URL
       })
     );
-    
+
     batchResults.forEach(result => {
       if (result) {
         results.set(result.restaurantId, result.url);
@@ -254,7 +294,8 @@ export async function getNearbyRestaurants(
   lat: number,
   lng: number,
   apiKey: string,
-  apiCallCount: { count: number }
+  apiCallCount: { count: number },
+  firebaseToken: string | null // Add this parameter
 ): Promise<{ restaurants: CachedRestaurant[]; metrics: any }> {
   const startTime = Date.now();
   const metrics = {
@@ -312,7 +353,7 @@ const imageProcessingQueue = validPlaces
     source: 'google' as const
   }));
 
-const processedImages = await processImagesInBatches(imageProcessingQueue);
+  const processedImages = await processImagesInBatches(imageProcessingQueue, firebaseToken);
 
     // Process restaurants in batches of 10 for better performance
     const restaurants: CachedRestaurant[] = [];
@@ -427,13 +468,18 @@ const activeRequests = new Map<string, {
 }>();
 
 // Main export function
-export async function getLocationData(lat: number, lng: number, apiKey: string) {
+export async function getLocationData(
+  lat: number,
+  lng: number,
+  apiKey: string,
+  firebaseToken: string | null // Add this parameter
+) {
   const cacheKey = getCacheKey(lat, lng);
   const now = Date.now();
 
   // Check if there's an active request for this location
   const activeRequest = activeRequests.get(cacheKey);
-  if (activeRequest && (now - activeRequest.timestamp < 5000)) { // 5 second window
+  if (activeRequest && (now - activeRequest.timestamp < 5000)) {
     console.log(`Active request found for key: ${cacheKey}`);
     return activeRequest.promise;
   }
@@ -489,12 +535,11 @@ const promise = (async () => {
       return { ...locationData, apiCallCount: 0 };
     }
 
- 
-    // Fetch new data
+     // Fetch new data
     const apiCallCount = { count: 0 };
     const [county, restaurantsResult] = await Promise.all([
       getCountyName(lat, lng, apiKey, apiCallCount),
-      getNearbyRestaurants(lat, lng, apiKey, apiCallCount)
+      getNearbyRestaurants(lat, lng, apiKey, apiCallCount, firebaseToken )
     ]);
 
     const { restaurants, metrics: restaurantMetrics } = restaurantsResult;  // Rename to restaurantMetrics

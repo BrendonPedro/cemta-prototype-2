@@ -1,14 +1,77 @@
 // lib/database-builder/index.ts
 
-import { Storage } from '@google-cloud/storage';
 import { Client } from '@googlemaps/google-maps-services-js';
-import type { CountyData, ProcessingStats, RestaurantData } from './types';
+import type { CountyData, ProcessingStats, RestaurantData, PlacePhoto } from './types';
 import { CONFIG } from './config';
-import { fetchGooglePlaces, fetchYelpData } from './places';
 import { generateGridPoints } from './grid';
 import { saveRestaurantData } from './firestore';
-import { uploadImageWithRetry } from './storage';
 import axios from 'axios';
+import { 
+  fetchGooglePlaces, 
+  fetchYelpData,
+  fetchPlacesWithLimit,
+  usePlacesFetcher,
+  clearCache,
+  resetProgress
+} from './services/places';
+
+async function processPhoto(
+  photo: PlacePhoto,
+  config: {
+    googleApiKey: string;
+    firebaseToken?: string;
+    metadata: {
+      countyName: string;
+      townName: string;
+      restaurantId: string;
+    };
+  }
+): Promise<string | null> {
+  if (!photo.photo_reference) return null;
+
+  try {
+    const response = await axios.get(
+      `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference=${photo.photo_reference}&key=${config.googleApiKey}`,
+      { responseType: 'arraybuffer' }
+    );
+
+    if (!config.firebaseToken) {
+      console.warn('No Firebase token provided, skipping photo upload');
+      return null;
+    }
+
+    const formData = new FormData();
+    formData.append('imageData', Buffer.from(response.data).toString('base64'));
+    formData.append('metadata', JSON.stringify({
+      type: 'restaurant',
+      source: 'google',
+      countyName: config.metadata.countyName,
+      townName: config.metadata.townName,
+      restaurantId: config.metadata.restaurantId,
+      filename: `${Date.now()}_google.jpg`,
+      contentType: 'image/jpeg'
+    }));
+
+    const uploadResponse = await fetch('/api/storage', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.firebaseToken}`,
+      },
+      body: formData
+    });
+
+    if (!uploadResponse.ok) {
+      throw new Error(`Upload failed with status: ${uploadResponse.status}`);
+    }
+
+    const { url } = await uploadResponse.json();
+    return url || null;
+
+  } catch (error) {
+    console.error('Error processing photo:', error);
+    return null;
+  }
+}
 
 export async function processCounty(
   countyData: CountyData,
@@ -17,7 +80,8 @@ export async function processCounty(
     yelpApiKey: string;
     projectId: string;
     keyFilename: string;
-  }
+  },
+  firebaseToken?: string
 ): Promise<ProcessingStats> {
   const stats: ProcessingStats = {
     totalProcessed: 0,
@@ -31,10 +95,6 @@ export async function processCounty(
   };
 
   const client = new Client({});
-  const storage = new Storage({
-    projectId: config.projectId,
-    keyFilename: config.keyFilename
-  });
 
   for (const town of countyData.towns) {
     try {
@@ -63,59 +123,43 @@ export async function processCounty(
             );
             stats.apiCalls.yelp++;
 
-                const restaurantData: RestaurantData = {
-                  id: place.place_id,
-                  name: place.name,
-                  address: place.vicinity || 'Address not available',
-                  location,
-                  rating: place.rating || 0,
-                  googlePlaceId: place.place_id,
-                  yelpId: yelpData?.id || null,        // Changed from undefined to null
-                  yelpRating: yelpData?.rating || null, // Changed from undefined to null
-                  priceLevel: null,                     // Initialize optional fields with null
-                  phone: null,
-                  website: null,
-                  photos: [],
-                  menuCount: 0,
-                  lastUpdated: new Date().toISOString(),
-                  source: {
-                    google: true,
-                    yelp: !!yelpData
-                  }
-                };
+            const restaurantData: RestaurantData = {
+              id: place.place_id,
+              name: place.name,
+              address: place.vicinity || 'Address not available',
+              location,
+              rating: place.rating || 0,
+              googlePlaceId: place.place_id,
+              yelpId: yelpData?.id || null,
+              yelpRating: yelpData?.rating || null,
+              priceLevel: null,
+              phone: null,
+              website: null,
+              photos: [],
+              menuCount: 0,
+              lastUpdated: new Date().toISOString(),
+              source: {
+                google: true,
+                yelp: !!yelpData
+              }
+            };
 
-            // Process photos if available
             if (place.photos && Array.isArray(place.photos)) {
-              for (const photo of place.photos) {
-                const photoReference = photo.photo_reference;
-                if (!photoReference) continue;
-
-                try {
-                  const response = await axios.get(
-                    `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference=${photoReference}&key=${config.googleApiKey}`,
-                    { responseType: 'arraybuffer' }
-                  );
-
-                  const imageUrl = await uploadImageWithRetry(
-                    storage,
-                    Buffer.from(response.data),
-                    {
+              const photoUrls = await Promise.all(
+                place.photos.map(photo => 
+                  processPhoto(photo, {
+                    googleApiKey: config.googleApiKey,
+                    firebaseToken,
+                    metadata: {
                       countyName: countyData.name,
                       townName: town.name,
                       restaurantId: place.place_id,
-                      filename: `${Date.now()}_google.jpg`,
-                      contentType: 'image/jpeg',
-                      source: 'google'
                     }
-                  );
+                  })
+                )
+              );
 
-                  if (imageUrl) {
-                    restaurantData.photos.push(imageUrl);
-                  }
-                } catch (photoError) {
-                  console.error('Error processing photo:', photoError);
-                }
-              }
+              restaurantData.photos = photoUrls.filter((url): url is string => url !== null);
             }
 
             await saveRestaurantData(restaurantData, countyData.name, town.name);
@@ -138,7 +182,26 @@ export async function processCounty(
   return stats;
 }
 
+// Export components
+export { generateGridPoints } from './grid';
+export { PlacesMonitor } from './components/PlacesMonitor';
+
+// Export types
+export type {
+  CountyData,
+  ProcessingStats,
+  FetchProgress,
+  Place,
+  YelpBusiness,
+  RestaurantData,
+} from './types';
+
+// Export functions
 export {
-  type CountyData,
-  type ProcessingStats,
+  fetchPlacesWithLimit,
+  fetchGooglePlaces,
+  fetchYelpData,
+  clearCache,
+  resetProgress,
+  usePlacesFetcher,
 };

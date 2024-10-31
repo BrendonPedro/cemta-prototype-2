@@ -73,18 +73,18 @@ export default function Home() {
         <ClerkLoaded>
           <SignedOut>
             <SignUpButton mode="modal">
-              <Button size="lg" variant="nextButton" className="w-full">
+              <Button size="lg" variant="nextButton" className="w-auto">
                 Get Started
               </Button>
             </SignUpButton>
             <SignInButton mode="modal">
-              <Button size="lg" variant="nextButton2" className="w-full">
+              <Button size="lg" variant="nextButton2" className="w-auto">
                 I already have an account
               </Button>
             </SignInButton>
           </SignedOut>
           <SignedIn>
-            <Button size="lg" variant="nextButton2" className="w-full" asChild>
+            <Button size="lg" variant="nextButton2" className="w-auto" asChild>
               <Link
                 href={
                   userRole === "admin"

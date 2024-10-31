@@ -3,29 +3,43 @@
 
 import { useAuth } from "@/components/AuthProvider";
 import { useRouter } from "next/navigation";
-import DatabaseBuildingMonitor from "@/components/DatabaseBuildingMonitor";
+import DatabaseBuildingMonitor from "@/lib/database-builder/components/DatabaseBuildingMonitor";
+import { PlacesMonitor } from "@/lib/database-builder/components/PlacesMonitor";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import type { Place } from "@/lib/database-builder/types";
+import { useState } from "react";
 
+// Remove direct Google Cloud Storage imports
 export default function DatabaseBuildingPage() {
   const { loading, userRole } = useAuth();
   const router = useRouter();
+  const [activeTab, setActiveTab] = useState("batch");
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-customTeal"></div>
-      </div>
-    );
-  }
+   const handlePlacesBatchComplete = async (results: Place[]) => {
+     try {
+       // Use the API route instead of direct storage access
+       const response = await fetch("/api/storage", {
+         method: "POST",
+         headers: {
+           "Content-Type": "application/json",
+         },
+         body: JSON.stringify({ results }),
+       });
 
-  if (userRole !== "admin") {
+       if (!response.ok) {
+         throw new Error("Storage operation failed");
+       }
+
+       console.log(`Processed ${results.length} places`);
+     } catch (error) {
+       console.error("Error handling batch:", error);
+     }
+   };
+
+  if (loading || userRole !== "admin") {
     router.push("/dashboards");
-    return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="text-xl font-semibold text-red-600">
-          Unauthorized access. Redirecting...
-        </div>
-      </div>
-    );
+    return <div>Loading...</div>;
   }
 
   return (
@@ -33,7 +47,33 @@ export default function DatabaseBuildingPage() {
       <h1 className="text-3xl font-semibold text-gray-800">
         Database Building Control Panel
       </h1>
-      <DatabaseBuildingMonitor /> 
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Data Management Tools</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList>
+              <TabsTrigger value="batch">Batch Processing</TabsTrigger>
+              <TabsTrigger value="places">Places API</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="batch">
+              <DatabaseBuildingMonitor />
+            </TabsContent>
+
+            <TabsContent value="places">
+              <PlacesMonitor
+                onBatchComplete={(results) => {
+                  console.log(`Processed ${results.length} places`);
+                }}
+                townLocation={{ lat: 24.6851, lng: 120.8307 }}
+              />
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
     </div>
   );
 }

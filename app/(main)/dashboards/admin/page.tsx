@@ -5,7 +5,7 @@
 import React from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { useRouter } from "next/navigation";
-import DatabaseBuildingMonitor from "@/components/DatabaseBuildingMonitor";
+import DatabaseBuildingMonitor from "@/lib/database-builder/components/DatabaseBuildingMonitor";
 import { Card } from "@/components/ui/card";
 import { counties } from "@/lib/data/counties";
 

@@ -60,16 +60,7 @@ const formatYelpHours = (yelpHours: YelpBusiness["hours"]): BusinessHours[] => {
   }));
 };
 
-const getUniquePhotos = (details: RestaurantDetails, photos: Photo[]): string[] => {
-  const uniqueUrls = new Set<string>();
-  if (details.imageUrl) {
-    uniqueUrls.add(details.imageUrl);
-  }
-  photos.forEach(photo => {
-    uniqueUrls.add(photo.url);
-  });
-  return Array.from(uniqueUrls);
-};
+
 
 // ======= Types =======
 interface RestaurantPageProps {
@@ -91,8 +82,8 @@ interface RestaurantPageState {
   loading: boolean;
   error: string | null;
   activeTab: string;
+  allPhotos: Set<string>; // New state for tracking all unique photos
 }
-
 // ======= Restaurant Content Component =======
 const RestaurantContent: React.FC<RestaurantContentProps> = ({
   details,
@@ -162,17 +153,20 @@ const RestaurantContent: React.FC<RestaurantContentProps> = ({
     <div className="lg:w-2/3">
       <Carousel className="w-full">
         <CarouselContent>
-          {getUniquePhotos(details, photos).map((photo, index) => (
+          {photos.map((photo, index) => (
             <CarouselItem key={index}>
               <div className="relative aspect-video w-full">
                 <Image
-                  src={photo || "/placeholder-restaurant.jpg"}
+                  src={photo.url || "/placeholder-restaurant.jpg"}
                   alt={`${details.name} - Photo ${index + 1}`}
                   fill
                   sizes="(max-width: 768px) 100vw, (max-width: 1200px) 66vw, 50vw"
                   className="rounded-lg object-cover"
                   priority={index === 0}
                 />
+                <div className="absolute bottom-2 right-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
+                  {photo.source}
+                </div>
               </div>
             </CarouselItem>
           ))}
@@ -203,28 +197,28 @@ const RestaurantContent: React.FC<RestaurantContentProps> = ({
     </div>
   );
 
-  const renderMenusSection = () => (
-    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-      {menus.map((menu) => (
-        <Link href={`/menu-details/${menu.id}`} key={menu.id}>
-          <Card className="overflow-hidden hover:shadow-lg transition-shadow">
-            <CardContent className="p-6">
-              <h3 className="text-xl font-semibold mb-4">{menu.menuName}</h3>
-              <div className="relative aspect-[4/3] w-full">
-                <Image
-                  src={menu.imageUrl || "unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=1074&q=80"}
-                  alt={menu.menuName}
-                  fill
-                  sizes="(max-width: 768px) 100vw, 50vw"
-                  className="rounded-lg object-cover"
-                />
-              </div>
-            </CardContent>
-          </Card>
-        </Link>
-      ))}
-    </div>
-  );
+const renderMenusSection = () => (
+  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+    {menus.map((menu) => (
+      <Link href={`/menu-details/${menu.id}`} key={menu.id}>
+        <Card className="overflow-hidden hover:shadow-lg transition-shadow">
+          <CardContent className="p-6">
+            <h3 className="text-xl font-semibold mb-4">{menu.menuName}</h3>
+            <div className="relative aspect-[4/3] w-full">
+              <Image
+                src={menu.imageUrl || "/placeholder-restaurant.jpg"}
+                alt={menu.menuName}
+                fill
+                sizes="(max-width: 768px) 100vw, 50vw"
+                className="rounded-lg object-cover"
+              />
+            </div>
+          </CardContent>
+        </Card>
+      </Link>
+    ))}
+  </div>
+);
 
   // Main Render
   return (
@@ -280,88 +274,122 @@ const RestaurantPage: React.FC<RestaurantPageProps> = ({ restaurantId }) => {
     loading: true,
     error: null,
     activeTab: "menus",
+    allPhotos: new Set(),
   });
 
-useEffect(() => {
-  async function fetchRestaurantData() {
-    try {
-      // Fetch restaurant details from cache
-      const details = await getCachedRestaurantDetails(restaurantId);
-      if (!details) {
-        setState((prev) => ({
-          ...prev,
-          error: "Restaurant not found",
-          loading: false,
-        }));
-        return;
-      }
+  useEffect(() => {
+    let mounted = true;
+    const allPhotos = new Set<string>();
 
-      // Parallel fetch of menus and Yelp data
-      const [menusData, yelpData] = await Promise.all([
-        getMenusByRestaurantId(restaurantId),
-        details.yelpId && details.location
-          ? getYelpBusinessWithPhotos(
-              details.name,
-              details.location.latitude,
-              details.location.longitude
-            )
-          : null,
-      ]);
+    async function fetchRestaurantData() {
+      try {
+        // First, get cached restaurant details
+        const details = await getCachedRestaurantDetails(restaurantId);
+        if (!details) {
+          if (mounted) {
+            setState((prev) => ({
+              ...prev,
+              error: "Restaurant not found",
+              loading: false,
+            }));
+          }
+          return;
+        }
 
-      // Collect and process photos
-      const allPhotos: Photo[] = [];
-      if (details.imageUrl) {
-        allPhotos.push({
-          url: details.imageUrl,
-          source: "google" as const,
+        // Add main restaurant image to photos set if it exists
+        if (details.imageUrl) {
+          allPhotos.add(details.imageUrl);
+        }
+
+        // Parallel fetch of menus
+        const menusData = await getMenusByRestaurantId(restaurantId);
+
+        // Add menu images to photos set
+        menusData.forEach((menu) => {
+          if (menu.imageUrl) {
+            allPhotos.add(menu.imageUrl);
+          }
         });
+
+        // Only fetch from Yelp if we have location data and yelpId isn't present
+        let yelpData = null;
+        if (details.location && !details.yelpId) {
+          yelpData = await getYelpBusinessWithPhotos(
+            details.name,
+            details.location.latitude,
+            details.location.longitude
+          );
+
+          // Add Yelp photos to the set
+          if (yelpData?.photos) {
+            yelpData.photos.forEach((url) => allPhotos.add(url));
+          }
+        }
+
+        // Create photos array from all sources
+        const photoArray: Photo[] = Array.from(allPhotos).map((url) => ({
+          url,
+          source: url.includes("yelp")
+            ? ("yelp" as const)
+            : ("google" as const),
+        }));
+
+        // Combine all data
+        const restaurantData: RestaurantDetails = {
+          ...details,
+          phone: yelpData?.display_phone || details.phone,
+          website: yelpData?.url || details.website,
+          priceLevel: yelpData?.price_level || details.priceLevel,
+          hours: details.hours || formatYelpHours(yelpData?.hours),
+        };
+
+        if (mounted) {
+          setState({
+            details: restaurantData,
+            menus: menusData,
+            photos: photoArray,
+            loading: false,
+            error: null,
+            activeTab: "menus",
+            allPhotos,
+          });
+        }
+      } catch (error) {
+        console.error("Error fetching restaurant data:", error);
+        if (mounted) {
+          setState((prev) => ({
+            ...prev,
+            error: "Failed to load restaurant data",
+            loading: false,
+          }));
+        }
       }
-
-      if (yelpData?.photos) {
-        allPhotos.push(
-          ...yelpData.photos.map((url) => ({
-            url,
-            source: "yelp" as const,
-          }))
-        );
-      }
-
-      // Combine all data into restaurant details
-      const restaurantData: RestaurantDetails = {
-        ...details,
-        phone: yelpData?.display_phone || details.phone,
-        website: yelpData?.url || details.website,
-        priceLevel: yelpData?.price_level || details.priceLevel,
-        hours: details.hours || formatYelpHours(yelpData?.hours),
-        photos: allPhotos,
-      };
-
-      // Update state with all fetched data
-      setState({
-        details: restaurantData,
-        menus: menusData,
-        photos: allPhotos,
-        loading: false,
-        error: null,
-        activeTab: "menus",
-      });
-    } catch (error) {
-      console.error("Error fetching restaurant data:", error);
-      setState((prev) => ({
-        ...prev,
-        error: "Failed to load restaurant data",
-        loading: false,
-      }));
     }
-  }
 
-  fetchRestaurantData();
-}, [restaurantId]);
+    fetchRestaurantData();
+
+    return () => {
+      mounted = false;
+    };
+  }, [restaurantId]);
 
   if (state.loading) {
     return (
       <div className="flex justify-center items-center h-screen">
         <div className="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-customTeal"></div>
+      </div>
+    );
+  }
+
+  if (state.error) {
+    return (
+      <div className="container mx-auto px-6 py-12">
+        <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+          <h2 className="text-2xl font-semibold text-red-800 mb-2">
+            Error Loading Restaurant
+          </h2>
+          <p className="text-red-600">{state.error}</p>
+        </div>
       </div>
     );
   }
@@ -376,7 +404,9 @@ useEffect(() => {
       photos={state.photos}
       menus={state.menus}
       activeTab={state.activeTab}
-      onTabChange={(value) => setState(prev => ({ ...prev, activeTab: value }))}
+      onTabChange={(value) =>
+        setState((prev) => ({ ...prev, activeTab: value }))
+      }
     />
   );
 };

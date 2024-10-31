@@ -1,4 +1,4 @@
-// FindRestaurantsAndMenus.tsx
+// app/(marketing)/find-restaurants/FindRestaurantsAndMenus.tsx
 
 "use client";
 
@@ -219,58 +219,63 @@ const [center, setCenter] = useState<LatLngLiteral>({
     }
   };
 
- const fetchNearbyRestaurants = useCallback(
-   async (lat: number, lng: number) => {
-     if (!userId) return;
+const fetchNearbyRestaurants = useCallback(
+  async (lat: number, lng: number) => {
+    if (!userId || !firebaseToken) return;
 
-     setIsLoading(true);
-     setIsRefreshing(true);
-     setError(null);
+    setIsLoading(true);
+    setIsRefreshing(true);
+    setError(null);
 
-     try {
-       const response = await fetch(
-         `/api/nearby-restaurants?lat=${lat}&lng=${lng}&limit=20`
-       );
+    try {
+      const response = await fetch(
+        `/api/nearby-restaurants?lat=${lat}&lng=${lng}&limit=20`,
+        {
+          headers: {
+            Authorization: `Bearer ${firebaseToken}`, // Add this header
+          },
+        }
+      );
 
-       if (!response.ok) {
-         throw new Error("Failed to fetch restaurants");
-       }
+      if (!response.ok) {
+        throw new Error("Failed to fetch restaurants");
+      }
 
-       const data = await response.json();
+      const data = await response.json();
 
-       if (data.error) {
-         throw new Error(data.error);
-       }
+      if (data.error) {
+        throw new Error(data.error);
+      }
 
-       const restaurants = data.restaurants.map((r: CachedRestaurant) => ({
-         id: r.id,
-         name: r.name,
-         address: r.address,
-         latitude: r.latitude,
-         longitude: r.longitude,
-         rating: r.rating,
-         menuCount: r.menuCount,
-         county: r.county,
-         photoUrl: r.imageUrl,
-       }));
+      const restaurants = data.restaurants.map((r: CachedRestaurant) => ({
+        id: r.id,
+        name: r.name,
+        address: r.address,
+        latitude: r.latitude,
+        longitude: r.longitude,
+        rating: r.rating,
+        menuCount: r.menuCount,
+        county: r.county,
+        photoUrl: r.imageUrl,
+      }));
 
-       setRestaurants(restaurants);
-       setFilteredRestaurants(restaurants);
-       setCenter({ lat, lng });
-       setCurrentPage(0);
-       setFocusedRestaurant(null);
-     } catch (error) {
-       console.error("Error fetching restaurants:", error);
-       setError(
-         error instanceof Error ? error.message : "Failed to fetch restaurants"
-       );
-     } finally {
-       setIsLoading(false);
-       setIsRefreshing(false);
-     }
-   },
-   [userId]
- );
+      setRestaurants(restaurants);
+      setFilteredRestaurants(restaurants);
+      setCenter({ lat, lng });
+      setCurrentPage(0);
+      setFocusedRestaurant(null);
+    } catch (error) {
+      console.error("Error fetching restaurants:", error);
+      setError(
+        error instanceof Error ? error.message : "Failed to fetch restaurants"
+      );
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    }
+  },
+  [userId, firebaseToken]
+);
 
  // Use the debounced version for map clicks
  const debouncedFetchRestaurants = useDebouncedCallback(
