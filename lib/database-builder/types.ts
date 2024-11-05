@@ -1,7 +1,7 @@
 // lib/database-builder/types.ts
 
 import type { Place, YelpBusiness } from './services/places';
-
+ 
 export interface Geometry {
   location: Location;
 }
@@ -161,3 +161,5 @@ export interface ProcessingError extends Error {
     data?: any;
   };
 }
+
+export type { RestaurantDocument } from '@/app/services/firebaseFirestore';

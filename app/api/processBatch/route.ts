@@ -1,18 +1,33 @@
-// pages/api/processBatch.ts
-import type { NextApiRequest, NextApiResponse } from 'next';
+// app/api/processBatch/route.ts
+
+import { NextRequest, NextResponse } from 'next/server';
 import { processBatchServer } from '@/app/actions/batch-processing';
+import { auth } from '@/config/firebaseAdmin';
 
-export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  if (req.method !== 'POST') {
-    return res.status(405).json({ message: 'Method not allowed' });
-  }
-
-  const { areas } = req.body;
-
+export async function POST(request: NextRequest) {
   try {
+    // Verify authentication
+    const authHeader = request.headers.get('authorization');
+    if (!authHeader?.startsWith('Bearer ')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
+    const token = authHeader.split('Bearer ')[1];
+    try {
+      await auth.verifyIdToken(token);
+    } catch (error) {
+      return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
+    }
+
+    const { areas } = await request.json();
     const result = await processBatchServer(areas);
-    res.status(200).json({ success: true, result });
+    
+    return NextResponse.json({ success: true, result });
   } catch (error) {
-    res.status(500).json({ success: false, error: (error as Error).message });
+    console.error('Error in processBatch:', error);
+    return NextResponse.json(
+      { success: false, error: error instanceof Error ? error.message : 'Unknown error' },
+      { status: 500 }
+    );
   }
 }

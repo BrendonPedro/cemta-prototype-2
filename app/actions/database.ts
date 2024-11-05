@@ -29,17 +29,23 @@ import {
   getCachedBuildData, 
   saveBuildCache, 
   checkCountyCacheCoverage, 
-  clearBuilderCache 
+  clearBuilderCache,
+  clearLocationCache  
 } from '@/lib/database-builder/cache';
 import type { EnhancedCountyData } from '@/lib/data/counties';
+import type { BuilderConfig } from '@/lib/database-builder/core/builder'
 
-interface ProcessingOptions {
+export interface ProcessingOptions {
   selectedTowns?: string[];
   force?: boolean;
   updateExisting?: boolean;
   clearCache?: boolean;
   batchSize?: number;
   delayBetweenBatches?: number;
+  firebaseToken?: string;
+  maxResults?: number;
+  testMode?: boolean;
+  checkCacheOnly?: boolean;
 }
 
 export interface BuildDatabaseResult {
@@ -92,8 +98,25 @@ export async function buildCountyDatabase(
       force = false,
       clearCache = false,
       batchSize = 5,
-      delayBetweenBatches = 5000
+      delayBetweenBatches = 5000,
+      firebaseToken,
+      maxResults,
+      testMode,
+      checkCacheOnly
     } = options;
+
+    // Pass all options to the config object
+    const config: BuilderConfig = {
+      googleApiKey: process.env.GOOGLE_MAPS_API_KEY!,
+      yelpApiKey: process.env.YELP_API_KEY!,
+      projectId: process.env.GOOGLE_CLOUD_PROJECT_ID!,
+      keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS!,
+      firebaseToken,
+      clearCache,
+      maxResults,
+      testMode,
+      checkCacheOnly
+    };
 
     // Validate setup
     const validationResult = await validateSetup(county.name);
@@ -105,8 +128,9 @@ export async function buildCountyDatabase(
       };
     }
 
+    // Clear county-level cache if requested
     if (clearCache) {
-      await clearBuilderCache(county.name);
+      await clearBuilderCache(undefined, undefined, county.name);
     }
 
     // Filter towns if specific ones are selected
@@ -119,6 +143,7 @@ export async function buildCountyDatabase(
     for (let i = 0; i < townsToProcess.length; i += batchSize) {
       batches.push(townsToProcess.slice(i, i + batchSize));
     }
+
 
     let totalStats: ProcessingStats = {
       totalProcessed: 0,
@@ -159,12 +184,7 @@ export async function buildCountyDatabase(
             towns: [town]
           };
 
-          const townStats = await processCounty(townData, {
-            googleApiKey: process.env.GOOGLE_MAPS_API_KEY!,
-            yelpApiKey: process.env.YELP_API_KEY!,
-            projectId: process.env.GOOGLE_CLOUD_PROJECT_ID!,
-            keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS!
-          });
+          const townStats = await processCounty(townData, config);
 
           // Update total stats
           totalStats = combineStats(totalStats, townStats);

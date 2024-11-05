@@ -49,16 +49,28 @@ export interface RestaurantDocument {
   address: string;
   rating: number;
   timestamp: string;
+  location?: {
+    latitude: number;
+    longitude: number;
+  };
+  county?: string;
   yelpId?: string;
-  yelpLastUpdated?: string;
+  yelpRating?: number;
   menuSource?: 'yelp' | 'google' | 'user';
   imageUrl?: string;
-  location?: Location;
-  county?: string;
   phone?: string;
   website?: string;
   hours?: BusinessHours[];
   priceLevel?: string;
+  photos: string[];
+  menuCount: number;
+  lastUpdated: string;
+  source: {
+    google: boolean;
+    yelp: boolean;
+  };
+  createdAt?: Date;  
+  updatedAt?: Date; 
 }
 
 // (Used in RestaurantPage.tsx)
@@ -533,27 +545,28 @@ export async function setRestaurantDetails(
 // Save restaurant details (rating and address) in Firestore
 export async function saveRestaurantDetails(
   restaurantId: string,
-  name: string,
-  rating: number,
-  address: string,
-  yelpId?: string
+  restaurantData: Omit<Partial<RestaurantDocument>, 'id'>,
+  imageUrl?: string
 ): Promise<void> {
   const restaurantRef = doc(db, "restaurants", restaurantId);
 
-const restaurantData: Omit<RestaurantDocument, 'id'> = {
-    name,
-    rating,
-    address,
+  // Add default values for required fields
+  const dataWithDefaults = {
+    photos: [],
+    menuCount: 0,
+    lastUpdated: new Date().toISOString(),
+    source: {
+      google: false,
+      yelp: false
+    },
+    ...restaurantData,
     timestamp: new Date().toISOString(),
-    ...(yelpId && { 
-      yelpId,
-      yelpLastUpdated: new Date().toISOString(),
-      menuSource: 'yelp' as const
-    })
+    ...(imageUrl && { imageUrl })
   };
 
-  await setDoc(restaurantRef, restaurantData);
+  await setDoc(restaurantRef, dataWithDefaults, { merge: true });
 }
+
 
 // Get cached restaurant details from Firestore
 export async function getCachedRestaurantDetails(
@@ -1131,3 +1144,4 @@ export async function createOrUpdateRestaurant(
     throw error;
   }
 }
+

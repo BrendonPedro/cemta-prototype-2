@@ -7,39 +7,71 @@ import DatabaseBuildingMonitor from "@/lib/database-builder/components/DatabaseB
 import { PlacesMonitor } from "@/lib/database-builder/components/PlacesMonitor";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import type { Place } from "@/lib/database-builder/types";
 import { useState } from "react";
+import { useToast } from "@/hooks/use-toast";
 
-// Remove direct Google Cloud Storage imports
 export default function DatabaseBuildingPage() {
-  const { loading, userRole } = useAuth();
+  const { loading, userRole, firebaseToken } = useAuth();
   const router = useRouter();
+  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("batch");
+  const [error, setError] = useState<string | null>(null);
 
-   const handlePlacesBatchComplete = async (results: Place[]) => {
-     try {
-       // Use the API route instead of direct storage access
-       const response = await fetch("/api/storage", {
-         method: "POST",
-         headers: {
-           "Content-Type": "application/json",
-         },
-         body: JSON.stringify({ results }),
-       });
+  const handlePlacesBatchComplete = async (results: Place[]) => {
+    if (!firebaseToken) {
+      setError("Authentication required");
+      return;
+    }
 
-       if (!response.ok) {
-         throw new Error("Storage operation failed");
-       }
+    try {
+      const response = await fetch("/api/storage", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${firebaseToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ results }),
+      });
 
-       console.log(`Processed ${results.length} places`);
-     } catch (error) {
-       console.error("Error handling batch:", error);
-     }
-   };
+      if (!response.ok) {
+        throw new Error("Storage operation failed");
+      }
 
-  if (loading || userRole !== "admin") {
+      toast({
+        title: "Processing Complete",
+        description: `Successfully processed ${results.length} places`,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Error handling batch";
+      setError(message);
+      toast({
+        title: "Processing Error",
+        description: message,
+        variant: "destructive",
+      });
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-customTeal"></div>
+      </div>
+    );
+  }
+
+  if (userRole !== "admin") {
     router.push("/dashboards");
-    return <div>Loading...</div>;
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-xl font-semibold text-red-600">
+          Unauthorized access. Redirecting...
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -47,6 +79,12 @@ export default function DatabaseBuildingPage() {
       <h1 className="text-3xl font-semibold text-gray-800">
         Database Building Control Panel
       </h1>
+
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
 
       <Card>
         <CardHeader>
@@ -65,9 +103,7 @@ export default function DatabaseBuildingPage() {
 
             <TabsContent value="places">
               <PlacesMonitor
-                onBatchComplete={(results) => {
-                  console.log(`Processed ${results.length} places`);
-                }}
+                onBatchComplete={handlePlacesBatchComplete}
                 townLocation={{ lat: 24.6851, lng: 120.8307 }}
               />
             </TabsContent>

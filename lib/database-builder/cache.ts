@@ -140,19 +140,60 @@ export async function checkCountyCacheCoverage(countyName: string): Promise<{
 }
 
 // Update the database builder server action to use the new cache
-export async function clearBuilderCache(countyName: string, townName?: string): Promise<void> {
-  const cacheQuery = townName 
-    ? query(
+export async function clearBuilderCache(
+  lat?: number,
+  lng?: number,
+  countyName?: string,
+  townName?: string
+): Promise<void> {
+  try {
+    if (lat && lng && countyName && townName) {
+      // Clear specific location cache
+      const cacheKey = getBuilderCacheKey(lat, lng, countyName, townName);
+      const cacheRef = doc(db, BUILDER_CACHE_CONFIG.COLLECTION, cacheKey);
+      await deleteDoc(cacheRef);
+      console.log(`Cleared cache for location: ${cacheKey}`);
+    } else if (countyName && townName) {
+      // Clear all caches for a specific town in a county
+      const cacheQuery = query(
         collection(db, BUILDER_CACHE_CONFIG.COLLECTION),
         where('countyName', '==', countyName),
         where('townName', '==', townName)
-      )
-    : query(
+      );
+      const snapshot = await getDocs(cacheQuery);
+      await Promise.all(snapshot.docs.map(doc => deleteDoc(doc.ref)));
+      console.log(`Cleared all caches for ${townName} in ${countyName}`);
+    } else if (countyName) {
+      // Clear all caches for a county
+      const cacheQuery = query(
         collection(db, BUILDER_CACHE_CONFIG.COLLECTION),
         where('countyName', '==', countyName)
       );
+      const snapshot = await getDocs(cacheQuery);
+      await Promise.all(snapshot.docs.map(doc => deleteDoc(doc.ref)));
+      console.log(`Cleared all caches for ${countyName}`);
+    } else {
+      // Clear all caches
+      const snapshot = await getDocs(collection(db, BUILDER_CACHE_CONFIG.COLLECTION));
+      await Promise.all(snapshot.docs.map(doc => deleteDoc(doc.ref)));
+      console.log('Cleared all caches');
+    }
+  } catch (error) {
+    console.error('Error clearing cache:', error);
+    throw error;
+  }
+}
+
+// Helper function for builder.ts to use
+export async function clearLocationCache(lat: number, lng: number): Promise<void> {
+  // Get all caches that might match this location
+  const locationHash = geohash.encode(lat, lng, BUILDER_CACHE_CONFIG.GEOHASH_PRECISION);
+  const cacheQuery = query(
+    collection(db, BUILDER_CACHE_CONFIG.COLLECTION),
+    where('geohash', '==', locationHash)
+  );
 
   const snapshot = await getDocs(cacheQuery);
-  
   await Promise.all(snapshot.docs.map(doc => deleteDoc(doc.ref)));
+  console.log(`Cleared cache for location hash: ${locationHash}`);
 }
