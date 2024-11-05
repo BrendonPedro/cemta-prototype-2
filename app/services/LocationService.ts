@@ -216,11 +216,11 @@ const CACHE_CONFIG = {
     PRECISION: 6  // Coordinate precision for cache keys
   },
   LOCATION: {
-    DURATION: 60 * 24 * 60 * 60 * 1000, // 60 days for location data
+    DURATION: 365 * 24 * 60 * 60 * 1000, // 365 days for location data
     PRECISION: 6  // geohash precision
   },
   IMAGES: {
-    DURATION: 90 * 24 * 60 * 60 * 1000, // 90 days for images
+    DURATION: 365 * 24 * 60 * 60 * 1000, // 365 days for images
     MAX_CONCURRENT: 5,
     MAX_RETRIES: 3
   },

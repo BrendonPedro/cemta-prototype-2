@@ -269,13 +269,19 @@ export type LatLngLiteral = Location
 
 const RESTAURANT_DETAILS_COLLECTION = "restaurantDetails";
 
-export async function batchUpdateRestaurants(restaurants: CachedRestaurant[]): Promise<void> {
-  // Process in chunks of 500 (Firestore batch limit)
+export async function batchUpdateRestaurants(
+  restaurants: CachedRestaurant[],
+  signal?: AbortSignal
+): Promise<void> {
   const chunkSize = 500;
   for (let i = 0; i < restaurants.length; i += chunkSize) {
+    if (signal?.aborted) {
+      throw new Error('Operation aborted');
+    }
+
     const chunk = restaurants.slice(i, Math.min(i + chunkSize, restaurants.length));
     const batch = writeBatch(db);
-    
+
     chunk.forEach(restaurant => {
       const ref = doc(db, 'restaurants', restaurant.id);
       batch.set(ref, {
@@ -1116,15 +1122,24 @@ export async function checkExistingYelpMenu(
 export async function createOrUpdateRestaurant(
   restaurantId: string,
   restaurantData: Partial<RestaurantDocument>,
-  imageUrl?: string
+  imageUrl?: string,
+  signal?: AbortSignal
 ): Promise<void> {
+  if (signal?.aborted) {
+    throw new Error('Operation aborted');
+  }
+
   const restaurantRef = doc(db, "restaurants", restaurantId);
   
   try {
     const docSnap = await getDoc(restaurantRef);
     
+   // Check for abort signal before each async operation
+    if (signal?.aborted) {
+      throw new Error('Operation aborted');
+    }
+
     if (!docSnap.exists()) {
-      // Create new restaurant document
       await setDoc(restaurantRef, {
         ...restaurantData,
         ...(imageUrl && { imageUrl }),
@@ -1132,7 +1147,6 @@ export async function createOrUpdateRestaurant(
         createdAt: new Date(),
       });
     } else {
-      // Update existing restaurant document
       await updateDoc(restaurantRef, {
         ...restaurantData,
         ...(imageUrl && { imageUrl }),
@@ -1140,6 +1154,9 @@ export async function createOrUpdateRestaurant(
       });
     }
   } catch (error) {
+    if (signal?.aborted) {
+      throw new Error('Operation aborted');
+    }
     console.error(`Error creating/updating restaurant ${restaurantId}:`, error);
     throw error;
   }

@@ -9,7 +9,8 @@ getDocs,
   collection, 
   query, 
     where,
-    deleteDoc, 
+    deleteDoc,
+    increment, 
 } from 'firebase/firestore';
 import type { CachedRestaurant } from '@/app/services/firebaseFirestore';
 import geohash from 'ngeohash';
@@ -29,7 +30,7 @@ interface BuilderCache {
 
 const BUILDER_CACHE_CONFIG = {
   COLLECTION: 'databaseBuilderCache',
-  DURATION: 60 * 24 * 60 * 60 * 1000, // 60 days
+  DURATION: 365 * 24 * 60 * 60 * 1000, // 365 days
   GEOHASH_PRECISION: 6
 };
 
@@ -46,23 +47,53 @@ export async function getCachedBuildData(
 ): Promise<CachedRestaurant[] | null> {
   const cacheKey = getBuilderCacheKey(lat, lng, countyName, townName);
   const cacheRef = doc(db, BUILDER_CACHE_CONFIG.COLLECTION, cacheKey);
-  const docSnap = await getDoc(cacheRef);
+  
+  // Add cache metrics tracking
+  const metricsRef = doc(db, 'cacheMetrics', cacheKey);
+  
+  try {
+    const docSnap = await getDoc(cacheRef);
 
-  if (docSnap.exists()) {
-    const data = docSnap.data() as BuilderCache;
-    const cacheTime = data.timestamp;
+    if (docSnap.exists()) {
+      const data = docSnap.data() as BuilderCache;
+      const cacheTime = data.timestamp;
 
-    // Verify cache is still valid
-    if (Date.now() - cacheTime < BUILDER_CACHE_CONFIG.DURATION) {
-      console.log(`Cache HIT in builder cache for location key: ${cacheKey}`);
-      return data.restaurants;
-    } else {
-      console.log(`Cache EXPIRED in builder cache for location key: ${cacheKey}`);
+      // Record cache access
+      await setDoc(metricsRef, {
+        lastAccessed: new Date(),
+        accessCount: increment(1),
+        cacheKey,
+        county: countyName,
+        town: townName,
+        location: { lat, lng },
+      }, { merge: true });
+
+      // Verify cache is still valid
+      if (Date.now() - cacheTime < BUILDER_CACHE_CONFIG.DURATION) {
+        console.log(`Cache HIT in builder cache for location key: ${cacheKey}`);
+        return data.restaurants;
+      } else {
+        console.log(`Cache EXPIRED in builder cache for location key: ${cacheKey}`);
+        // Record cache expiration
+        await setDoc(metricsRef, {
+          expired: true,
+          expirationDate: new Date()
+        }, { merge: true });
+      }
     }
-  }
 
-  console.log(`Cache MISS in builder cache for location key: ${cacheKey}`);
-  return null;
+    console.log(`Cache MISS in builder cache for location key: ${cacheKey}`);
+    // Record cache miss
+    await setDoc(metricsRef, {
+      misses: increment(1),
+      lastMiss: new Date()
+    }, { merge: true });
+    
+    return null;
+  } catch (error) {
+    console.error('Error accessing cache:', error);
+    return null;
+  }
 }
 
 export async function saveBuildCache(
@@ -179,6 +210,7 @@ export async function clearBuilderCache(
       console.log('Cleared all caches');
     }
   } catch (error) {
+
     console.error('Error clearing cache:', error);
     throw error;
   }

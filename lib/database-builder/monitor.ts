@@ -1,4 +1,3 @@
-// Example usage script
 // app/scripts/database-builder/monitor.ts
 
 import { DatabaseManager } from './management';

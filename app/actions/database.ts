@@ -46,6 +46,7 @@ export interface ProcessingOptions {
   maxResults?: number;
   testMode?: boolean;
   checkCacheOnly?: boolean;
+    signal?: AbortSignal; 
 }
 
 export interface BuildDatabaseResult {
