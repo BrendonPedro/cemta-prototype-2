@@ -16,6 +16,18 @@ import type { CachedRestaurant } from '@/app/services/firebaseFirestore';
 import geohash from 'ngeohash';
 import { CONFIG } from './config';
 
+export interface CacheMetrics {
+  id?: string;
+  hits: number;
+  misses: number;
+  lastAccessed: Date;
+  lastUpdated: Date;
+  restaurants: number;
+  accessCount?: number;
+  expired?: number;
+  expirationDate?: Date;
+}
+
 interface BuilderCache {
   countyName: string;
   townName: string;
@@ -26,6 +38,46 @@ interface BuilderCache {
     restaurants: number;
     images: number;
   };
+}
+
+interface FirestoreTimestamp {
+  toDate(): Date;
+  seconds: number;
+  nanoseconds: number;
+}
+
+interface CacheMetricsFirestore extends Omit<CacheMetrics, 'lastAccessed' | 'lastUpdated' | 'expirationDate'> {
+  lastAccessed: FirestoreTimestamp;
+  lastUpdated: FirestoreTimestamp;
+  expirationDate?: FirestoreTimestamp;
+}
+
+// Add this helper function
+function isFirestoreTimestamp(value: any): value is FirestoreTimestamp {
+  return value && typeof value.toDate === 'function' && 
+         typeof value.seconds === 'number' && 
+         typeof value.nanoseconds === 'number';
+}
+
+// Add this function to cleanup expired cache entries
+export async function cleanupExpiredCache(): Promise<number> {
+  try {
+    const now = Date.now();
+    const snapshot = await getDocs(collection(db, BUILDER_CACHE_CONFIG.COLLECTION));
+    
+    const expiredDocs = snapshot.docs.filter(doc => {
+      const data = doc.data() as BuilderCache;
+      return now - data.timestamp > BUILDER_CACHE_CONFIG.DURATION;
+    });
+
+    await Promise.all(expiredDocs.map(doc => deleteDoc(doc.ref)));
+    
+    console.log(`🧹 Cleaned up ${expiredDocs.length} expired cache entries`);
+    return expiredDocs.length;
+  } catch (error) {
+    console.error('Error cleaning up expired cache:', error);
+    return 0;
+  }
 }
 
 const BUILDER_CACHE_CONFIG = {
@@ -47,52 +99,113 @@ export async function getCachedBuildData(
 ): Promise<CachedRestaurant[] | null> {
   const cacheKey = getBuilderCacheKey(lat, lng, countyName, townName);
   const cacheRef = doc(db, BUILDER_CACHE_CONFIG.COLLECTION, cacheKey);
+  const metricsRef = doc(db, 'cacheMetrics', cacheKey); // cache metrics tracking
+
+  console.log(`🔍 Checking cache for key: ${cacheKey}`);
   
-  // Add cache metrics tracking
-  const metricsRef = doc(db, 'cacheMetrics', cacheKey);
   
   try {
     const docSnap = await getDoc(cacheRef);
+    const now = Date.now();
 
-    if (docSnap.exists()) {
+        // Update metrics
+    const metricsUpdate = {
+      lastAccessed: new Date(),
+      location: { lat, lng },
+      county: countyName,
+      town: townName
+    };
+
+  if (docSnap.exists()) {
       const data = docSnap.data() as BuilderCache;
       const cacheTime = data.timestamp;
-
-      // Record cache access
-      await setDoc(metricsRef, {
-        lastAccessed: new Date(),
-        accessCount: increment(1),
-        cacheKey,
-        county: countyName,
-        town: townName,
-        location: { lat, lng },
-      }, { merge: true });
-
-      // Verify cache is still valid
-      if (Date.now() - cacheTime < BUILDER_CACHE_CONFIG.DURATION) {
-        console.log(`Cache HIT in builder cache for location key: ${cacheKey}`);
+      const age = now - cacheTime;
+    const isValid = age < BUILDER_CACHE_CONFIG.DURATION;
+    
+      console.log(`📊 Cache entry found:`, {
+        age: `${Math.round(age / (1000 * 60 * 60))} hours`,
+        restaurants: data.restaurants.length,
+        isValid
+      });
+    
+    
+     if (isValid) {
+        await setDoc(metricsRef, {
+          ...metricsUpdate,
+          hits: increment(1),
+          restaurants: data.restaurants.length,
+          lastUpdated: new Date()
+        }, { merge: true });
         return data.restaurants;
       } else {
-        console.log(`Cache EXPIRED in builder cache for location key: ${cacheKey}`);
-        // Record cache expiration
         await setDoc(metricsRef, {
-          expired: true,
+          ...metricsUpdate,
+          expired: increment(1),
           expirationDate: new Date()
         }, { merge: true });
+        console.log(`⚠️ Cache expired (${Math.round(age / (1000 * 60 * 60))} hours old)`);
       }
+    } else {
+      // Record cache miss
+      await setDoc(metricsRef, {
+        ...metricsUpdate,
+        misses: increment(1),
+        lastUpdated: new Date()
+      }, { merge: true });
+      console.log('❌ No cache entry found');
     }
 
-    console.log(`Cache MISS in builder cache for location key: ${cacheKey}`);
-    // Record cache miss
-    await setDoc(metricsRef, {
-      misses: increment(1),
-      lastMiss: new Date()
-    }, { merge: true });
-    
     return null;
   } catch (error) {
-    console.error('Error accessing cache:', error);
+    console.error('❌ Error accessing cache:', error);
     return null;
+  }
+}
+
+// Add a function to get cache metrics
+export async function getCacheMetrics(
+  countyName?: string,
+  townName?: string
+): Promise<CacheMetrics[]> {
+  try {
+    // Start with the base collection
+    let baseQuery = collection(db, 'cacheMetrics');
+    
+    // Build the query
+    let constraints = [];
+    if (countyName) {
+      constraints.push(where('county', '==', countyName));
+    }
+    if (townName) {
+      constraints.push(where('town', '==', townName));
+    }
+
+    // Apply the query with constraints
+    const q = constraints.length > 0 
+      ? query(baseQuery, ...constraints)
+      : baseQuery;
+
+    const snapshot = await getDocs(q);
+    
+    // Transform the data with proper typing
+    return snapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        hits: data.hits || 0,
+        misses: data.misses || 0,
+        lastAccessed: data.lastAccessed?.toDate() || new Date(),
+        lastUpdated: data.lastUpdated?.toDate() || new Date(),
+        restaurants: data.restaurants || 0,
+        accessCount: data.accessCount,
+        expired: data.expired,
+        expirationDate: data.expirationDate?.toDate()
+      } as CacheMetrics;
+    });
+
+  } catch (error) {
+    console.error('Error fetching cache metrics:', error);
+    return [];
   }
 }
 
@@ -105,21 +218,36 @@ export async function saveBuildCache(
 ): Promise<void> {
   const cacheKey = getBuilderCacheKey(lat, lng, countyName, townName);
   const cacheRef = doc(db, BUILDER_CACHE_CONFIG.COLLECTION, cacheKey);
+  const metricsRef = doc(db, 'cacheMetrics', cacheKey);
 
-  const cacheData: BuilderCache = {
-    countyName,
-    townName,
-    geohash: geohash.encode(lat, lng, BUILDER_CACHE_CONFIG.GEOHASH_PRECISION),
-    timestamp: Date.now(),
-    restaurants,
-    lastUpdated: {
-      restaurants: Date.now(),
-      images: Date.now()
-    }
-  };
+  try {
+    const cacheData: BuilderCache = {
+      countyName,
+      townName,
+      geohash: geohash.encode(lat, lng, BUILDER_CACHE_CONFIG.GEOHASH_PRECISION),
+      timestamp: Date.now(),
+      restaurants,
+      lastUpdated: {
+        restaurants: Date.now(),
+        images: Date.now()
+      }
+    };
 
-  await setDoc(cacheRef, cacheData);
-  console.log(`Saved to builder cache: ${cacheKey}`);
+    await setDoc(cacheRef, cacheData);
+
+    // Update metrics for new cache entry
+    await setDoc(metricsRef, {
+      lastUpdated: new Date(),
+      restaurants: restaurants.length,
+      hits: 0,
+      misses: 0
+    }, { merge: true });
+
+    console.log(`✅ Saved to builder cache: ${cacheKey} (${restaurants.length} restaurants)`);
+  } catch (error) {
+    console.error(`❌ Error saving to cache ${cacheKey}:`, error);
+    throw new Error(`Failed to save cache: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
 }
 
 // Utility function to check cache coverage for a county
