@@ -15,10 +15,14 @@ import {
   DocumentData,
   deleteDoc,
   writeBatch,
+  serverTimestamp,
+  increment,
   collectionGroup 
 } from "firebase/firestore";
-import { db } from "@/config/firebaseConfig";
 import geohash from "ngeohash";
+import { db } from "@/lib/database-builder/db";
+import { CONFIG } from '@/lib/database-builder/config';
+import type { RestaurantData } from '@/lib/database-builder/types';
 
 
 // ======= Basic Types and Shared Interfaces =======
@@ -1162,3 +1166,71 @@ export async function createOrUpdateRestaurant(
   }
 }
 
+export async function saveRestaurantData(
+  restaurantData: RestaurantData,
+  countyName: string,
+  townName: string
+): Promise<void> {
+  console.log('Saving restaurant data:', {
+    restaurantId: restaurantData.id,
+    countyName,
+    townName,
+    photos: restaurantData.photos // Log photos for debugging
+  });
+
+  const batch = writeBatch(db);
+
+  // Clean the restaurant data to replace undefined with null
+  const cleanedData = {
+    ...restaurantData,
+    yelpId: restaurantData.yelpId || null,
+    yelpRating: restaurantData.yelpRating || null,
+    priceLevel: restaurantData.priceLevel || null,
+    phone: restaurantData.phone || null,
+    website: restaurantData.website || null,
+    photos: restaurantData.photos || [], // Ensure photos array is included
+    menuCount: restaurantData.menuCount || 0,
+    countyName,
+    townName,
+    lastUpdated: serverTimestamp()
+  };
+
+
+  try {
+    // County document with town subcollection
+    const countyRef = doc(db, 'counties', countyName);
+    console.log('Creating county document:', countyName);
+    
+    const townRef = doc(countyRef, 'towns', townName);
+    console.log('Creating town document:', townName);
+    
+    const restaurantRef = doc(townRef, 'restaurants', cleanedData.id);
+
+    // Update county stats with merge
+    batch.set(countyRef, {
+      name: countyName,
+      restaurantCount: increment(1),
+      lastUpdated: serverTimestamp()
+    }, { merge: true });
+
+    // Update town stats with merge
+    batch.set(townRef, {
+      name: townName,
+      restaurantCount: increment(1),
+      lastUpdated: serverTimestamp()
+    }, { merge: true });
+
+    // Save restaurant data
+    batch.set(restaurantRef, cleanedData);
+
+    // Also save to global restaurants collection
+    const globalRestaurantRef = doc(db, 'restaurants', cleanedData.id);
+    batch.set(globalRestaurantRef, cleanedData);
+
+    await batch.commit();
+    console.log('Successfully saved restaurant data:', cleanedData.id);
+  } catch (error) {
+    console.error('Error saving restaurant data:', error);
+    throw error;
+  }
+}

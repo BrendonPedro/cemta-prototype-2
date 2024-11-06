@@ -32,6 +32,7 @@ export interface RestaurantData {
   photos: string[];
   menuCount: number;
   lastUpdated: string;
+  createdAt?: string;  // Add this
   source: {
     google: boolean;
     yelp: boolean;
@@ -160,6 +161,61 @@ export interface ProcessingError extends Error {
     status: number;
     data?: any;
   };
+}
+
+export interface ProcessingOptions {
+  selectedTowns: string[];
+  force?: boolean;
+  updateExisting?: boolean;
+  clearCache?: boolean;
+  batchSize?: number;
+  delayBetweenBatches?: number;
+  firebaseToken?: string | null;  
+  maxResults?: number;
+  testMode?: boolean;
+  checkCacheOnly?: boolean;
+  signal?: AbortSignal;
+  aborted?: boolean;
+  
+}
+
+export interface SerializableCounty {
+  name: string;
+  chineseName: string;
+  towns: Array<{
+    name: string;
+    chineseName: string;
+    location: {
+      lat: number;
+      lng: number;
+    };
+    searchRadiusKm: number;
+  }>;
+}
+
+export interface ImageProcessingConfig {
+  maxRetries: number;
+  retryDelay: number;
+  maxConcurrent: number;
+  baseUrl: string;
+}
+
+export interface ImageUploadMetadata {
+  restaurantId: string;
+  countyName: string;
+  townName: string;
+  type: 'restaurant' | 'menu' | 'processed';
+  source: 'google' | 'yelp' | 'user';
+  filename: string;
+  contentType?: string;
+}
+
+export interface SingleUploadResponse {
+  url: string;
+}
+
+export interface BatchUploadResponse {
+  urls: string[];
 }
 
 export type { RestaurantDocument } from '@/app/services/firebaseFirestore';

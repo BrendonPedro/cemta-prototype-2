@@ -2,11 +2,14 @@ import { Client, PlacesNearbyRanking, Language } from '@googlemaps/google-maps-s
 import {
   createOrUpdateRestaurant,
   getCachedRestaurantsForLocation,
+  saveRestaurantData,
   type RestaurantDocument
 } from '@/app/services/firebaseFirestore';
 import { uploadImageToBucket } from '@/app/services/gcpBucketStorage';
-import type { CountyData, ProcessingStats } from '../types';
+import type { CountyData, ProcessingStats, PlacePhoto } from '../types';
 import { clearBuilderCache, getCachedBuildData } from '@/lib/database-builder/cache';
+import { useImageUploader } from '@/lib/database-builder/services/image-handler';
+import { processBatchImages, processAndUploadImage } from '@/lib/database-builder/services/image-handler-server';
 
 // ==================== Types & Interfaces ====================
 export interface BuilderConfig {
@@ -14,15 +17,39 @@ export interface BuilderConfig {
   yelpApiKey: string;
   projectId: string;
   keyFilename: string;
-  firebaseToken?: string;
-  clearCache?: boolean;  
-  maxResults?: number;  
-  testMode?: boolean;   
-  checkCacheOnly?: boolean; 
-  signal?: AbortSignal; 
+  firebaseToken?: string | null;
+  clearCache?: boolean;
+  maxResults?: number;
+  testMode?: boolean;
+  checkCacheOnly?: boolean;
+    signal?: AbortSignal;
+    aborted?: boolean;
+}
+
+interface GooglePlacePhoto {
+  photo_reference: string;
+  width: number;
+  height: number;
+  html_attributions: string[];
 }
 
 // ==================== Helper Functions ====================
+function validateFirebaseToken(token: string | null | undefined): token is string {
+  if (!token) {
+    console.warn('⚠️ No Firebase token provided');
+    return false;
+  }
+  if (typeof token !== 'string') {
+    console.warn('⚠️ Invalid Firebase token type');
+    return false;
+  }
+  if (token.length < 10) {
+    console.warn('⚠️ Firebase token appears invalid');
+    return false;
+  }
+  return true;
+}
+
 function getPlaceLocation(place: any): { latitude: number; longitude: number } | undefined {
   if (place?.geometry?.location) {
     const lat = typeof place.geometry.location.lat === 'function' 
@@ -71,17 +98,24 @@ async function uploadRestaurantImage(
   },
   config: BuilderConfig
 ): Promise<string | null> {
-  if (!config.firebaseToken) {
-    console.warn('No Firebase token provided, skipping photo upload');
+  if (!config.firebaseToken || typeof config.firebaseToken !== 'string') {
+    console.warn('⚠️ Skipping photo upload - Invalid or missing Firebase token');
     return null;
   }
 
   try {
+    console.log(`🖼️ Uploading image for restaurant ${metadata.restaurantId}`);
+    
     const response = await fetch(imageUrl);
-    if (!response.ok) return null;
+    if (!response.ok) {
+      console.warn(`⚠️ Failed to fetch image from URL: ${response.statusText}`);
+      return null;
+    }
 
     const imageBuffer = await response.arrayBuffer();
     const fileName = `${metadata.countyName}/${metadata.townName}/${metadata.restaurantId}/${Date.now()}.jpg`;
+
+    console.log(`📤 Uploading to storage: ${fileName}`);
 
     const uploadResponse = await fetch('/api/storage', {
       method: 'POST',
@@ -100,13 +134,14 @@ async function uploadRestaurantImage(
     });
 
     if (!uploadResponse.ok) {
-      throw new Error('Failed to upload image');
+      throw new Error(`Upload failed: ${uploadResponse.statusText}`);
     }
 
     const { url } = await uploadResponse.json();
+    console.log(`✅ Image uploaded successfully: ${url}`);
     return url;
   } catch (error) {
-    console.error('Error uploading image:', error);
+    console.error('❌ Error uploading image:', error);
     return null;
   }
 }
@@ -225,45 +260,104 @@ export async function buildDatabase(
               });
             }
 
-            const location = getPlaceLocation(place);
-            if (!location || !place.place_id) continue;
 
-            // Process photos
-            const photos = [];
-            if (place.photos && place.photos.length > 0) {
-              for (const photo of place.photos) {
-                const photoUrl = await uploadRestaurantImage(
-                  `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference=${photo.photo_reference}&key=${config.googleApiKey}`,
-                  {
-                    restaurantId: place.place_id,
-                    countyName: countyData.name,
-                    townName: town.name
-                  },
-                  config
-                );
-                if (photoUrl) photos.push(photoUrl);
-              }
-            }
+// Process photos for a place
+interface PlacePhoto {
+  photo_reference: string;
+  width: number;
+  height: number;
+  html_attributions: string[];
+}
 
-            // Save to database
-            await createOrUpdateRestaurant(place.place_id, {
-              name: place.name,
-              address: place.vicinity || 'No address available',
-              rating: place.rating || 0,
-              location,
-              county: countyData.name,
-              photos,
-              menuCount: 0,
-              lastUpdated: new Date().toISOString(),
-              timestamp: new Date().toISOString(),
-              source: {
-                google: true,
-                yelp: false
-              }
-            });
+// Update the processPlacePhotos function with proper typing
+async function processPlacePhotos(
+  place: {
+    place_id: string;
+    name: string;
+    photos?: GooglePlacePhoto[]; // Use the proper type
+  },
+  config: BuilderConfig,
+  metadata: {
+    countyName: string;
+    townName: string;
+  }
+): Promise<string[]> {
+  const photos: string[] = [];
+  
+  if (!config.firebaseToken) {
+    console.log('⚠️ Skipping photo processing - No valid Firebase token');
+    return photos;
+  }
 
-            console.log(`✅ Successfully processed ${place.name}`);
-            stats.successful++;
+  if (place.photos && place.photos.length > 0) {
+    console.log(`📸 Processing ${place.photos.length} photos for ${place.name}`);
+    
+    const photoRequests = place.photos.map((photo: GooglePlacePhoto) => ({
+      url: `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference=${photo.photo_reference}&key=${config.googleApiKey}`,
+      metadata: {
+        restaurantId: place.place_id,
+        countyName: metadata.countyName,
+        townName: metadata.townName,
+        type: 'restaurant' as const,
+        source: 'google' as const,
+        filename: `${Date.now()}_${place.place_id}.jpg`
+      }
+    }));
+
+    try {
+      const uploadedUrls = await processBatchImages(
+        photoRequests,
+        config.firebaseToken
+      );
+
+      uploadedUrls.forEach((url) => {
+        if (url) {
+          console.log(`📷 Adding photo URL to photos array: ${url}`);
+          photos.push(url);
+        }
+      });
+
+      console.log(`✅ Successfully processed ${photos.length} photos for ${place.name}`);
+    } catch (error) {
+      console.error(`❌ Failed to process photos for ${place.name}:`, error);
+    }
+  }
+
+  return photos;
+}
+              
+    const location = getPlaceLocation(place);
+    if (!location || !place.place_id) continue;
+
+    // Process photos
+    const photos = await processPlacePhotos(place, config, {
+      countyName: countyData.name,
+      townName: town.name
+    });
+
+ // Save to database
+  await saveRestaurantData({
+    id: place.place_id,
+    name: place.name,
+    address: place.vicinity || 'No address available',
+    rating: place.rating || 0,
+    location: {
+      lat: location.latitude,
+      lng: location.longitude
+    },
+    googlePlaceId: place.place_id,
+    photos: photos, // Make sure photos array is passed
+    menuCount: 0,
+    lastUpdated: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
+    source: {
+      google: true,
+      yelp: false
+    }
+  }, countyData.name, town.name);
+
+  console.log(`✅ Successfully processed ${place.name}`);
+  stats.successful++;
 
           } catch (error) {
             console.error(`❌ Error processing place ${place.name}:`, error);
@@ -380,3 +474,5 @@ export function initializeStats(): ProcessingStats {
     }
   };
 }
+
+
