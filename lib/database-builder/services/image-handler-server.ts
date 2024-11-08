@@ -73,6 +73,7 @@ return data.url;
 }
 
 // Function to process and upload a batch of images
+
 export async function processBatchImages(
   images: Array<{
     url: string;
@@ -84,39 +85,88 @@ export async function processBatchImages(
   const results = new Map<string, string>();
 
   try {
-    const uploadResponse = await fetch(`${config.baseUrl}/api/storage/batch`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${firebaseToken}`,
-      },
-      body: JSON.stringify({
-        images: images.map(({ url, metadata }) => ({
-          imageUrl: url,
-          metadata: {
-            ...metadata,
-            contentType: metadata.contentType || 'image/jpeg',
-          },
-        })),
-      }),
-    });
+    for (let i = 0; i < images.length; i += config.maxConcurrent) {
+      const batch = images.slice(i, i + config.maxConcurrent);
+      
+      const processedBatch = await Promise.all(
+        batch.map(async ({ url, metadata }) => {
+          try {
+            const response = await fetch(url);
+            if (!response.ok) {
+              throw new Error(`Failed to fetch image: ${response.statusText}`);
+            }
 
-    if (!uploadResponse.ok) {
-      throw new Error(`Batch upload failed: ${uploadResponse.statusText}`);
+            const arrayBuffer = await response.arrayBuffer();
+            const base64Data = Buffer.from(arrayBuffer).toString('base64');
+
+            console.log(`Successfully fetched and encoded image for ${metadata.restaurantId}`);
+
+            return {
+              imageUrl: url,
+              imageData: base64Data,
+              metadata: {
+                ...metadata,
+                filename: `${metadata.countyName}/${metadata.townName}/${metadata.restaurantId}/${Date.now()}.jpg`,
+                contentType: 'image/jpeg'
+              }
+            };
+          } catch (error) {
+            console.error(`Failed to process image for ${metadata.restaurantId}:`, error);
+            return null;
+          }
+        })
+      );
+
+      const validBatch = processedBatch.filter((item): item is NonNullable<typeof item> => item !== null);
+
+      if (validBatch.length > 0) {
+        const uploadResponse = await fetch(`${config.baseUrl}/api/storage/batch`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${firebaseToken}`,
+          },
+          body: JSON.stringify({
+            images: validBatch
+          }),
+        });
+
+        if (!uploadResponse.ok) {
+          const errorData = await uploadResponse.text();
+          throw new Error(`Batch upload failed: ${errorData}`);
+        }
+
+        const data = await uploadResponse.json() as BatchUploadResponse;
+        console.log('Batch upload response:', data);
+
+        if (data.urls && Array.isArray(data.urls)) {
+          data.urls.forEach((url: string, index: number) => {
+            if (url && validBatch[index]) {
+              const restaurantId = validBatch[index].metadata.restaurantId;
+              results.set(restaurantId, url);
+              console.log(`✅ Saved image URL for restaurant ${restaurantId}:`, url);
+            }
+          });
+        }
+      }
     }
 
-    const data = (await uploadResponse.json()) as BatchUploadResponse;
-    const { urls } = data;
-    images.forEach(({ metadata }, index) => {
-      if (urls[index]) {
-        results.set(metadata.restaurantId, urls[index]);
-      }
-    });
-
-    console.log(`✅ Successfully uploaded ${urls.length} images in batch`);
+    console.log(`✅ Successfully processed and uploaded ${results.size} images in total`);
   } catch (error) {
     console.error('Error processing batch:', error);
   }
 
   return results;
 }
+
+// Types for batch processing
+interface ProcessedImage {
+  imageUrl: string;
+  imageData: string;
+  metadata: ImageUploadMetadata & {
+    filename: string;
+    contentType: string;
+  };
+}
+
+type ValidBatchItem = NonNullable<ProcessedImage>;

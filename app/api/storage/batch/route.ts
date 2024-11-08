@@ -31,19 +31,10 @@ interface BatchImageUploadRequest {
 }
 
 // Helper function to get the bucket based on metadata
-function getBucket(
-  type: StorageMetadata["type"],
-  source: StorageMetadata["source"]
-) {
-  switch (type) {
-    case "menu":
-      return source === "yelp" ? yelpMenuBucket : originalMenuBucket;
-    case "processed":
-      return processedMenuBucket;
-    case "restaurant":
-    default:
-      return restaurantImagesBucket;
-  }
+function getBucket(type: string, source: string) {
+  const bucket = restaurantImagesBucket;
+  console.log('Using bucket:', bucket.name);
+  return bucket;
 }
 
 // Helper function to get image data from URL
@@ -91,6 +82,7 @@ async function verifyAuth(req: NextRequest): Promise<DecodedIdToken | null> {
   }
 }
 
+
 export async function POST(req: NextRequest) {
   try {
     // Authentication
@@ -99,41 +91,41 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
 
-    // Parse request body
-    const contentType = req.headers.get("content-type") || "";
-    if (!contentType.includes("application/json")) {
-      return NextResponse.json(
-        { message: "Content-Type must be application/json" },
-        { status: 400 }
-      );
+    const body = await req.json();
+    const { images } = body;
+
+    if (!images || !Array.isArray(images)) {
+      return NextResponse.json({ message: "Invalid request body" }, { status: 400 });
     }
 
-    const { images } = (await req.json()) as BatchImageUploadRequest;
-
-    // Validate images array
-    if (!images || !Array.isArray(images) || images.length === 0) {
-      return NextResponse.json(
-        { message: "Invalid request body: 'images' array is required" },
-        { status: 400 }
-      );
-    }
+    console.log(`Processing ${images.length} images`);
 
     // Process each image
     const uploadResults = await Promise.all(
-      images.map(async ({ imageUrl, metadata }) => {
+      images.map(async ({ imageData, metadata }) => {
         try {
-          const imageBuffer = await getImageFromUrl(imageUrl);
+          if (!imageData || !metadata) {
+            console.error('Missing image data or metadata');
+            return null;
+          }
+
           const bucket = getBucket(
             metadata.type || "restaurant",
             metadata.source || "google"
           );
-          const fileName = `${Date.now()}-${decodedToken.uid}-${metadata.filename}`;
 
-          const file = bucket.file(fileName);
+          // Create buffer from base64
+          const imageBuffer = Buffer.from(imageData, 'base64');
+
+          // Construct file path
+          const filePath = `counties/${metadata.countyName}/${metadata.townName}/restaurants/${metadata.restaurantId}/${Date.now()}.jpg`;
+          console.log('Uploading to path:', filePath);
+
+          const file = bucket.file(filePath);
+          
           await file.save(imageBuffer, {
-            resumable: false,
-            contentType: metadata.contentType || "image/jpeg",
             metadata: {
+              contentType: 'image/jpeg',
               metadata: {
                 userId: decodedToken.uid,
                 ...metadata,
@@ -141,12 +133,13 @@ export async function POST(req: NextRequest) {
             },
           });
 
-          const fileUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
+          const publicUrl = `https://storage.googleapis.com/${bucket.name}/${filePath}`;
+          console.log('File uploaded successfully:', publicUrl);
 
-          // Save to cache (if applicable)
-          await saveImageUrlCache(decodedToken.uid, fileName, fileUrl);
+          // Save to cache
+          await saveImageUrlCache(decodedToken.uid, filePath, publicUrl);
 
-          return fileUrl;
+          return publicUrl;
         } catch (error) {
           console.error("Error processing image:", error);
           return null;
@@ -154,7 +147,10 @@ export async function POST(req: NextRequest) {
       })
     );
 
-    return NextResponse.json({ urls: uploadResults.filter(Boolean) });
+    const validUrls = uploadResults.filter((url): url is string => url !== null);
+    console.log(`Successfully uploaded ${validUrls.length} images`);
+
+    return NextResponse.json({ urls: validUrls });
   } catch (error) {
     console.error("Internal server error:", error);
     return NextResponse.json(

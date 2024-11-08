@@ -204,9 +204,9 @@ export interface ImageUploadMetadata {
   restaurantId: string;
   countyName: string;
   townName: string;
-  type: 'restaurant' | 'menu' | 'processed';
+  type: 'restaurant' | 'menu' | 'processed' | 'yelp';
   source: 'google' | 'yelp' | 'user';
-  filename: string;
+  filename?: string;
   contentType?: string;
 }
 

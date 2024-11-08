@@ -4,7 +4,7 @@ import { Client } from '@googlemaps/google-maps-services-js';
 import type { CountyData, ProcessingStats, RestaurantData, PlacePhoto } from './types';
 import { CONFIG } from './config';
 import { generateGridPoints } from './grid';
-import { saveRestaurantData } from './firestore';
+import { saveRestaurantData } from '@/app/services/firebaseFirestore';
 import axios from 'axios';
 import { 
   fetchGooglePlaces, 

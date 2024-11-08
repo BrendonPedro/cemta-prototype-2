@@ -601,7 +601,7 @@ function getLocationCacheKey(lat: number, lng: number): string {
 
 export const CACHE_CONSTANTS = {
   COLLECTION_NAME: 'locationCaches',
-  DURATION: 60 * 24 * 60 * 60 * 1000, // 60 days
+  DURATION: 365 * 24 * 60 * 60 * 1000, // 365 days
   GEOHASH_PRECISION: 5
 };
 
@@ -829,13 +829,14 @@ export async function getCachedImageUrl(
   userId: string,
   fileName: string,
 ): Promise<string | null> {
-  const imageRef = doc(db, "users", userId, "imageCaches", fileName);
+  const cacheKey = fileName.split('/').join('_');
+  const imageRef = doc(db, "users", userId, "imageCaches", cacheKey);
   const docSnap = await getDoc(imageRef);
 
   if (docSnap.exists()) {
     const data = docSnap.data();
     const cacheTime = data.cachedAt?.toMillis() || 0;
-    const CACHE_DURATION = 60 * 24 * 60 * 60 * 1000; // 60 days in milliseconds
+    const CACHE_DURATION = 365 * 24 * 60 * 60 * 1000; // 365 days in milliseconds
 
     if (Date.now() - cacheTime < CACHE_DURATION) {
       return data.imageUrl;
@@ -850,9 +851,14 @@ export async function saveImageUrlCache(
   fileName: string,
   imageUrl: string,
 ) {
-  const imageRef = doc(db, "users", userId, "imageCaches", fileName);
+  // Create a flattened cache key from the file path
+  const cacheKey = fileName.split('/').join('_');
+  
+  const imageRef = doc(db, "users", userId, "imageCaches", cacheKey);
+  
   await setDoc(imageRef, {
     imageUrl,
+    originalPath: fileName, // Keep original path for reference
     cachedAt: new Date(),
   });
 }
@@ -897,7 +903,7 @@ export async function getRestaurantDetails(
     const data = docSnap.data();
     const currentTime = Date.now();
     const cacheTime = data.cachedAt?.toMillis() || 0;
-    const CACHE_DURATION = 60 * 24 * 60 * 60 * 1000; // 60 days in milliseconds
+    const CACHE_DURATION = 365 * 24 * 60 * 60 * 1000; // 365 days in milliseconds
 
     if (currentTime - cacheTime < CACHE_DURATION) {
       return data; // Return all data, not just rating and address

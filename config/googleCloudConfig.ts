@@ -3,6 +3,7 @@
 import { Storage, Bucket, LifecycleRule } from "@google-cloud/storage";
 import { DocumentProcessorServiceClient } from "@google-cloud/documentai";
 
+
 // Validate environment variables immediately
 if (!process.env.GOOGLE_CLOUD_STORAGE_BUCKET_RESTAURANT_IMAGES) {
   console.error('Missing GOOGLE_CLOUD_STORAGE_BUCKET_RESTAURANT_IMAGES environment variable');
@@ -22,6 +23,25 @@ interface BucketConfig {
   name: string;
   isPublic: boolean;
   enableCors: boolean;
+}
+
+// Type guard for ApiError
+interface ApiError extends Error {
+  code?: number;
+  errors?: Array<{
+    message: string;
+    domain: string;
+    reason: string;
+  }>;
+}
+
+function isApiError(error: unknown): error is ApiError {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    typeof (error as ApiError).code === 'number'
+  );
 }
 
 // Constants
@@ -44,32 +64,38 @@ const LIFECYCLE_RULE: LifecycleRule = {
   },
 };
 
-async function setupBucket(bucket: Bucket, config: BucketConfig) {
-  try {
-    // Check if bucket exists first
-    const [exists] = await bucket.exists();
-    if (!exists) {
-      console.error(`Bucket ${bucket.name} does not exist`);
+async function setupBucket(bucket: Bucket, config: BucketConfig, retries = 3): Promise<boolean> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      // Check if bucket exists first
+      const [exists] = await bucket.exists();
+      if (!exists) {
+        console.error(`Bucket ${bucket.name} does not exist`);
+        return false;
+      }
+
+      // Configure bucket in parallel
+      await Promise.all([
+        config.isPublic && makeBucketPublic(bucket),
+        config.enableCors && bucket.setMetadata({ cors: CORS_CONFIG }),
+        bucket.addLifecycleRule(LIFECYCLE_RULE),
+      ]);
+
+      console.log(`Successfully configured bucket ${bucket.name}`);
+      return true;
+    } catch (error: unknown) {
+      // Type guard for ApiError
+      if (isApiError(error) && error.code === 503 && attempt < retries) {
+        const delay = Math.pow(2, attempt) * 1000; // Exponential backoff
+        console.log(`Retry attempt ${attempt} for bucket ${bucket.name} after ${delay}ms`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+        continue;
+      }
+      console.error(`Error configuring bucket ${bucket.name}:`, error);
       return false;
     }
-
-    // Configure bucket in parallel
-    await Promise.all([
-      // Make public if needed using IAM policy
-      config.isPublic && makeBucketPublic(bucket),
-      // Set CORS if enabled
-      config.enableCors && bucket.setMetadata({ cors: CORS_CONFIG }),
-      // Set lifecycle rules
-      bucket.addLifecycleRule(LIFECYCLE_RULE),
-    ]);
-
-    console.log(`Successfully configured bucket ${bucket.name}`);
-    return true;
-  } catch (error) {
-    console.error(`Error configuring bucket ${bucket.name}:`, error);
-    // Implement retry logic or handle specific errors
-    return false;
   }
+  return false;
 }
 
 async function setupBucketWithRetry(bucket: Bucket, config: BucketConfig, maxRetries = 3): Promise<boolean> {
@@ -194,21 +220,30 @@ async function initializeBuckets() {
     { bucket: unlabeledBucket, config: { name: 'unlabeled', isPublic: false, enableCors: false } },
   ];
 
-  const results = await Promise.allSettled(
-    bucketConfigs.map(({ bucket, config }) => setupBucket(bucket, config))
+ const results = await Promise.allSettled(
+    bucketConfigs.map(async ({ bucket, config }) => {
+      try {
+        const success = await setupBucket(bucket, config);
+        return { name: config.name, success };
+      } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.error(`Error initializing ${config.name} bucket:`, errorMessage);
+        return { name: config.name, success: false, error: errorMessage };
+      }
+    })
   );
 
-  // Log results
-  results.forEach((result, index) => {
-    const bucketName = bucketConfigs[index].config.name;
+  // Log results with proper type checking
+  results.forEach((result) => {
     if (result.status === 'fulfilled') {
-      if (result.value) {
-        console.log(`Successfully initialized ${bucketName} bucket`);
+      const { name, success, error } = result.value;
+      if (success) {
+        console.log(`Successfully initialized ${name} bucket`);
       } else {
-        console.warn(`Failed to initialize ${bucketName} bucket`);
+        console.warn(`Failed to initialize ${name} bucket${error ? `: ${error}` : ''}`);
       }
     } else {
-      console.error(`Error initializing ${bucketName} bucket:`, result.reason);
+      console.error(`Bucket initialization rejected:`, result.reason);
     }
   });
 }
@@ -234,3 +269,6 @@ export {
   yelpMenuBucket,
   setupBucketWithRetry
 };
+  
+export type { ApiError };
+

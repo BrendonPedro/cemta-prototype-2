@@ -283,6 +283,8 @@ async function processPlacePhotos(
   }
 ): Promise<string[]> {
   const photos: string[] = [];
+
+  console.log('Processed photos:', photos);
   
   if (!config.firebaseToken) {
     console.log('⚠️ Skipping photo processing - No valid Firebase token');
@@ -346,7 +348,7 @@ async function processPlacePhotos(
       lng: location.longitude
     },
     googlePlaceId: place.place_id,
-    photos: photos, // Make sure photos array is passed
+    photos, // Make sure photos array is passed
     menuCount: 0,
     lastUpdated: new Date().toISOString(),
     createdAt: new Date().toISOString(),
