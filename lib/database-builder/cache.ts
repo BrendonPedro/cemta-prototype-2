@@ -10,7 +10,8 @@ getDocs,
   query, 
     where,
     deleteDoc,
-    increment, 
+    increment,
+    serverTimestamp, 
 } from 'firebase/firestore';
 import type { CachedRestaurant } from '@/app/services/firebaseFirestore';
 import geohash from 'ngeohash';
@@ -99,65 +100,58 @@ export async function getCachedBuildData(
 ): Promise<CachedRestaurant[] | null> {
   const cacheKey = getBuilderCacheKey(lat, lng, countyName, townName);
   const cacheRef = doc(db, BUILDER_CACHE_CONFIG.COLLECTION, cacheKey);
-  const metricsRef = doc(db, 'cacheMetrics', cacheKey); // cache metrics tracking
+  const metricsCacheRef = doc(db, 'cacheMetrics', cacheKey);
 
   console.log(`🔍 Checking cache for key: ${cacheKey}`);
-  
-  
+  console.log(`📍 Location: ${lat}, ${lng}`);
+  console.log(`🏙️ Area: ${countyName} - ${townName}`);
+
   try {
-    const docSnap = await getDoc(cacheRef);
-    const now = Date.now();
+    // Check main cache
+    const cacheDoc = await getDoc(cacheRef);
+    
+    if (cacheDoc.exists()) {
+      const data = cacheDoc.data() as BuilderCache;
+      const age = Date.now() - data.timestamp;
+      const ageHours = Math.round(age / (1000 * 60 * 60));
+      
+      console.log(`📊 Cache entry found:`);
+      console.log(`   Age: ${ageHours} hours`);
+      console.log(`   Restaurants: ${data.restaurants.length}`);
+      console.log(`   Last Updated: ${new Date(data.lastUpdated.restaurants).toLocaleString()}`);
 
-        // Update metrics
-    const metricsUpdate = {
-      lastAccessed: new Date(),
-      location: { lat, lng },
-      county: countyName,
-      town: townName
-    };
-
-  if (docSnap.exists()) {
-      const data = docSnap.data() as BuilderCache;
-      const cacheTime = data.timestamp;
-      const age = now - cacheTime;
-    const isValid = age < BUILDER_CACHE_CONFIG.DURATION;
-    
-      console.log(`📊 Cache entry found:`, {
-        age: `${Math.round(age / (1000 * 60 * 60))} hours`,
-        restaurants: data.restaurants.length,
-        isValid
-      });
-    
-    
-     if (isValid) {
-        await setDoc(metricsRef, {
-          ...metricsUpdate,
-          hits: increment(1),
-          restaurants: data.restaurants.length,
-          lastUpdated: new Date()
+      if (age < BUILDER_CACHE_CONFIG.DURATION) {
+        console.log(`✅ Cache HIT - Using cached data`);
+        
+        // Update metrics for cache hit
+        await setDoc(metricsCacheRef, {
+          county: countyName,
+          town: townName,
+          location: { lat, lng },
+          lastAccessed: serverTimestamp(),
+          hits: increment(1)
         }, { merge: true });
+
         return data.restaurants;
       } else {
-        await setDoc(metricsRef, {
-          ...metricsUpdate,
-          expired: increment(1),
-          expirationDate: new Date()
-        }, { merge: true });
-        console.log(`⚠️ Cache expired (${Math.round(age / (1000 * 60 * 60))} hours old)`);
+        console.log(`⚠️ Cache EXPIRED - ${ageHours} hours old (max ${BUILDER_CACHE_CONFIG.DURATION / (1000 * 60 * 60)} hours)`);
       }
     } else {
-      // Record cache miss
-      await setDoc(metricsRef, {
-        ...metricsUpdate,
-        misses: increment(1),
-        lastUpdated: new Date()
-      }, { merge: true });
-      console.log('❌ No cache entry found');
+      console.log(`❌ No cache entry found in ${BUILDER_CACHE_CONFIG.COLLECTION}`);
     }
+
+    // Update metrics for cache miss
+    await setDoc(metricsCacheRef, {
+      county: countyName,
+      town: townName,
+      location: { lat, lng },
+      lastAccessed: serverTimestamp(),
+      misses: increment(1)
+    }, { merge: true });
 
     return null;
   } catch (error) {
-    console.error('❌ Error accessing cache:', error);
+    console.error('Error accessing cache:', error);
     return null;
   }
 }
@@ -217,36 +211,54 @@ export async function saveBuildCache(
   restaurants: CachedRestaurant[]
 ): Promise<void> {
   const cacheKey = getBuilderCacheKey(lat, lng, countyName, townName);
+  
+  // Save to databaseBuilderCache (main cache data)
   const cacheRef = doc(db, BUILDER_CACHE_CONFIG.COLLECTION, cacheKey);
-  const metricsRef = doc(db, 'cacheMetrics', cacheKey);
+  // Metrics ref remains the same
+  const metricsCacheRef = doc(db, 'cacheMetrics', cacheKey);
+
+  const cacheData: BuilderCache = {
+    countyName,
+    townName,
+    geohash: geohash.encode(lat, lng, BUILDER_CACHE_CONFIG.GEOHASH_PRECISION),
+    timestamp: Date.now(),
+    restaurants,
+    lastUpdated: {
+      restaurants: Date.now(),
+      images: Date.now()
+    }
+  };
 
   try {
-    const cacheData: BuilderCache = {
-      countyName,
-      townName,
-      geohash: geohash.encode(lat, lng, BUILDER_CACHE_CONFIG.GEOHASH_PRECISION),
-      timestamp: Date.now(),
-      restaurants,
-      lastUpdated: {
-        restaurants: Date.now(),
-        images: Date.now()
-      }
-    };
-
+    console.log(`📥 Saving cache data for ${cacheKey} with ${restaurants.length} restaurants`);
+    
+    // First, save the actual cache data
     await setDoc(cacheRef, cacheData);
+    console.log(`✅ Saved restaurant data to cache`);
 
-    // Update metrics for new cache entry
-    await setDoc(metricsRef, {
-      lastUpdated: new Date(),
-      restaurants: restaurants.length,
-      hits: 0,
-      misses: 0
+    // Then update the metrics
+    await setDoc(metricsCacheRef, {
+      county: countyName,
+      town: townName,
+      location: { lat, lng },
+      lastAccessed: serverTimestamp(),
+      lastUpdated: serverTimestamp(),
+      hits: increment(1),
+      restaurantCount: restaurants.length
     }, { merge: true });
+    console.log(`✅ Updated cache metrics`);
 
-    console.log(`✅ Saved to builder cache: ${cacheKey} (${restaurants.length} restaurants)`);
+    // Verify the save
+    const verification = await getDoc(cacheRef);
+    if (verification.exists()) {
+      console.log(`✅ Cache verified - data saved successfully`);
+    } else {
+      console.warn(`⚠️ Cache verification failed - data may not have been saved`);
+    }
+
   } catch (error) {
-    console.error(`❌ Error saving to cache ${cacheKey}:`, error);
-    throw new Error(`Failed to save cache: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    console.error(`❌ Error saving cache for ${cacheKey}:`, error);
+    throw error;
   }
 }
 

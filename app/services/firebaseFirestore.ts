@@ -1194,13 +1194,12 @@ export async function saveRestaurantData(
     priceLevel: restaurantData.priceLevel || null,
     phone: restaurantData.phone || null,
     website: restaurantData.website || null,
-    photos: restaurantData.photos || [], // Ensure photos array is included
+    photos: restaurantData.photos || [], 
     menuCount: restaurantData.menuCount || 0,
     countyName,
     townName,
     lastUpdated: serverTimestamp()
   };
-
 
   try {
     // County document with town subcollection
@@ -1209,23 +1208,38 @@ export async function saveRestaurantData(
     
     const townRef = doc(countyRef, 'towns', townName);
     console.log('Creating town document:', townName);
-    
+
+    // Check if restaurant exists first
     const restaurantRef = doc(townRef, 'restaurants', cleanedData.id);
+    const restaurantDoc = await getDoc(restaurantRef);
+    
+    // Only increment counter if it's a new restaurant
+    if (!restaurantDoc.exists()) {
+      console.log(`New restaurant found: ${cleanedData.name}`);
+      batch.set(countyRef, {
+        name: countyName,
+        restaurantCount: increment(1),
+        lastUpdated: serverTimestamp()
+      }, { merge: true });
 
-    // Update county stats with merge
-    batch.set(countyRef, {
-      name: countyName,
-      restaurantCount: increment(1),
-      lastUpdated: serverTimestamp()
-    }, { merge: true });
+      batch.set(townRef, {
+        name: townName,
+        restaurantCount: increment(1),
+        lastUpdated: serverTimestamp()
+      }, { merge: true });
+    } else {
+      console.log(`Updating existing restaurant: ${cleanedData.name}`);
+      batch.set(countyRef, {
+        name: countyName,
+        lastUpdated: serverTimestamp()
+      }, { merge: true });
 
-    // Update town stats with merge
-    batch.set(townRef, {
-      name: townName,
-      restaurantCount: increment(1),
-      lastUpdated: serverTimestamp()
-    }, { merge: true });
-
+      batch.set(townRef, {
+        name: townName,
+        lastUpdated: serverTimestamp()
+      }, { merge: true });
+    }
+    
     // Save restaurant data
     batch.set(restaurantRef, cleanedData);
 
@@ -1237,6 +1251,35 @@ export async function saveRestaurantData(
     console.log('Successfully saved restaurant data:', cleanedData.id);
   } catch (error) {
     console.error('Error saving restaurant data:', error);
+    throw error;
+  }
+}
+
+// Add this helper function to reset/verify counts
+export async function verifyRestaurantCount(countyName: string, townName: string): Promise<void> {
+  try {
+    const countyRef = doc(db, 'counties', countyName);
+    const townRef = doc(countyRef, 'towns', townName);
+    const restaurantsRef = collection(townRef, 'restaurants');
+    
+    // Get actual count of restaurants
+    const snapshot = await getDocs(restaurantsRef);
+    const actualCount = snapshot.size;
+    
+    // Update the counts to match reality
+    await setDoc(countyRef, {
+      restaurantCount: actualCount,
+      lastUpdated: serverTimestamp()
+    }, { merge: true });
+
+    await setDoc(townRef, {
+      restaurantCount: actualCount,
+      lastUpdated: serverTimestamp()
+    }, { merge: true });
+
+    console.log(`Updated restaurant count for ${townName}, ${countyName} to ${actualCount}`);
+  } catch (error) {
+    console.error('Error verifying restaurant count:', error);
     throw error;
   }
 }
