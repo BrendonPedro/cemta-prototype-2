@@ -17,6 +17,7 @@ import type { CachedRestaurant } from '@/app/services/firebaseFirestore';
 import geohash from 'ngeohash';
 import { CONFIG } from './config';
 
+
 export interface CacheMetrics {
   id?: string;
   hits: number;
@@ -36,8 +37,58 @@ interface BuilderCache {
   timestamp: number;
   restaurants: CachedRestaurant[];
   lastUpdated: {
-    restaurants: number;
-    images: number;
+    restaurants: FirebaseFirestore.FieldValue;
+    images: FirebaseFirestore.FieldValue;
+  };
+}
+
+
+export interface CacheConfig {
+  COLLECTIONS: {
+    LOCATION: string;
+    METRICS: string;
+  };
+  DURATION: number;
+  GEOHASH: {
+    LOCATION_PRECISION: number;
+    METRICS_PRECISION: number;
+  };
+}
+
+export interface Config {
+  API: {
+    GOOGLE_BATCH_SIZE: number;
+    YELP_BATCH_SIZE: number;
+    DELAY_BETWEEN_CALLS: number;
+    MAX_RETRIES: number;
+    RETRY_DELAY: number;
+  };
+  PATHS: {
+    IMAGES: string;
+    ORIGINAL_MENUS: string;
+    PROCESSED_MENUS: string;
+  };
+  FIRESTORE: {
+    COLLECTIONS: {
+      COUNTIES: string;
+      TOWNS: string;
+      RESTAURANTS: string;
+      MENUS: string;
+      LOCATION_CACHE: string;
+      METRICS_CACHE: string;
+    };
+  };
+  CACHE: {
+    DURATION: number;
+    GEOHASH: {
+      LOCATION_PRECISION: number;
+      METRICS_PRECISION: number;
+    };
+  };
+  PROCESSING: {
+    START_DATE: string;
+    TOTAL_LOCATIONS: number;
+    BATCH_SIZE: number;
   };
 }
 
@@ -53,6 +104,17 @@ interface CacheMetricsFirestore extends Omit<CacheMetrics, 'lastAccessed' | 'las
   expirationDate?: FirestoreTimestamp;
 }
 
+export const CACHE_CONFIG = {
+  COLLECTIONS: {
+    LOCATION: CONFIG.FIRESTORE.COLLECTIONS.LOCATION_CACHE,
+    METRICS: CONFIG.FIRESTORE.COLLECTIONS.METRICS_CACHE
+  },
+  DURATION: CONFIG.CACHE.DURATION,
+  GEOHASH: CONFIG.CACHE.GEOHASH
+};
+
+
+
 // Add this helper function
 function isFirestoreTimestamp(value: any): value is FirestoreTimestamp {
   return value && typeof value.toDate === 'function' && 
@@ -64,11 +126,11 @@ function isFirestoreTimestamp(value: any): value is FirestoreTimestamp {
 export async function cleanupExpiredCache(): Promise<number> {
   try {
     const now = Date.now();
-    const snapshot = await getDocs(collection(db, BUILDER_CACHE_CONFIG.COLLECTION));
+    const snapshot = await getDocs(collection(db, CACHE_CONFIG.COLLECTIONS.LOCATION));
     
     const expiredDocs = snapshot.docs.filter(doc => {
       const data = doc.data() as BuilderCache;
-      return now - data.timestamp > BUILDER_CACHE_CONFIG.DURATION;
+      return now - data.timestamp > CACHE_CONFIG.DURATION;
     });
 
     await Promise.all(expiredDocs.map(doc => deleteDoc(doc.ref)));
@@ -81,14 +143,9 @@ export async function cleanupExpiredCache(): Promise<number> {
   }
 }
 
-const BUILDER_CACHE_CONFIG = {
-  COLLECTION: 'databaseBuilderCache',
-  DURATION: 365 * 24 * 60 * 60 * 1000, // 365 days
-  GEOHASH_PRECISION: 6
-};
 
 function getBuilderCacheKey(lat: number, lng: number, countyName: string, townName: string): string {
-  const locationHash = geohash.encode(lat, lng, BUILDER_CACHE_CONFIG.GEOHASH_PRECISION);
+  const locationHash = geohash.encode(lat, lng, CACHE_CONFIG.GEOHASH.METRICS_PRECISION);
   return `${countyName.toLowerCase()}_${townName.toLowerCase()}_${locationHash}`;
 }
 
@@ -98,29 +155,34 @@ export async function getCachedBuildData(
   countyName: string,
   townName: string
 ): Promise<CachedRestaurant[] | null> {
-  const cacheKey = getBuilderCacheKey(lat, lng, countyName, townName);
-  const cacheRef = doc(db, BUILDER_CACHE_CONFIG.COLLECTION, cacheKey);
-  const metricsCacheRef = doc(db, 'cacheMetrics', cacheKey);
+  // Use shorter precision for locationCaches
+  const locationHash = geohash.encode(lat, lng, CACHE_CONFIG.GEOHASH.LOCATION_PRECISION);
+  const cacheRef = doc(db, CACHE_CONFIG.COLLECTIONS.LOCATION, locationHash);
+  
+  // Use longer precision for metrics
+  const metricsHash = geohash.encode(lat, lng, CACHE_CONFIG.GEOHASH.METRICS_PRECISION);
+  const metricsKey = `${countyName.toLowerCase()}_${townName.toLowerCase()}_${metricsHash}`;
+  const metricsCacheRef = doc(db, CACHE_CONFIG.COLLECTIONS.METRICS, metricsKey);
 
-  console.log(`🔍 Checking cache for key: ${cacheKey}`);
+  console.log(`🔍 Checking cache for key: ${metricsKey}`);
   console.log(`📍 Location: ${lat}, ${lng}`);
   console.log(`🏙️ Area: ${countyName} - ${townName}`);
 
   try {
-    // Check main cache
+    // Check location cache
     const cacheDoc = await getDoc(cacheRef);
     
     if (cacheDoc.exists()) {
-      const data = cacheDoc.data() as BuilderCache;
-      const age = Date.now() - data.timestamp;
+      const data = cacheDoc.data();
+      const age = Date.now() - (data.cachedAt?.toMillis() || data.timestamp || 0);
       const ageHours = Math.round(age / (1000 * 60 * 60));
       
       console.log(`📊 Cache entry found:`);
       console.log(`   Age: ${ageHours} hours`);
-      console.log(`   Restaurants: ${data.restaurants.length}`);
-      console.log(`   Last Updated: ${new Date(data.lastUpdated.restaurants).toLocaleString()}`);
+      console.log(`   Restaurants: ${data.restaurants?.length || 0}`);
+      console.log(`   Location Hash: ${locationHash}`);
 
-      if (age < BUILDER_CACHE_CONFIG.DURATION) {
+      if (age < CACHE_CONFIG.DURATION) {
         console.log(`✅ Cache HIT - Using cached data`);
         
         // Update metrics for cache hit
@@ -133,11 +195,7 @@ export async function getCachedBuildData(
         }, { merge: true });
 
         return data.restaurants;
-      } else {
-        console.log(`⚠️ Cache EXPIRED - ${ageHours} hours old (max ${BUILDER_CACHE_CONFIG.DURATION / (1000 * 60 * 60)} hours)`);
       }
-    } else {
-      console.log(`❌ No cache entry found in ${BUILDER_CACHE_CONFIG.COLLECTION}`);
     }
 
     // Update metrics for cache miss
@@ -210,33 +268,37 @@ export async function saveBuildCache(
   townName: string,
   restaurants: CachedRestaurant[]
 ): Promise<void> {
-  const cacheKey = getBuilderCacheKey(lat, lng, countyName, townName);
-  
-  // Save to databaseBuilderCache (main cache data)
-  const cacheRef = doc(db, BUILDER_CACHE_CONFIG.COLLECTION, cacheKey);
-  // Metrics ref remains the same
-  const metricsCacheRef = doc(db, 'cacheMetrics', cacheKey);
+  // Use shorter precision for location cache
+  const locationHash = geohash.encode(lat, lng, CACHE_CONFIG.GEOHASH.LOCATION_PRECISION);
+  const locationCacheRef = doc(db, CACHE_CONFIG.COLLECTIONS.LOCATION, locationHash);
+
+  // Use longer precision for metrics
+  const metricsHash = geohash.encode(lat, lng, CACHE_CONFIG.GEOHASH.METRICS_PRECISION);
+  const metricsKey = `${countyName.toLowerCase()}_${townName.toLowerCase()}_${metricsHash}`;
+  const metricsCacheRef = doc(db, CACHE_CONFIG.COLLECTIONS.METRICS, metricsKey);
 
   const cacheData: BuilderCache = {
     countyName,
     townName,
-    geohash: geohash.encode(lat, lng, BUILDER_CACHE_CONFIG.GEOHASH_PRECISION),
+    geohash: locationHash,
     timestamp: Date.now(),
     restaurants,
     lastUpdated: {
-      restaurants: Date.now(),
-      images: Date.now()
+      restaurants: serverTimestamp(),
+      images: serverTimestamp()
     }
   };
 
   try {
-    console.log(`📥 Saving cache data for ${cacheKey} with ${restaurants.length} restaurants`);
-    
-    // First, save the actual cache data
-    await setDoc(cacheRef, cacheData);
-    console.log(`✅ Saved restaurant data to cache`);
+    console.log(`📥 Saving cache data for location hash: ${locationHash}`);
+    console.log(`📊 Metrics key: ${metricsKey}`);
+    console.log(`📍 Restaurants count: ${restaurants.length}`);
 
-    // Then update the metrics
+    // Save to location cache
+    await setDoc(locationCacheRef, cacheData);
+    console.log(`✅ Saved restaurant data to location cache`);
+
+    // Update metrics
     await setDoc(metricsCacheRef, {
       county: countyName,
       town: townName,
@@ -249,15 +311,18 @@ export async function saveBuildCache(
     console.log(`✅ Updated cache metrics`);
 
     // Verify the save
-    const verification = await getDoc(cacheRef);
+    const verification = await getDoc(locationCacheRef);
     if (verification.exists()) {
       console.log(`✅ Cache verified - data saved successfully`);
+      console.log(`📍 Saved ${verification.data().restaurants.length} restaurants`);
     } else {
       console.warn(`⚠️ Cache verification failed - data may not have been saved`);
     }
 
   } catch (error) {
-    console.error(`❌ Error saving cache for ${cacheKey}:`, error);
+    console.error(`❌ Error saving cache:`, error);
+    console.error(`   Location Hash: ${locationHash}`);
+    console.error(`   Metrics Key: ${metricsKey}`);
     throw error;
   }
 }
@@ -273,10 +338,10 @@ export async function checkCountyCacheCoverage(countyName: string): Promise<{
     total: number;
   }>;
 }> {
-  const cacheQuery = query(
-    collection(db, BUILDER_CACHE_CONFIG.COLLECTION),
-    where('countyName', '==', countyName)
-  );
+const cacheQuery = query(
+  collection(db, CACHE_CONFIG.COLLECTIONS.LOCATION),
+  where('countyName', '==', countyName)
+);
 
   const snapshot = await getDocs(cacheQuery);
   const now = Date.now();
@@ -298,7 +363,7 @@ export async function checkCountyCacheCoverage(countyName: string): Promise<{
     coverage.totalAreas++;
     coverage.towns[townName].total++;
 
-    if (now - data.timestamp < BUILDER_CACHE_CONFIG.DURATION) {
+    if (now - data.timestamp < CACHE_CONFIG.DURATION) {
       coverage.cachedAreas++;
       coverage.towns[townName].cached++;
     } else {
@@ -320,14 +385,14 @@ export async function clearBuilderCache(
   try {
     if (lat && lng && countyName && townName) {
       // Clear specific location cache
-      const cacheKey = getBuilderCacheKey(lat, lng, countyName, townName);
-      const cacheRef = doc(db, BUILDER_CACHE_CONFIG.COLLECTION, cacheKey);
+      const locationHash = geohash.encode(lat, lng, CACHE_CONFIG.GEOHASH.LOCATION_PRECISION);
+      const cacheRef = doc(db, CACHE_CONFIG.COLLECTIONS.LOCATION, locationHash);
       await deleteDoc(cacheRef);
-      console.log(`Cleared cache for location: ${cacheKey}`);
+      console.log(`Cleared cache for location: ${locationHash}`);
     } else if (countyName && townName) {
       // Clear all caches for a specific town in a county
       const cacheQuery = query(
-        collection(db, BUILDER_CACHE_CONFIG.COLLECTION),
+        collection(db, CACHE_CONFIG.COLLECTIONS.LOCATION),
         where('countyName', '==', countyName),
         where('townName', '==', townName)
       );
@@ -337,7 +402,7 @@ export async function clearBuilderCache(
     } else if (countyName) {
       // Clear all caches for a county
       const cacheQuery = query(
-        collection(db, BUILDER_CACHE_CONFIG.COLLECTION),
+        collection(db, CACHE_CONFIG.COLLECTIONS.LOCATION), // Fixed here
         where('countyName', '==', countyName)
       );
       const snapshot = await getDocs(cacheQuery);
@@ -345,12 +410,11 @@ export async function clearBuilderCache(
       console.log(`Cleared all caches for ${countyName}`);
     } else {
       // Clear all caches
-      const snapshot = await getDocs(collection(db, BUILDER_CACHE_CONFIG.COLLECTION));
+      const snapshot = await getDocs(collection(db, CACHE_CONFIG.COLLECTIONS.LOCATION)); // Fixed here
       await Promise.all(snapshot.docs.map(doc => deleteDoc(doc.ref)));
       console.log('Cleared all caches');
     }
   } catch (error) {
-
     console.error('Error clearing cache:', error);
     throw error;
   }
@@ -359,9 +423,9 @@ export async function clearBuilderCache(
 // Helper function for builder.ts to use
 export async function clearLocationCache(lat: number, lng: number): Promise<void> {
   // Get all caches that might match this location
-  const locationHash = geohash.encode(lat, lng, BUILDER_CACHE_CONFIG.GEOHASH_PRECISION);
+  const locationHash = geohash.encode(lat, lng, CACHE_CONFIG.GEOHASH.LOCATION_PRECISION)
   const cacheQuery = query(
-    collection(db, BUILDER_CACHE_CONFIG.COLLECTION),
+    collection(db, CACHE_CONFIG.COLLECTIONS.LOCATION),
     where('geohash', '==', locationHash)
   );
 

@@ -1,4 +1,5 @@
 // lib/database-builder/config.ts
+
 export const CONFIG = {
   API: {
     GOOGLE_BATCH_SIZE: 20,
@@ -18,12 +19,20 @@ export const CONFIG = {
       TOWNS: 'towns',
       RESTAURANTS: 'restaurants',
       MENUS: 'menus',
-      CACHE: 'locationCaches'
+      LOCATION_CACHE: 'locationCaches',
+      METRICS_CACHE: 'cacheMetrics'
+    }
+  },
+  CACHE: {
+    DURATION: 365 * 24 * 60 * 60 * 1000, // 365 days
+    GEOHASH: {
+      LOCATION_PRECISION: 5,  // For locationCaches (broader area grouping)
+      METRICS_PRECISION: 6    // For cacheMetrics (exact location tracking)
     }
   },
   PROCESSING: {
     START_DATE: '2024-01-01',
-    TOTAL_LOCATIONS: 500, // Adjust based on your needs
+    TOTAL_LOCATIONS: 500,
     BATCH_SIZE: 50
   }
 };

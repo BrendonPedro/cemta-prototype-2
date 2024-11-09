@@ -600,7 +600,7 @@ function getLocationCacheKey(lat: number, lng: number): string {
 }
 
 export const CACHE_CONSTANTS = {
-  COLLECTION_NAME: 'locationCaches',
+  COLLECTION_NAME: 'locationCaches', // Important: This must match the Firestore collection name
   DURATION: 365 * 24 * 60 * 60 * 1000, // 365 days
   GEOHASH_PRECISION: 5
 };
@@ -1181,12 +1181,12 @@ export async function saveRestaurantData(
     restaurantId: restaurantData.id,
     countyName,
     townName,
-    photos: restaurantData.photos // Log photos for debugging
+    photos: restaurantData.photos
   });
 
   const batch = writeBatch(db);
 
-  // Clean the restaurant data to replace undefined with null
+  // Clean the restaurant data
   const cleanedData = {
     ...restaurantData,
     yelpId: restaurantData.yelpId || null,
@@ -1202,58 +1202,50 @@ export async function saveRestaurantData(
   };
 
   try {
-    // County document with town subcollection
+    // References to documents
     const countyRef = doc(db, 'counties', countyName);
-    console.log('Creating county document:', countyName);
-    
     const townRef = doc(countyRef, 'towns', townName);
-    console.log('Creating town document:', townName);
-
-    // Check if restaurant exists first
     const restaurantRef = doc(townRef, 'restaurants', cleanedData.id);
-    const restaurantDoc = await getDoc(restaurantRef);
-    
-    // Only increment counter if it's a new restaurant
-    if (!restaurantDoc.exists()) {
-      console.log(`New restaurant found: ${cleanedData.name}`);
+    const globalRestaurantRef = doc(db, 'restaurants', cleanedData.id);
+
+    // Regular collection saves
+    const docExists = (await getDoc(restaurantRef)).exists();
+
+    // Always update lastUpdated field
+    batch.set(countyRef, {
+      name: countyName,
+      lastUpdated: serverTimestamp()
+    }, { merge: true });
+
+    batch.set(townRef, {
+      name: townName,
+      lastUpdated: serverTimestamp()
+    }, { merge: true });
+
+    // Increment restaurantCount only if new restaurant
+    if (!docExists) {
       batch.set(countyRef, {
-        name: countyName,
-        restaurantCount: increment(1),
-        lastUpdated: serverTimestamp()
+        restaurantCount: increment(1)
       }, { merge: true });
 
       batch.set(townRef, {
-        name: townName,
-        restaurantCount: increment(1),
-        lastUpdated: serverTimestamp()
-      }, { merge: true });
-    } else {
-      console.log(`Updating existing restaurant: ${cleanedData.name}`);
-      batch.set(countyRef, {
-        name: countyName,
-        lastUpdated: serverTimestamp()
-      }, { merge: true });
-
-      batch.set(townRef, {
-        name: townName,
-        lastUpdated: serverTimestamp()
+        restaurantCount: increment(1)
       }, { merge: true });
     }
-    
-    // Save restaurant data
-    batch.set(restaurantRef, cleanedData);
 
-    // Also save to global restaurants collection
-    const globalRestaurantRef = doc(db, 'restaurants', cleanedData.id);
-    batch.set(globalRestaurantRef, cleanedData);
+    // Save restaurant data
+    batch.set(restaurantRef, cleanedData, { merge: true });
+    batch.set(globalRestaurantRef, cleanedData, { merge: true });
 
     await batch.commit();
-    console.log('Successfully saved restaurant data:', cleanedData.id);
+    console.log('Successfully saved restaurant data and updated cache:', cleanedData.id);
+
   } catch (error) {
     console.error('Error saving restaurant data:', error);
     throw error;
   }
 }
+
 
 // Add this helper function to reset/verify counts
 export async function verifyRestaurantCount(countyName: string, townName: string): Promise<void> {
