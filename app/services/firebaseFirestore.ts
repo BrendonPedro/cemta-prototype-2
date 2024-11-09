@@ -1202,46 +1202,105 @@ export async function saveRestaurantData(
   };
 
   try {
-    // References to documents
+    // Set up references
     const countyRef = doc(db, 'counties', countyName);
     const townRef = doc(countyRef, 'towns', townName);
     const restaurantRef = doc(townRef, 'restaurants', cleanedData.id);
     const globalRestaurantRef = doc(db, 'restaurants', cleanedData.id);
 
-    // Regular collection saves
-    const docExists = (await getDoc(restaurantRef)).exists();
+    // First check if restaurant exists in counties collection
+    const existingRestaurantDoc = await getDoc(restaurantRef);
+    const shouldIncrementCount = !existingRestaurantDoc.exists();
 
-    // Always update lastUpdated field
-    batch.set(countyRef, {
-      name: countyName,
-      lastUpdated: serverTimestamp()
-    }, { merge: true });
-
-    batch.set(townRef, {
-      name: townName,
-      lastUpdated: serverTimestamp()
-    }, { merge: true });
-
-    // Increment restaurantCount only if new restaurant
-    if (!docExists) {
+    // Only increment counters for new restaurants
+    if (shouldIncrementCount) {
+      // Update county document
       batch.set(countyRef, {
-        restaurantCount: increment(1)
+        name: countyName,
+        restaurantCount: increment(1),
+        lastUpdated: serverTimestamp()
       }, { merge: true });
 
+      // Update town document
       batch.set(townRef, {
-        restaurantCount: increment(1)
+        name: townName,
+        restaurantCount: increment(1),
+        lastUpdated: serverTimestamp()
       }, { merge: true });
     }
 
-    // Save restaurant data
-    batch.set(restaurantRef, cleanedData, { merge: true });
-    batch.set(globalRestaurantRef, cleanedData, { merge: true });
+    // Save restaurant data to counties collection
+    batch.set(restaurantRef, {
+      ...cleanedData,
+      lastUpdated: serverTimestamp()
+    }, { merge: true });
+
+    // Also save to global restaurants collection
+    batch.set(globalRestaurantRef, {
+      ...cleanedData,
+      lastUpdated: serverTimestamp()
+    }, { merge: true });
 
     await batch.commit();
-    console.log('Successfully saved restaurant data and updated cache:', cleanedData.id);
+    console.log(`Successfully saved restaurant data: ${cleanedData.id}`);
+
+    // Verify the saves
+    const verifyCountyDoc = await getDoc(countyRef);
+    const verifyRestaurantDoc = await getDoc(restaurantRef);
+    
+    if (!verifyCountyDoc.exists()) {
+      console.error(`Failed to save county document: ${countyName}`);
+    }
+    if (!verifyRestaurantDoc.exists()) {
+      console.error(`Failed to save restaurant document: ${cleanedData.id}`);
+    }
 
   } catch (error) {
     console.error('Error saving restaurant data:', error);
+    throw error;
+  }
+}
+
+// Helper function to verify and fix restaurant counts if needed
+export async function verifyAndFixRestaurantCount(countyName: string, townName: string): Promise<void> {
+  const countyRef = doc(db, 'counties', countyName);
+  const townRef = doc(countyRef, 'towns', townName);
+  
+  try {
+    // Get all restaurants in the town
+    const restaurantsSnapshot = await getDocs(collection(townRef, 'restaurants'));
+    const actualCount = restaurantsSnapshot.size;
+    
+    // Get current county and town data
+    const countyDoc = await getDoc(countyRef);
+    const townDoc = await getDoc(townRef);
+    
+    const countyCount = countyDoc.data()?.restaurantCount || 0;
+    const townCount = townDoc.data()?.restaurantCount || 0;
+    
+    // Fix counts if they don't match
+    if (countyCount !== actualCount || townCount !== actualCount) {
+      const batch = writeBatch(db);
+      
+      batch.set(countyRef, {
+        restaurantCount: actualCount,
+        lastUpdated: serverTimestamp()
+      }, { merge: true });
+      
+      batch.set(townRef, {
+        restaurantCount: actualCount,
+        lastUpdated: serverTimestamp()
+      }, { merge: true });
+      
+      await batch.commit();
+      
+      console.log(`Fixed restaurant count for ${townName}, ${countyName}:`, {
+        previous: { county: countyCount, town: townCount },
+        corrected: actualCount
+      });
+    }
+  } catch (error) {
+    console.error('Error verifying restaurant count:', error);
     throw error;
   }
 }

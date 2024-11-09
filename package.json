@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "verify-db": "cross-env NODE_OPTIONS=--experimental-specifier-resolution=node tsx --tsconfig tsconfig.verify.json scripts/verify.mjs"
   },
   "dependencies": {
     "@clerk/nextjs": "^5.6.0",
@@ -98,14 +99,18 @@
     "@types/google-cloud__storage": "^2.3.1",
     "@types/google.maps": "^3.58.1",
     "@types/googlemaps": "^3.43.3",
-    "@types/node": "^20.14.13",
+    "@types/node": "^20.17.6",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "autoprefixer": "^10.4.19",
+    "cross-env": "^7.0.3",
     "eslint": "^8",
     "eslint-config-next": "14.1.3",
     "postcss": "^8.4.40",
     "tailwindcss": "^3.4.7",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "tsx": "^4.19.2",
     "typescript": "^5"
   }
 }

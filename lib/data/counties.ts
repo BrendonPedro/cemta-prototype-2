@@ -1,11 +1,11 @@
-// app/lib/data/counties.ts
+// lib/data/counties.ts
 
 import { CountyData } from "@/lib/database-builder/types";
 
-// Define region type
+// Define region type for geographical grouping
 export type Region = 'NORTHERN' | 'CENTRAL' | 'SOUTHERN' | 'EASTERN' | 'OUTLYING';
 
-// Define interfaces for our enhanced data
+// Enhanced town data interface with additional metadata
 export interface EnhancedTownData {
   name: string;
   chineseName: string;
@@ -14,6 +14,7 @@ export interface EnhancedTownData {
   population?: number;
 }
 
+// Enhanced county data interface with additional metadata
 export interface EnhancedCountyData extends Omit<CountyData, 'towns'> {
   name: string;
   chineseName: string;
@@ -23,104 +24,19 @@ export interface EnhancedCountyData extends Omit<CountyData, 'towns'> {
   towns: EnhancedTownData[];
 }
 
-const newCounties: EnhancedCountyData[] = [
-  {
-    name: "Chiayi City",
-    chineseName: "嘉義市",
-    population: 269398,
-    area: 60.03,
-    density: 4488,
-    towns: [
-      {
-        name: "East District",
-        chineseName: "東區",
-        location: { lat: 23.4803, lng: 120.4486 },
-        searchRadiusKm: 3,
-        population: 125765
-      },
-      {
-        name: "West District",
-        chineseName: "西區",
-        location: { lat: 23.4798, lng: 120.4250 },
-        searchRadiusKm: 3,
-        population: 143633
-      }
-    ]
-  },
-  {
-    name: "Chiayi County",
-    chineseName: "嘉義縣",
-    population: 510000,
-    area: 1903.64,
-    density: 268,
-    towns: [
-      {
-        name: "Minxiong Township",
-        chineseName: "民雄鄉",
-        location: { lat: 23.5519, lng: 120.4283 },
-        searchRadiusKm: 4,
-        population: 71564
-      },
-      {
-        name: "Puzi City",
-        chineseName: "朴子市",
-        location: { lat: 23.4649, lng: 120.2470 },
-        searchRadiusKm: 4,
-        population: 42514
-      },
-      {
-        name: "Taibao City",
-        chineseName: "太保市",
-        location: { lat: 23.4589, lng: 120.3319 },
-        searchRadiusKm: 4,
-        population: 37941
-      }
-    ]
-  },
-  {
-    name: "Yunlin County",
-    chineseName: "雲林縣",
-    population: 672000,
-    area: 1290.83,
-    density: 521,
-    towns: [
-      {
-        name: "Douliu City",
-        chineseName: "斗六市",
-        location: { lat: 23.7070, lng: 120.5444 },
-        searchRadiusKm: 4,
-        population: 108567
-      },
-      {
-        name: "Huwei Township",
-        chineseName: "虎尾鎮",
-        location: { lat: 23.7079, lng: 120.4352 },
-        searchRadiusKm: 4,
-        population: 70893
-      },
-      {
-        name: "Beigang Township",
-        chineseName: "北港鎮",
-        location: { lat: 23.5751, lng: 120.3029 },
-        searchRadiusKm: 4,
-        population: 40124
-      }
-    ]
-  }
-];
-
-// Define REGIONS 
+// ==================== Regional Definitions ====================
+// Define geographical regions and their constituent counties
 export const REGIONS: Record<Region, string[]> = {
-  NORTHERN: ["Taipei City", "New Taipei City", "Keelung City", "Taoyuan City", "Hsinchu City"],
+  NORTHERN: ["Taipei City", "New Taipei City", "Keelung City", "Taoyuan City", "Hsinchu City", "Hsinchu County"],
   CENTRAL: ["Miaoli County", "Taichung City", "Changhua County", "Yunlin County"],
   SOUTHERN: ["Chiayi City", "Chiayi County", "Tainan City", "Kaohsiung City"],
   EASTERN: ["Hualien County", "Taitung County"],
   OUTLYING: ["Penghu County", "Kinmen County"]
 };
 
-
+// ==================== County Data ====================
 export const counties: EnhancedCountyData[] = [
-  // Northern Taiwan
+  // -------------------- Northern Taiwan --------------------
   {
     name: "Taipei City",
     chineseName: "臺北市",
@@ -155,7 +71,7 @@ export const counties: EnhancedCountyData[] = [
         location: { lat: 25.0697, lng: 121.5381 },
         searchRadiusKm: 3,
         population: 230710
-      },
+      }
     ]
   },
   {
@@ -185,7 +101,7 @@ export const counties: EnhancedCountyData[] = [
         location: { lat: 24.9993, lng: 121.4934 },
         searchRadiusKm: 4,
         population: 413291
-      },
+      }
     ]
   },
   {
@@ -208,11 +124,115 @@ export const counties: EnhancedCountyData[] = [
         location: { lat: 24.9656, lng: 121.2168 },
         searchRadiusKm: 4,
         population: 405216
+      }
+    ]
+  },
+  {
+    name: "Keelung City",
+    chineseName: "基隆市",
+    population: 371878,
+    area: 132.76,
+    density: 2801,
+    towns: [
+      {
+        name: "Ren'ai District",
+        chineseName: "仁愛區",
+        location: { lat: 25.1277, lng: 121.7414 },
+        searchRadiusKm: 3,
+        population: 43633
       },
+      {
+        name: "Xinyi District",
+        chineseName: "信義區",
+        location: { lat: 25.1277, lng: 121.7414 },
+        searchRadiusKm: 3,
+        population: 51395
+      },
+      {
+        name: "Zhongzheng District",
+        chineseName: "中正區",
+        location: { lat: 25.1437, lng: 121.7837 },
+        searchRadiusKm: 3,
+        population: 52918
+      }
+    ]
+  },
+  {
+    name: "Hsinchu City",
+    chineseName: "新竹市",
+    population: 449865,
+    area: 104.15,
+    density: 4319,
+    towns: [
+      {
+        name: "East District",
+        chineseName: "東區",
+        location: { lat: 24.8138, lng: 120.9767 },
+        searchRadiusKm: 3,
+        population: 207223
+      },
+      {
+        name: "North District",
+        chineseName: "北區",
+        location: { lat: 24.8226, lng: 120.9478 },
+        searchRadiusKm: 3,
+        population: 147613
+      },
+      {
+        name: "Xiangshan District",
+        chineseName: "香山區",
+        location: { lat: 24.7689, lng: 120.9139 },
+        searchRadiusKm: 3,
+        population: 77283
+      }
+    ]
+  },
+  {
+    name: "Hsinchu County",
+    chineseName: "新竹縣",
+    population: 563976,
+    area: 1427.59,
+    density: 395,
+    towns: [
+      {
+        name: "Zhubei City",
+        chineseName: "竹北市",
+        location: { lat: 24.8397, lng: 121.0132 },
+        searchRadiusKm: 4,
+        population: 198897
+      },
+      {
+        name: "Hukou Township",
+        chineseName: "湖口鄉",
+        location: { lat: 24.9029, lng: 121.0444 },
+        searchRadiusKm: 4,
+        population: 78918
+      },
+      {
+        name: "Xinfeng Township",
+        chineseName: "新豐鄉",
+        location: { lat: 24.9069, lng: 120.9956 },
+        searchRadiusKm: 4,
+        population: 56794
+      },
+      {
+        name: "Guanxi Township",
+        chineseName: "關西鎮",
+        location: { lat: 24.7866, lng: 121.1766 },
+        searchRadiusKm: 4,
+        population: 28927
+      },
+      {
+        name: "Baoshan Township",
+        chineseName: "寶山鄉",
+        location: { lat: 24.7609, lng: 120.9984 },
+        searchRadiusKm: 4,
+        population: 14935
+      }
     ]
   },
 
-  // Central Taiwan
+  // -------------------- Central Taiwan --------------------
   {
     name: "Miaoli County",
     chineseName: "苗栗縣",
@@ -240,7 +260,7 @@ export const counties: EnhancedCountyData[] = [
         location: { lat: 24.6853, lng: 120.8511 },
         searchRadiusKm: 4,
         population: 86798
-      },
+      }
     ]
   },
   {
@@ -263,10 +283,71 @@ export const counties: EnhancedCountyData[] = [
         location: { lat: 24.1589, lng: 120.6840 },
         searchRadiusKm: 4,
         population: 147653
-      },
+      }
     ]
   },
-  // Southern Taiwan
+  {
+    name: "Changhua County",
+    chineseName: "彰化縣",
+    population: 1274582,
+    area: 1074.40,
+    density: 1186,
+    towns: [
+      {
+        name: "Changhua City",
+        chineseName: "彰化市",
+        location: { lat: 24.0734, lng: 120.5134 },
+        searchRadiusKm: 4,
+        population: 233524
+      },
+      {
+        name: "Lukang Township",
+        chineseName: "鹿港鎮",
+        location: { lat: 24.0579, lng: 120.4346 },
+        searchRadiusKm: 4,
+        population: 86779
+      },
+      {
+        name: "Hemei Township",
+        chineseName: "和美鎮",
+        location: { lat: 24.1151, lng: 120.5014 },
+        searchRadiusKm: 4,
+        population: 91645
+      }
+    ]
+  },
+  {
+    name: "Yunlin County",
+    chineseName: "雲林縣",
+    population: 672000,
+    area: 1290.83,
+    density: 521,
+    towns: [
+      {
+        name: "Douliu City",
+        chineseName: "斗六市",
+        location: { lat: 23.7070, lng: 120.5444 },
+        searchRadiusKm: 4,
+        population: 108567
+      },
+      {
+        name: "Huwei Township",
+        chineseName: "虎尾鎮",
+        location: { lat: 23.7079, lng: 120.4352 },
+        searchRadiusKm: 4,
+        population: 70893
+      },
+      {
+        name: "Beigang Township",
+        chineseName: "北港鎮",
+        location: { lat: 23.5751, lng: 120.3029 },
+        searchRadiusKm: 4,
+        population: 40124
+      }
+    ]
+  },
+
+   // -------------------- Southern Taiwan --------------------
   {
     name: "Tainan City",
     chineseName: "臺南市",
@@ -356,7 +437,7 @@ export const counties: EnhancedCountyData[] = [
     ]
   },
 
-  // Eastern Taiwan
+   // -------------------- Eastern Taiwan --------------------
   {
     name: "Hualien County",
     chineseName: "花蓮縣",
@@ -418,7 +499,7 @@ export const counties: EnhancedCountyData[] = [
     ]
   },
 
-  // Outlying Islands
+ // -------------------- Outlying Islands --------------------
   {
     name: "Penghu County",
     chineseName: "澎湖縣",
@@ -479,111 +560,24 @@ export const counties: EnhancedCountyData[] = [
       }
     ]
   },
+  ];
 
-  // Additional Counties in Northern Taiwan
-  {
-    name: "Keelung City",
-    chineseName: "基隆市",
-    population: 371878,
-    area: 132.76,
-    density: 2801,
-    towns: [
-      {
-        name: "Ren'ai District",
-        chineseName: "仁愛區",
-        location: { lat: 25.1277, lng: 121.7414 },
-        searchRadiusKm: 3,
-        population: 43633
-      },
-      {
-        name: "Xinyi District",
-        chineseName: "信義區",
-        location: { lat: 25.1277, lng: 121.7414 },
-        searchRadiusKm: 3,
-        population: 51395
-      },
-      {
-        name: "Zhongzheng District",
-        chineseName: "中正區",
-        location: { lat: 25.1437, lng: 121.7837 },
-        searchRadiusKm: 3,
-        population: 52918
-      }
-    ]
-  },
-  {
-    name: "Hsinchu City",
-    chineseName: "新竹市",
-    population: 449865,
-    area: 104.15,
-    density: 4319,
-    towns: [
-      {
-        name: "East District",
-        chineseName: "東區",
-        location: { lat: 24.8138, lng: 120.9767 },
-        searchRadiusKm: 3,
-        population: 207223
-      },
-      {
-        name: "North District",
-        chineseName: "北區",
-        location: { lat: 24.8226, lng: 120.9478 },
-        searchRadiusKm: 3,
-        population: 147613
-      },
-      {
-        name: "Xiangshan District",
-        chineseName: "香山區",
-        location: { lat: 24.7689, lng: 120.9139 },
-        searchRadiusKm: 3,
-        population: 77283
-      }
-    ]
-  },
+  // ==================== Utility Functions ====================
 
-  // Additional Counties in Central Taiwan
-  {
-    name: "Changhua County",
-    chineseName: "彰化縣",
-    population: 1274582,
-    area: 1074.40,
-    density: 1186,
-    towns: [
-      {
-        name: "Changhua City",
-        chineseName: "彰化市",
-        location: { lat: 24.0734, lng: 120.5134 },
-        searchRadiusKm: 4,
-        population: 233524
-      },
-      {
-        name: "Lukang Township",
-        chineseName: "鹿港鎮",
-        location: { lat: 24.0579, lng: 120.4346 },
-        searchRadiusKm: 4,
-        population: 86779
-      },
-      {
-        name: "Hemei Township",
-        chineseName: "和美鎮",
-        location: { lat: 24.1151, lng: 120.5014 },
-        searchRadiusKm: 4,
-        population: 91645
-      }
-    ]
-  }
-];
+// Get county data by county name
 
-// Helper functions remain the same but use EnhancedCountyData and EnhancedTownData types
 export function getCountyByName(countyName: string): EnhancedCountyData | undefined {
   return counties.find(county => county.name === countyName);
 }
 
+// Get all towns for a specific county
+ 
 export function getTownsByCounty(countyName: string): EnhancedTownData[] {
   const county = getCountyByName(countyName);
   return county?.towns || [];
 }
+
+// Get all towns across all counties with their county information
 
 export function getAllTowns(): (EnhancedTownData & { 
   countyName: string; 
@@ -598,15 +592,20 @@ export function getAllTowns(): (EnhancedTownData & {
   );
 }
 
+// Get all counties in a specific region
+
 export function getCountiesByRegion(region: Region): EnhancedCountyData[] {
   return counties.filter(county => REGIONS[region].includes(county.name));
 }
 
-// Helper functions for the counties data
+// Get Chinese name for a county
+
 export function getCountyChineseName(countyName: string): string | undefined {
   return getCountyByName(countyName)?.chineseName;
 }
 
+// Search counties and towns by name (English or Chinese)
+ 
 export function searchCountiesAndTowns(searchTerm: string): {
   counties: EnhancedCountyData[];
   towns: (EnhancedTownData & { countyName: string; countyChineseName: string })[];
@@ -629,44 +628,214 @@ export function searchCountiesAndTowns(searchTerm: string): {
   };
 }
 
+// Get the region for a specific county
+
 export function getRegionForCounty(countyName: string): Region | undefined {
   return Object.entries(REGIONS).find(([_, counties]) => 
     counties.includes(countyName)
   )?.[0] as Region | undefined;
 }
 
+//Get comprehensive statistics for a specific county
+
 export function getCountyStats(countyName: string): {
   totalPopulation: number;
   totalArea: number;
   populationDensity: number;
   numberOfTowns: number;
+  averageSearchRadius: number;
+  largestTown: string;
+  smallestTown: string;
 } | undefined {
   const county = getCountyByName(countyName);
   if (!county) return undefined;
+
+  const towns = county.towns;
+  const largestTown = towns.reduce((prev, current) => 
+    (prev.population || 0) > (current.population || 0) ? prev : current
+  );
+  const smallestTown = towns.reduce((prev, current) => 
+    (prev.population || 0) < (current.population || 0) ? prev : current
+  );
+  const avgRadius = towns.reduce((sum, town) => sum + town.searchRadiusKm, 0) / towns.length;
 
   return {
     totalPopulation: county.population,
     totalArea: county.area,
     populationDensity: county.density,
-    numberOfTowns: county.towns.length
+    numberOfTowns: county.towns.length,
+    averageSearchRadius: Math.round(avgRadius * 100) / 100,
+    largestTown: `${largestTown.name} (${largestTown.population?.toLocaleString() || 'N/A'})`,
+    smallestTown: `${smallestTown.name} (${smallestTown.population?.toLocaleString() || 'N/A'})`
   };
 }
 
+// Calculate optimal search radius based on location and population density
+
 export function calculateOptimalSearchRadius(
   latitude: number,
-  longitude: number
+  longitude: number,
+  options: {
+    minRadius?: number;
+    maxRadius?: number;
+    densityThresholds?: {
+      urban: number;
+      suburban: number;
+    };
+  } = {}
 ): number {
+  const {
+    minRadius = 3,
+    maxRadius = 5,
+    densityThresholds = {
+      urban: 5000,
+      suburban: 1000
+    }
+  } = options;
+
+  // Find the county containing this location
   const county = counties.find(county => 
-    county.towns.some(town => 
-      Math.abs(town.location.lat - latitude) < 0.1 &&
-      Math.abs(town.location.lng - longitude) < 0.1
-    )
+    county.towns.some(town => {
+      const latDiff = Math.abs(town.location.lat - latitude);
+      const lngDiff = Math.abs(town.location.lng - longitude);
+      // Using approximate degree to km conversion at Taiwan's latitude
+      return latDiff < 0.1 && lngDiff < 0.1; // Roughly 11km radius
+    })
   );
 
-  if (!county) return 4; // Default radius
+  if (!county) return 4; // Default radius if location not found
 
   // Adjust radius based on population density
-  if (county.density > 5000) return 3; // Dense urban areas
-  if (county.density > 1000) return 4; // Urban/suburban areas
-  return 5; // Rural areas
+  if (county.density > densityThresholds.urban) {
+    return minRadius; // Dense urban areas
+  } else if (county.density > densityThresholds.suburban) {
+    return minRadius + 1; // Suburban areas
+  } else {
+    return maxRadius; // Rural areas
+  }
 }
+
+// Get nearby towns within a specified radius
+
+export function getNearbyTowns(
+  latitude: number,
+  longitude: number,
+  radiusKm: number = 10
+): Array<EnhancedTownData & { distance: number; countyName: string }> {
+  const R = 6371; // Earth's radius in kilometers
+  const nearby = counties.flatMap(county =>
+    county.towns.map(town => {
+      // Calculate distance using the Haversine formula
+      const dLat = (town.location.lat - latitude) * Math.PI / 180;
+      const dLon = (town.location.lng - longitude) * Math.PI / 180;
+      const lat1 = latitude * Math.PI / 180;
+      const lat2 = town.location.lat * Math.PI / 180;
+
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.sin(dLon/2) * Math.sin(dLon/2) * 
+                Math.cos(lat1) * Math.cos(lat2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      const distance = R * c;
+
+      return {
+        ...town,
+        distance,
+        countyName: county.name
+      };
+    })
+  ).filter(town => town.distance <= radiusKm)
+    .sort((a, b) => a.distance - b.distance);
+
+  return nearby;
+}
+
+//Get county statistics for a specific region
+
+export function getRegionStats(region: Region): {
+  totalPopulation: number;
+  totalArea: number;
+  averageDensity: number;
+  countyCount: number;
+  townCount: number;
+  mostPopulousCounty: string;
+  leastPopulousCounty: string;
+} {
+  const regionCounties = getCountiesByRegion(region);
+  
+  const totalPopulation = regionCounties.reduce((sum, county) => sum + county.population, 0);
+  const totalArea = regionCounties.reduce((sum, county) => sum + county.area, 0);
+  const townCount = regionCounties.reduce((sum, county) => sum + county.towns.length, 0);
+  
+  const mostPopulous = regionCounties.reduce((prev, current) => 
+    prev.population > current.population ? prev : current
+  );
+  
+  const leastPopulous = regionCounties.reduce((prev, current) => 
+    prev.population < current.population ? prev : current
+  );
+
+  return {
+    totalPopulation,
+    totalArea,
+    averageDensity: Math.round((totalPopulation / totalArea) * 100) / 100,
+    countyCount: regionCounties.length,
+    townCount,
+    mostPopulousCounty: `${mostPopulous.name} (${mostPopulous.population.toLocaleString()})`,
+    leastPopulousCounty: `${leastPopulous.name} (${leastPopulous.population.toLocaleString()})`
+  };
+}
+
+// Validate county and town data integrity
+
+export function validateCountyData(): {
+  isValid: boolean;
+  errors: string[];
+  warnings: string[];
+} {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  // Check for duplicate county names
+  const countyNames = new Set<string>();
+  counties.forEach(county => {
+    if (countyNames.has(county.name)) {
+      errors.push(`Duplicate county name: ${county.name}`);
+    }
+    countyNames.add(county.name);
+
+    // Check for required fields
+    if (!county.population) warnings.push(`Missing population for ${county.name}`);
+    if (!county.area) warnings.push(`Missing area for ${county.name}`);
+    if (!county.density) warnings.push(`Missing density for ${county.name}`);
+    
+    // Validate towns
+    if (!county.towns.length) {
+      errors.push(`No towns defined for ${county.name}`);
+    }
+
+    county.towns.forEach(town => {
+      if (!town.location.lat || !town.location.lng) {
+        errors.push(`Missing coordinates for ${town.name} in ${county.name}`);
+      }
+      if (!town.searchRadiusKm) {
+        warnings.push(`Missing search radius for ${town.name} in ${county.name}`);
+      }
+    });
+  });
+
+  // Check that all counties in REGIONS exist in the data
+  Object.values(REGIONS).flat().forEach(countyName => {
+    if (!counties.find(c => c.name === countyName)) {
+      errors.push(`County ${countyName} referenced in REGIONS but not defined in data`);
+    }
+  });
+
+  return {
+    isValid: errors.length === 0,
+    errors,
+    warnings
+  };
+}
+
+export default counties;
+

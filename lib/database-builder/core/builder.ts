@@ -228,7 +228,7 @@ export async function buildDatabase(
     console.warn('⚠️ No Firebase token provided - photos will be skipped');
   }
 
-  const maxResults = config.maxResults || 5;
+  const maxResults = config.maxResults || 20;
   console.log(`🚀 Starting database build for ${countyData.name}`);
   console.log('Configuration:', {
     maxResults,
@@ -271,8 +271,54 @@ export async function buildDatabase(
 
           // Update stats for cached portion
           stats.cached += cached.length;
-          stats.totalProcessed += cached.length;
-          stats.successful += cached.length;
+
+          // **Process cached restaurants**
+          for (const cachedRestaurant of cached) {
+            try {
+              console.log(`\n🏪 Processing cached restaurant: ${cachedRestaurant.name}`);
+
+              // Create restaurant data object
+              const restaurantData: RestaurantData = {
+                id: cachedRestaurant.id,
+                name: cachedRestaurant.name,
+                address: cachedRestaurant.address,
+                rating: cachedRestaurant.rating || 0,
+                location: {
+                  lat: cachedRestaurant.latitude,
+                  lng: cachedRestaurant.longitude
+                },
+                googlePlaceId: cachedRestaurant.id,
+                photos: cachedRestaurant.imageUrl ? [cachedRestaurant.imageUrl] : [],
+                menuCount: cachedRestaurant.menuCount || 0,
+                lastUpdated: new Date().toISOString(),
+                createdAt: new Date().toISOString(),
+                source: {
+                  google: cachedRestaurant.hasGoogleData || false,
+                  yelp: cachedRestaurant.hasYelpData || false
+                }
+              };
+
+              // Save to database
+              await saveRestaurantData(
+                restaurantData,
+                countyData.name,
+                town.name
+              );
+
+              console.log(`✅ Successfully processed cached restaurant ${cachedRestaurant.name}`);
+              stats.successful++;
+            } catch (error) {
+              console.error(`❌ Error processing cached restaurant ${cachedRestaurant.name}:`, error);
+              stats.failed++;
+            }
+
+            stats.totalProcessed++;
+
+            if (config.testMode) {
+              console.log('🔧 Test Mode: Adding delay between places');
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
+          }
 
           // Proceed with API call for additional results
           console.log(`📡 Fetching additional data from Google Places API for ${town.name}`);
@@ -399,9 +445,55 @@ export async function buildDatabase(
         } else {
           // We have enough cached results
           stats.cached += cached.length;
-          stats.totalProcessed += cached.length;
-          stats.successful += cached.length;
-          console.log('✅ Using cached data - have sufficient results');
+
+          // **Process cached restaurants**
+          for (const cachedRestaurant of cached) {
+            try {
+              console.log(`\n🏪 Processing cached restaurant: ${cachedRestaurant.name}`);
+
+              // Create restaurant data object
+              const restaurantData: RestaurantData = {
+                id: cachedRestaurant.id,
+                name: cachedRestaurant.name,
+                address: cachedRestaurant.address,
+                rating: cachedRestaurant.rating || 0,
+                location: {
+                  lat: cachedRestaurant.latitude,
+                  lng: cachedRestaurant.longitude
+                },
+                googlePlaceId: cachedRestaurant.id,
+                photos: cachedRestaurant.imageUrl ? [cachedRestaurant.imageUrl] : [],
+                menuCount: cachedRestaurant.menuCount || 0,
+                lastUpdated: new Date().toISOString(),
+                createdAt: new Date().toISOString(),
+                source: {
+                  google: cachedRestaurant.hasGoogleData || false,
+                  yelp: cachedRestaurant.hasYelpData || false
+                }
+              };
+
+              // Save to database
+              await saveRestaurantData(
+                restaurantData,
+                countyData.name,
+                town.name
+              );
+
+              console.log(`✅ Successfully processed cached restaurant ${cachedRestaurant.name}`);
+              stats.successful++;
+            } catch (error) {
+              console.error(`❌ Error processing cached restaurant ${cachedRestaurant.name}:`, error);
+              stats.failed++;
+            }
+
+            stats.totalProcessed++;
+
+            if (config.testMode) {
+              console.log('🔧 Test Mode: Adding delay between places');
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
+          }
+
           continue; // Skip to the next town
         }
       } else {
@@ -552,6 +644,7 @@ export async function buildDatabase(
 
   return stats;
 }
+
 
 
 
