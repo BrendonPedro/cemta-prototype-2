@@ -10,60 +10,91 @@ import {
   limit,
   collectionGroup,
   doc,
-  getDoc
+  getDoc,  
+  Timestamp,
+  serverTimestamp 
 } from 'firebase/firestore';
 import { CONFIG } from './config';
 import type { CountyStats, MonitoringStats, ProcessingProgress } from './types';
+import { counties } from '@/lib/data/counties'; 
+import type { EnhancedCountyData, EnhancedTownData } from '@/lib/data/counties'; 
 
 // Core monitoring functions
 export async function getCountyStats(countyName: string): Promise<CountyStats> {
-  const countyRef = doc(db, CONFIG.FIRESTORE.COLLECTIONS.COUNTIES, countyName);
-  const countyDoc = await getDoc(countyRef);
-  
-  if (!countyDoc.exists()) {
-    throw new Error(`County ${countyName} not found`);
-  }
+  try {
+    // First try to get from Firestore
+    const countyRef = doc(db, CONFIG.FIRESTORE.COLLECTIONS.COUNTIES, countyName);
+    const countyDoc = await getDoc(countyRef);
+    
+    // If county exists in Firestore, use that data
+    if (countyDoc.exists()) {
+      const countyData = countyDoc.data();
+      const townsSnapshot = await getDocs(collection(countyRef, CONFIG.FIRESTORE.COLLECTIONS.TOWNS));
+      
+      const stats: CountyStats = {
+        name: countyName,
+        restaurants: countyData.restaurantCount || 0,
+        photos: 0,
+        menus: 0,
+        towns: []
+      };
 
-  const stats: CountyStats = {
-    name: countyName,
-    restaurants: 0,
-    photos: 0,
-    menus: 0,
-    towns: []
-  };
+      // Process each town
+      for (const townDoc of townsSnapshot.docs) {
+        const townStats = {
+          name: townDoc.data().name,
+          restaurants: townDoc.data().restaurantCount || 0,
+          photos: 0,
+          menus: 0
+        };
 
-  // Get all towns in county
-  const townsSnapshot = await getDocs(collection(countyRef, CONFIG.FIRESTORE.COLLECTIONS.TOWNS));
-  
-  // Process each town
-  for (const townDoc of townsSnapshot.docs) {
-    const townStats = {
-      name: townDoc.data().name,
+        const restaurantsSnapshot = await getDocs(
+          collection(townDoc.ref, CONFIG.FIRESTORE.COLLECTIONS.RESTAURANTS)
+        );
+
+        restaurantsSnapshot.forEach(restaurantDoc => {
+          const data = restaurantDoc.data();
+          townStats.photos += data.photos?.length || 0;
+          townStats.menus += data.menuCount || 0;
+        });
+
+        stats.towns.push(townStats);
+        stats.photos += townStats.photos;
+        stats.menus += townStats.menus;
+      }
+
+      return stats;
+    } else {
+      // If not in Firestore, use the static counties data for basic info
+      const countyData: EnhancedCountyData | undefined = counties.find((c: EnhancedCountyData) => c.name === countyName);
+      if (!countyData) {
+        throw new Error(`County ${countyName} not found in static data`);
+      }
+
+      return {
+        name: countyName,
+        restaurants: 0,
+        photos: 0,
+        menus: 0,
+        towns: countyData.towns.map((town: EnhancedTownData) => ({
+          name: town.name,
+          restaurants: 0,
+          photos: 0,
+          menus: 0
+        }))
+      };
+    }
+  } catch (error) {
+    console.error(`Error getting stats for county ${countyName}:`, error);
+    // Return default stats instead of throwing
+    return {
+      name: countyName,
       restaurants: 0,
       photos: 0,
-      menus: 0
+      menus: 0,
+      towns: []
     };
-
-    // Get all restaurants in town
-    const restaurantsSnapshot = await getDocs(
-      collection(townDoc.ref, CONFIG.FIRESTORE.COLLECTIONS.RESTAURANTS)
-    );
-
-    // Calculate town statistics
-    restaurantsSnapshot.forEach(restaurantDoc => {
-      const data = restaurantDoc.data();
-      townStats.restaurants++;
-      townStats.photos += data.photos?.length || 0;
-      townStats.menus += data.menuCount || 0;
-    });
-
-    stats.towns.push(townStats);
-    stats.restaurants += townStats.restaurants;
-    stats.photos += townStats.photos;
-    stats.menus += townStats.menus;
   }
-
-  return stats;
 }
 
 // Get monitoring stats for multiple counties
@@ -143,7 +174,10 @@ export async function getProcessingProgress(): Promise<ProcessingProgress> {
   return {
     totalDays: elapsedDays,
     lastProcessed: lastProcessed ? {
-      timestamp: lastProcessed.timestamp.toDate(),
+      // Handle both Timestamp and Date objects
+      timestamp: lastProcessed.timestamp instanceof Timestamp 
+        ? lastProcessed.timestamp 
+        : new Date(lastProcessed.timestamp),
       location: lastProcessed.location
     } : null,
     progress: {

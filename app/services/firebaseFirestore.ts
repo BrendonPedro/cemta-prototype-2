@@ -1196,30 +1196,55 @@ export async function saveRestaurantData(
   };
 
   try {
+    // Set up references
     const countyRef = doc(db, 'counties', countyName);
     const townRef = doc(countyRef, 'towns', townName);
     const restaurantRef = doc(townRef, 'restaurants', cleanedData.id);
-
-    // Always update both the counties collection and global restaurants collection
-    batch.set(restaurantRef, cleanedData, { merge: true });
-    
     const globalRestaurantRef = doc(db, 'restaurants', cleanedData.id);
-    batch.set(globalRestaurantRef, cleanedData, { merge: true });
 
-    // Update counts only if it's a new restaurant
-    const existingDoc = await getDoc(restaurantRef);
-    if (!existingDoc.exists()) {
-      batch.update(countyRef, {
-        restaurantCount: increment(1),
-        lastUpdated: serverTimestamp()
-      });
-
-      batch.update(townRef, {
-        restaurantCount: increment(1),
+    // First, create/update county document if it doesn't exist
+    const countyDoc = await getDoc(countyRef);
+    if (!countyDoc.exists()) {
+      batch.set(countyRef, {
+        name: countyName,
+        restaurantCount: 0,
         lastUpdated: serverTimestamp()
       });
     }
 
+    // Create/update town document if it doesn't exist
+    const townDoc = await getDoc(townRef);
+    if (!townDoc.exists()) {
+      batch.set(townRef, {
+        name: townName,
+        restaurantCount: 0,
+        lastUpdated: serverTimestamp()
+      });
+    }
+
+    // Save restaurant data
+    batch.set(restaurantRef, cleanedData, { merge: true });
+    batch.set(globalRestaurantRef, cleanedData, { merge: true });
+
+    // Update counts if it's a new restaurant
+    const existingRestaurantDoc = await getDoc(restaurantRef);
+    if (!existingRestaurantDoc.exists()) {
+      if (countyDoc.exists()) {
+        batch.update(countyRef, {
+          restaurantCount: increment(1),
+          lastUpdated: serverTimestamp()
+        });
+      }
+      
+      if (townDoc.exists()) {
+        batch.update(townRef, {
+          restaurantCount: increment(1),
+          lastUpdated: serverTimestamp()
+        });
+      }
+    }
+
+    // Commit all changes
     await batch.commit();
     console.log(`✅ Successfully saved ${cleanedData.name}`);
 

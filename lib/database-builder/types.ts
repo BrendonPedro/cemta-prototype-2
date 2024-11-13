@@ -1,6 +1,11 @@
 // lib/database-builder/types.ts
 
 import type { Place, YelpBusiness } from './services/places';
+import { 
+  Timestamp,
+  serverTimestamp 
+} from 'firebase/firestore';
+
  
 export interface Geometry {
   location: Location;
@@ -235,7 +240,7 @@ export interface MonitoringStats {
 export interface ProcessingProgress {
   totalDays: number;
   lastProcessed: {
-    timestamp: Date;
+    timestamp: Timestamp | Date;
     location: {
       lat: number;
       lng: number;

@@ -65,7 +65,17 @@ import * as z from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import type { ProcessingOptions } from "@/lib/database-builder/types";
 import { useImageUploader } from "@/lib/database-builder/services/image-handler";
-
+import { 
+  getCountyStats, 
+  getMonitoringStats,
+  findIncompleteData,
+  getProcessingProgress 
+} from '@/lib/database-builder/monitoring';
+import type { MonitoringStats, ProcessingProgress } from '@/lib/database-builder/types';
+import { 
+  Timestamp,
+  serverTimestamp 
+} from 'firebase/firestore';
 
 // Type definitions
 
@@ -201,6 +211,111 @@ const StatsDisplay = ({ apiCallStats }: { apiCallStats: ApiCallStats }) => (
   </div>
 );
 
+const MonitoringStatsDisplay = ({ stats }: { stats: MonitoringStats }) => (
+  <Card className="mt-4">
+    <CardHeader>
+      <CardTitle>Database Statistics</CardTitle>
+    </CardHeader>
+    <CardContent>
+      {/* Add check for empty data */}
+      {stats.totalRestaurants === 0 && stats.totalPhotos === 0 && stats.totalMenus === 0 ? (
+        <div className="text-center py-8 text-gray-500">
+          <p>No data has been processed yet.</p>
+          <p className="text-sm">Start processing counties to see statistics here.</p>
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <h3 className="text-sm font-medium">Total Restaurants</h3>
+              <p className="text-2xl font-bold">{stats.totalRestaurants}</p>
+            </div>
+            <div>
+              <h3 className="text-sm font-medium">Total Photos</h3>
+              <p className="text-2xl font-bold">{stats.totalPhotos}</p>
+            </div>
+            <div>
+              <h3 className="text-sm font-medium">Total Menus</h3>
+              <p className="text-2xl font-bold">{stats.totalMenus}</p>
+            </div>
+          </div>
+
+          <div className="mt-6">
+            <h3 className="text-sm font-medium mb-3">County Breakdown</h3>
+            {stats.counties.length === 0 ? (
+              <p className="text-center py-4 text-gray-500">No county data available</p>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>County</TableHead>
+                    <TableHead>Restaurants</TableHead>
+                    <TableHead>Photos</TableHead>
+                    <TableHead>Menus</TableHead>
+                    <TableHead>Towns</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {stats.counties.map((county) => (
+                    <TableRow key={county.name}>
+                      <TableCell>{county.name}</TableCell>
+                      <TableCell>{county.restaurants}</TableCell>
+                      <TableCell>{county.photos}</TableCell>
+                      <TableCell>{county.menus}</TableCell>
+                      <TableCell>{county.towns.length}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </div>
+        </>
+      )}
+    </CardContent>
+  </Card>
+);
+
+// Add a Progress component
+const ProcessingProgressDisplay = ({ progress }: { progress: ProcessingProgress }) => (
+  <Card className="mt-4">
+    <CardHeader>
+      <CardTitle>Processing Progress</CardTitle>
+    </CardHeader>
+    <CardContent>
+      <div className="space-y-4">
+        <div>
+          <div className="flex justify-between mb-2">
+            <span>Progress</span>
+            <span>{Math.round((progress.progress.processed / progress.progress.total) * 100)}%</span>
+          </div>
+          <Progress 
+            value={(progress.progress.processed / progress.progress.total) * 100} 
+          />
+        </div>
+        {progress.lastProcessed && (
+          <div className="text-sm text-gray-600">
+            <p>Last Updated: {formatTimestamp(progress.lastProcessed.timestamp)}</p>
+            <p>
+              Location: {progress.lastProcessed.location.lat.toFixed(4)}, 
+              {progress.lastProcessed.location.lng.toFixed(4)}
+            </p>
+          </div>
+        )}
+      </div>
+    </CardContent>
+  </Card>
+);
+
+function formatTimestamp(timestamp: Timestamp | Date): string {
+  let date: Date;
+  if (timestamp instanceof Timestamp) {
+    date = timestamp.toDate();
+  } else {
+    date = timestamp;
+  }
+  return date.toLocaleString();
+}
+
 // Main component
 export default function DatabaseBuilding({
   refreshInterval = 5000,
@@ -252,6 +367,10 @@ const [options, setOptions] = useState<ProcessingOptions>({
       clearExistingCache: false, // Keep existing cache when false/ Clear before processing when true (don't set to true)
     },
   });
+
+  const [monitoringStats, setMonitoringStats] = useState<MonitoringStats | null>(null);
+  const [processingProgress, setProcessingProgress] = useState<ProcessingProgress | null>(null);
+  const [loading, setLoading] = useState(true);
 
   // Add this to track processing state
   const [processingState, setProcessingState] = useState<{
@@ -476,6 +595,41 @@ const handleStartProcessing = async () => {
     };
   }, [selectedCounty, refreshInterval, isProcessing]);
 
+  useEffect(() => {
+    const fetchMonitoringData = async () => {
+      try {
+        setLoading(true);
+        const counties = ['Taipei City', 'New Taipei City', 'Taoyuan City', 'Miaoli County'];
+        const stats = await getMonitoringStats(counties);
+        const progress = await getProcessingProgress();
+        
+        setMonitoringStats(stats);
+        setProcessingProgress(progress);
+        setError(null);
+      } catch (error) {
+        console.error('Error fetching monitoring data:', error);
+        setError(error instanceof Error ? error.message : 'Failed to fetch monitoring data');
+      } finally {
+        setLoading(false);
+      }
+    };
+  
+    // Initial fetch
+    fetchMonitoringData();
+  
+    // Set up polling if monitoring tab is active
+    let intervalId: NodeJS.Timeout;
+    if (activeTab === 'monitoring') {
+      intervalId = setInterval(fetchMonitoringData, 30000); // Update every 30 seconds
+    }
+  
+    return () => {
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
+    };
+  }, [activeTab]); // Only re-run effect when activeTab changes
+
   // Utility functions
   const getStatusBadge = (status: string) => {
     const variants: Record<string, string> = {
@@ -694,7 +848,31 @@ const handleStartProcessing = async () => {
                 <Settings className="mr-2 h-4 w-4" />
                 Settings
               </TabsTrigger>
+              <TabsTrigger value="monitoring">
+                <RefreshCcw className="mr-2 h-4 w-4" />
+                Monitoring
+              </TabsTrigger>
             </TabsList>
+
+            <TabsContent value="monitoring" className="space-y-4">
+              {loading ? (
+                <div className="flex items-center justify-center p-8">
+                  <Loader2 className="h-8 w-8 animate-spin text-gray-500" />
+                </div>
+              ) : error ? (
+                <Alert variant="destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              ) : (
+                <>
+                  {processingProgress && (
+                    <ProcessingProgressDisplay progress={processingProgress} />
+                  )}
+                  {monitoringStats && <MonitoringStatsDisplay stats={monitoringStats} />}
+                </>
+              )}
+            </TabsContent>
 
             {/* Status Tab Content */}
             <TabsContent value="status" className="space-y-4">
@@ -885,3 +1063,4 @@ const handleStartProcessing = async () => {
     </Card>
   );
 }
+
