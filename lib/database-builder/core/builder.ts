@@ -29,6 +29,7 @@ export interface BuilderConfig {
   checkCacheOnly?: boolean;
   signal?: AbortSignal;
   aborted?: boolean;
+  incrementalUpdate?: boolean;
 }
 
 interface GooglePlacePhoto {

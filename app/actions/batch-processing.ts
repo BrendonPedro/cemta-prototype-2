@@ -4,6 +4,7 @@
 import { buildDatabase, processBatch } from '@/lib/database-builder/core/builder';
 import { auth } from '@/config/firebaseAdmin';
 import type { EnhancedCountyData, EnhancedTownData } from '@/lib/data/counties';
+import { verifyAndFixRestaurantCount } from '../services/firebaseFirestore';
 
 export interface BatchProgress {
   currentCounty: string;
@@ -17,7 +18,8 @@ export async function processBatchServer(
   selectedAreas: {
     county: EnhancedCountyData;
     towns: EnhancedTownData[];
-  }[]
+  }[],
+  options: { incrementalUpdate?: boolean } = {}
 ) {
   if (!process.env.GOOGLE_MAPS_API_KEY || 
       !process.env.YELP_API_KEY || 
@@ -30,7 +32,8 @@ export async function processBatchServer(
     googleApiKey: process.env.GOOGLE_MAPS_API_KEY,
     yelpApiKey: process.env.YELP_API_KEY,
     projectId: process.env.GOOGLE_CLOUD_PROJECT_ID,
-    keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS
+    keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+    incrementalUpdate: options.incrementalUpdate
   };
 
   let processedTowns = 0;
@@ -45,10 +48,23 @@ export async function processBatchServer(
       try {
         console.log(`Processing ${town.name} in ${county.name}`);
         
+        // Add config for proper counts handling
+        const builderConfig = {
+          ...config,
+          clearCache: {
+            enabled: false, // Don't clear cache by default
+            scope: 'town' as const
+          },
+          incrementalUpdate: true, // Add this flag
+        };
+
         const result = await buildDatabase({
           name: county.name,
           towns: [town]
-        }, config);
+        }, builderConfig);
+
+        // Verify counts after processing each town
+        await verifyAndFixRestaurantCount(county.name, town.name);
 
         processedTowns++;
         processedRestaurants += result.totalProcessed;
@@ -73,10 +89,12 @@ export async function processBatchServer(
           error: error instanceof Error ? error.message : 'Unknown error'
         });
       }
-
-      // Add delay between towns
-      await new Promise(resolve => setTimeout(resolve, 5000));
     }
+  }
+
+  // Final verification of all processed areas
+  for (const area of selectedAreas) {
+    await verifyAndFixRestaurantCount(area.county.name, area.towns[0].name);
   }
 
   return results;

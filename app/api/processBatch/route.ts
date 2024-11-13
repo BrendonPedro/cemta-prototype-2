@@ -19,8 +19,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
     }
 
-    const { areas } = await request.json();
-    const result = await processBatchServer(areas);
+    const { areas, options } = await request.json();
+    const result = await processBatchServer(areas, {
+      incrementalUpdate: true,
+      ...options
+    });
     
     return NextResponse.json({ success: true, result });
   } catch (error) {
