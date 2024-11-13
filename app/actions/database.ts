@@ -44,6 +44,8 @@ import {
   getCachedRestaurantsForLocation,
   batchUpdateRestaurants
 } from '@/app/services/firebaseFirestore';
+import { RestaurantData } from '@/lib/database-builder/types';
+import { saveRestaurantData } from '@/app/services/firebaseFirestore';
 
 import type { 
   ProcessingOptions,
@@ -51,7 +53,63 @@ import type {
 } from '@/lib/database-builder/types';
 import { useImageUploader } from '@/lib/database-builder/services/image-handler';
 import { processBatchImages, processAndUploadImage } from '@/lib/database-builder/services/image-handler-server';
+import { verifyAndFixRestaurantCount } from '@/app/services/firebaseFirestore';
 
+async function processCachedRestaurants(
+  cached: CachedRestaurant[],
+  countyName: string,
+  townName: string,
+  maxResults: number,
+  options: ProcessingOptions,
+  totalStats: ProcessingStats
+): Promise<void> {
+  for (const cachedRestaurant of cached.slice(0, maxResults)) {
+    try {
+      console.log(`\n🏪 Processing cached restaurant: ${cachedRestaurant.name}`);
+
+      const restaurantData: RestaurantData = {
+        id: cachedRestaurant.id,
+        name: cachedRestaurant.name,
+        address: cachedRestaurant.address,
+        rating: cachedRestaurant.rating || 0,
+        location: {
+          lat: cachedRestaurant.latitude,
+          lng: cachedRestaurant.longitude
+        },
+        googlePlaceId: cachedRestaurant.id,
+        photos: cachedRestaurant.imageUrl ? [cachedRestaurant.imageUrl] : [],
+        menuCount: cachedRestaurant.menuCount || 0,
+        lastUpdated: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        source: {
+          google: cachedRestaurant.hasGoogleData || false,
+          yelp: cachedRestaurant.hasYelpData || false
+        }
+      };
+
+      // Save to database with isFromCache flag
+      await saveRestaurantData(
+        restaurantData,
+        countyName,
+        townName,
+        true // indicate this is from cache
+      );
+
+      console.log(`✅ Successfully processed cached restaurant ${cachedRestaurant.name}`);
+      totalStats.successful++;
+    } catch (error) {
+      console.error(`❌ Error processing cached restaurant ${cachedRestaurant.name}:`, error);
+      totalStats.failed++;
+    }
+
+    totalStats.totalProcessed++;
+
+    if (options.testMode) {
+      console.log('🔧 Test Mode: Adding delay between places');
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  }
+}
 
 
 export interface BuildDatabaseResult {
@@ -142,6 +200,7 @@ export async function buildCountyDatabase(
       const batchTowns = batches[i];
       
       for (const town of batchTowns) {
+        try {
         // Check cache first
         const cached = !options.clearCache 
           ? await getCachedBuildData(
@@ -152,10 +211,28 @@ export async function buildCountyDatabase(
             )
           : null;
 
-        if (cached) {
-          console.log(`✅ Cache HIT for ${town.name}: Found ${cached.length} restaurants`);
-          totalStats.cached += cached.length;
-          totalStats.totalProcessed += cached.length;
+          if (cached) {
+            console.log(`✅ Cache HIT for ${town.name}: Found ${cached.length} restaurants`);
+          
+            // Process cached data up to maxResults
+            const maxToProcess = options.maxResults || 20;
+            
+            // Update stats for cached portion
+            totalStats.cached += cached.length;
+
+            await processCachedRestaurants(
+              cached,
+              county.name,
+              town.name,
+              maxToProcess,
+              options,
+              totalStats
+            );
+          
+            // If we need more results than what's in cache
+            if (cached.length < maxToProcess && !options.checkCacheOnly) {
+              const remainingToFetch = maxToProcess - cached.length;
+              console.log(`⚠️ Cache has ${cached.length} results but ${maxToProcess} requested - fetching ${remainingToFetch} more...`);
 
           // Update Firestore with cached data
           await batchUpdateRestaurants(cached, options.signal);
@@ -164,7 +241,7 @@ export async function buildCountyDatabase(
             console.log('🔎 Check Cache Only mode - skipping API calls');
             continue;
           }
-        }
+        }}
 
         // Process non-cached data
         if (!options.checkCacheOnly) {
@@ -212,16 +289,22 @@ export async function buildCountyDatabase(
             );
           }
         }
+        console.log(`\n🔍 Verifying counts for ${town.name} in ${county.name}`);
+        await verifyAndFixRestaurantCount(county.name, town.name);
+        console.log(`✅ Verified counts for ${town.name}`);
 
-        // Update progress
-        const progress = Math.floor(((i + 1) / batches.length) * 100);
-        await updateProcessingStatus(county.name, {
-          ...status,
-          progress,
-          stats: totalStats
-        });
-      }
-
+   // Update progress
+   const progress = Math.floor(((i + 1) / batches.length) * 100);
+   await updateProcessingStatus(county.name, {
+     ...status,
+     progress,
+     stats: totalStats
+   });
+ } catch (error) {
+   console.error(`Error processing town ${town.name}:`, error);
+   totalStats.failed++;
+ }
+}
       // Add delay between batches if not the last batch
       if (i < batches.length - 1) {
         await new Promise(resolve => setTimeout(resolve, options.delayBetweenBatches || 5000));
@@ -243,6 +326,19 @@ export async function buildCountyDatabase(
     revalidatePath(`/counties/${county.name.toLowerCase()}`);
     revalidatePath('/dashboard');
 
+    try {
+      console.log('\n🔍 Running final count verification for all towns...');
+      // Verify counts for all processed towns
+      for (const town of townsToProcess) {
+        console.log(`\n📊 Final verification for ${town.name}`);
+        await verifyAndFixRestaurantCount(county.name, town.name);
+        console.log(`✅ Final verification complete for ${town.name}`);
+      }
+      console.log('✅ All town counts verified');
+    } catch (error) {
+      console.error('❌ Error in final count verification:', error);
+    }
+    
     return {
       success: true,
       status: finalStatus,
@@ -367,3 +463,4 @@ export async function getCountyProcessingHistory(
 }
 
 export type { ProcessingStatus };
+
