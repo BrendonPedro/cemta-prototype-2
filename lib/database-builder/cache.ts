@@ -383,12 +383,16 @@ export async function clearBuilderCache(
   townName?: string
 ): Promise<void> {
   try {
-    if (lat && lng && countyName && townName) {
-      // Clear specific location cache
+    if (lat && lng && townName) {
+      // Clear specific town's cache
       const locationHash = geohash.encode(lat, lng, CACHE_CONFIG.GEOHASH.LOCATION_PRECISION);
       const cacheRef = doc(db, CACHE_CONFIG.COLLECTIONS.LOCATION, locationHash);
-      await deleteDoc(cacheRef);
-      console.log(`Cleared cache for location: ${locationHash}`);
+      const cacheDoc = await getDoc(cacheRef);
+      
+      if (cacheDoc.exists() && cacheDoc.data().townName === townName) {
+        await deleteDoc(cacheRef);
+        console.log(`Cleared cache for ${townName} at location: ${locationHash}`);
+      }
     } else if (countyName && townName) {
       // Clear all caches for a specific town in a county
       const cacheQuery = query(
@@ -399,20 +403,9 @@ export async function clearBuilderCache(
       const snapshot = await getDocs(cacheQuery);
       await Promise.all(snapshot.docs.map(doc => deleteDoc(doc.ref)));
       console.log(`Cleared all caches for ${townName} in ${countyName}`);
-    } else if (countyName) {
-      // Clear all caches for a county
-      const cacheQuery = query(
-        collection(db, CACHE_CONFIG.COLLECTIONS.LOCATION), // Fixed here
-        where('countyName', '==', countyName)
-      );
-      const snapshot = await getDocs(cacheQuery);
-      await Promise.all(snapshot.docs.map(doc => deleteDoc(doc.ref)));
-      console.log(`Cleared all caches for ${countyName}`);
     } else {
-      // Clear all caches
-      const snapshot = await getDocs(collection(db, CACHE_CONFIG.COLLECTIONS.LOCATION)); // Fixed here
-      await Promise.all(snapshot.docs.map(doc => deleteDoc(doc.ref)));
-      console.log('Cleared all caches');
+      // Don't clear all caches by default
+      console.log('Operation requires specific town/location information');
     }
   } catch (error) {
     console.error('Error clearing cache:', error);

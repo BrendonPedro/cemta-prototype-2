@@ -232,12 +232,15 @@ export default function DatabaseBuilding({
     failedAttempts: new Set<string>(),
   });
 const [options, setOptions] = useState<ProcessingOptions>({
-  selectedTowns: [], // Add this required field
+  selectedTowns: [], 
   batchSize: 5,
   delayBetweenBatches: 5000,
   testMode: false,
   checkCacheOnly: false,
-  clearCache: false
+  clearCache: {
+    enabled: false,
+    scope: 'town'
+  }
 });
   // Form initialization
   const form = useForm<ProcessingConfigForm>({
@@ -341,15 +344,16 @@ const handleStartProcessing = async () => {
     };
 
     // Create plain config object
-    const processConfig = {
+    const processConfig: ProcessingOptions = {
       selectedTowns: selectedTowns[selectedCounty.name] || [],
-      batchSize: Number(options.batchSize),
-      delayBetweenBatches: Number(options.delayBetweenBatches),
       firebaseToken: firebaseToken || undefined,
       maxResults: Number(formData.maxResults),
       testMode: Boolean(formData.testMode),
       checkCacheOnly: Boolean(formData.checkCacheOnly),
-      clearCache: Boolean(formData.clearExistingCache),
+      clearCache: formData.clearExistingCache ? {
+        enabled: true,
+        scope: 'town'
+      } : undefined
     };
 
     console.log("Starting processing with config:", {
@@ -562,23 +566,24 @@ const handleStartProcessing = async () => {
                   )}
                 />
 
-                <FormField
-                  name="clearExistingCache"
-                  render={({ field }) => (
-                    <FormItem className="flex items-center space-x-2">
-                      <FormControl>
-                        <Checkbox
-                          checked={field.value}
-                          onCheckedChange={field.onChange}
-                        />
-                      </FormControl>
-                      <FormLabel>Clear Existing Cache</FormLabel>
-                      <FormDescription>
-                        Clear cached data before processing
-                      </FormDescription>
-                    </FormItem>
-                  )}
-                />
+<FormField
+  control={form.control}
+  name="clearExistingCache"
+  render={({ field }) => (
+    <FormItem className="flex items-center space-x-2">
+      <FormControl>
+        <Checkbox
+          checked={field.value}
+          onCheckedChange={field.onChange}
+        />
+      </FormControl>
+      <FormLabel>Clear Cache</FormLabel>
+      <FormDescription>
+        Clear only this town's cached data
+      </FormDescription>
+    </FormItem>
+  )}
+/>
               </div>
             </div>
           </form>

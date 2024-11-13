@@ -167,7 +167,10 @@ export interface ProcessingOptions {
   selectedTowns: string[];
   force?: boolean;
   updateExisting?: boolean;
-  clearCache?: boolean;
+  clearCache?: {
+    enabled: boolean;
+    scope: 'town' | 'all';
+  };
   batchSize?: number;
   delayBetweenBatches?: number;
   firebaseToken?: string | null;  
@@ -176,7 +179,6 @@ export interface ProcessingOptions {
   checkCacheOnly?: boolean;
   signal?: AbortSignal;
   aborted?: boolean;
-  
 }
 
 export interface SerializableCounty {
@@ -219,3 +221,28 @@ export interface BatchUploadResponse {
 }
 
 export type { RestaurantDocument } from '@/app/services/firebaseFirestore';
+
+export interface MonitoringStats {
+  totalRestaurants: number;
+  totalPhotos: number;
+  totalMenus: number;
+  countiesCovered: number;
+  townsCovered: number;
+  lastUpdated: Date;
+  counties: CountyStats[];
+}
+
+export interface ProcessingProgress {
+  totalDays: number;
+  lastProcessed: {
+    timestamp: Date;
+    location: {
+      lat: number;
+      lng: number;
+    };
+  } | null;
+  progress: {
+    processed: number;
+    total: number;
+  };
+}

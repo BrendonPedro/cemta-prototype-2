@@ -1177,16 +1177,10 @@ export async function saveRestaurantData(
   countyName: string,
   townName: string
 ): Promise<void> {
-  console.log('Saving restaurant data:', {
-    restaurantId: restaurantData.id,
-    countyName,
-    townName,
-    photos: restaurantData.photos
-  });
+  console.log(`🔄 Saving restaurant data for ${restaurantData.name}`);
 
   const batch = writeBatch(db);
 
-  // Clean the restaurant data
   const cleanedData = {
     ...restaurantData,
     yelpId: restaurantData.yelpId || null,
@@ -1202,61 +1196,35 @@ export async function saveRestaurantData(
   };
 
   try {
-    // Set up references
     const countyRef = doc(db, 'counties', countyName);
     const townRef = doc(countyRef, 'towns', townName);
     const restaurantRef = doc(townRef, 'restaurants', cleanedData.id);
+
+    // Always update both the counties collection and global restaurants collection
+    batch.set(restaurantRef, cleanedData, { merge: true });
+    
     const globalRestaurantRef = doc(db, 'restaurants', cleanedData.id);
+    batch.set(globalRestaurantRef, cleanedData, { merge: true });
 
-    // First check if restaurant exists in counties collection
-    const existingRestaurantDoc = await getDoc(restaurantRef);
-    const shouldIncrementCount = !existingRestaurantDoc.exists();
-
-    // Only increment counters for new restaurants
-    if (shouldIncrementCount) {
-      // Update county document
-      batch.set(countyRef, {
-        name: countyName,
+    // Update counts only if it's a new restaurant
+    const existingDoc = await getDoc(restaurantRef);
+    if (!existingDoc.exists()) {
+      batch.update(countyRef, {
         restaurantCount: increment(1),
         lastUpdated: serverTimestamp()
-      }, { merge: true });
+      });
 
-      // Update town document
-      batch.set(townRef, {
-        name: townName,
+      batch.update(townRef, {
         restaurantCount: increment(1),
         lastUpdated: serverTimestamp()
-      }, { merge: true });
+      });
     }
-
-    // Save restaurant data to counties collection
-    batch.set(restaurantRef, {
-      ...cleanedData,
-      lastUpdated: serverTimestamp()
-    }, { merge: true });
-
-    // Also save to global restaurants collection
-    batch.set(globalRestaurantRef, {
-      ...cleanedData,
-      lastUpdated: serverTimestamp()
-    }, { merge: true });
 
     await batch.commit();
-    console.log(`Successfully saved restaurant data: ${cleanedData.id}`);
-
-    // Verify the saves
-    const verifyCountyDoc = await getDoc(countyRef);
-    const verifyRestaurantDoc = await getDoc(restaurantRef);
-    
-    if (!verifyCountyDoc.exists()) {
-      console.error(`Failed to save county document: ${countyName}`);
-    }
-    if (!verifyRestaurantDoc.exists()) {
-      console.error(`Failed to save restaurant document: ${cleanedData.id}`);
-    }
+    console.log(`✅ Successfully saved ${cleanedData.name}`);
 
   } catch (error) {
-    console.error('Error saving restaurant data:', error);
+    console.error(`❌ Error saving restaurant data:`, error);
     throw error;
   }
 }
@@ -1267,6 +1235,8 @@ export async function verifyAndFixRestaurantCount(countyName: string, townName: 
   const townRef = doc(countyRef, 'towns', townName);
   
   try {
+    console.log(`🔍 Verifying counts for ${townName}, ${countyName}`);
+    
     // Get all restaurants in the town
     const restaurantsSnapshot = await getDocs(collection(townRef, 'restaurants'));
     const actualCount = restaurantsSnapshot.size;
@@ -1278,8 +1248,12 @@ export async function verifyAndFixRestaurantCount(countyName: string, townName: 
     const countyCount = countyDoc.data()?.restaurantCount || 0;
     const townCount = townDoc.data()?.restaurantCount || 0;
     
-    // Fix counts if they don't match
     if (countyCount !== actualCount || townCount !== actualCount) {
+      console.log(`⚠️ Count mismatch detected in ${townName}:`);
+      console.log(`   County count: ${countyCount}`);
+      console.log(`   Town count: ${townCount}`);
+      console.log(`   Actual count: ${actualCount}`);
+      
       const batch = writeBatch(db);
       
       batch.set(countyRef, {
@@ -1294,13 +1268,12 @@ export async function verifyAndFixRestaurantCount(countyName: string, townName: 
       
       await batch.commit();
       
-      console.log(`Fixed restaurant count for ${townName}, ${countyName}:`, {
-        previous: { county: countyCount, town: townCount },
-        corrected: actualCount
-      });
+      console.log(`✅ Fixed counts for ${townName}, ${countyName}`);
+    } else {
+      console.log(`✅ Counts verified for ${townName}, ${countyName}`);
     }
   } catch (error) {
-    console.error('Error verifying restaurant count:', error);
+    console.error(`❌ Error verifying counts for ${townName}, ${countyName}:`, error);
     throw error;
   }
 }

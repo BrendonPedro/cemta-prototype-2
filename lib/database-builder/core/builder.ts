@@ -2,7 +2,7 @@ import { Client, PlacesNearbyRanking, Language } from '@googlemaps/google-maps-s
 import {
   createOrUpdateRestaurant,
   getCachedRestaurantsForLocation,
-  saveRestaurantData,
+  saveRestaurantData,verifyAndFixRestaurantCount,
   type RestaurantDocument,
 } from '@/app/services/firebaseFirestore';
 import { uploadImageToBucket } from '@/app/services/gcpBucketStorage';
@@ -10,6 +10,8 @@ import type { CountyData, ProcessingStats, PlacePhoto, CachedRestaurant, Restaur
 import { clearBuilderCache, getCachedBuildData, saveBuildCache } from '@/lib/database-builder/cache';
 import { useImageUploader } from '@/lib/database-builder/services/image-handler';
 import { processBatchImages, processAndUploadImage } from '@/lib/database-builder/services/image-handler-server';
+import ngeohash from 'ngeohash';
+import { CONFIG } from '../config';
 
 // ==================== Types & Interfaces ====================
 export interface BuilderConfig {
@@ -18,12 +20,15 @@ export interface BuilderConfig {
   projectId: string;
   keyFilename: string;
   firebaseToken?: string | null;
-  clearCache?: boolean;
+  clearCache?: {
+    enabled: boolean;
+    scope: 'town' | 'all';
+  };
   maxResults?: number;
   testMode?: boolean;
   checkCacheOnly?: boolean;
-    signal?: AbortSignal;
-    aborted?: boolean;
+  signal?: AbortSignal;
+  aborted?: boolean;
 }
 
 interface GooglePlacePhoto {
@@ -70,12 +75,20 @@ function getPlaceLocation(place: any): { latitude: number; longitude: number } |
   return undefined;
 }
 
-async function clearCache(lat: number, lng: number) {
+async function clearCache(lat: number, lng: number, scope: 'town' | 'all' = 'town') {
   try {
-    await clearBuilderCache();
+    if (scope === 'town') {
+      // Only clear specific town's cache
+      const locationHash = ngeohash.encode(lat, lng, CONFIG.CACHE.GEOHASH.LOCATION_PRECISION);
+      await clearBuilderCache(lat, lng);
+    } else {
+      // Clear all caches
+      await clearBuilderCache();
+    }
   } catch (error) {
     console.error('Error clearing cache:', error);
   }
+  return; // Add explicit return
 }
 
 // Process and limit places
@@ -265,9 +278,13 @@ export async function buildDatabase(
       if (cached) {
         console.log(`✅ Cache HIT for ${town.name}: Found ${cached.length} restaurants`);
 
-        // Check if cached results are fewer than maxResults
-        if (cached.length < maxResults && !config.checkCacheOnly) {
-          console.log(`⚠️ Cache has ${cached.length} results but ${maxResults} requested - fetching more...`);
+        // Remove duplicates from cached data
+        const uniqueRestaurants = Array.from(
+          new Map(cached.map(item => [item.id, item])).values()
+        );
+      
+        if (uniqueRestaurants.length < maxResults && !config.checkCacheOnly) {
+          console.log(`⚠️ Cache has ${uniqueRestaurants.length} unique results but ${maxResults} requested - fetching more...`);
 
           // Update stats for cached portion
           stats.cached += cached.length;
@@ -304,7 +321,7 @@ export async function buildDatabase(
                 countyData.name,
                 town.name
               );
-
+            
               console.log(`✅ Successfully processed cached restaurant ${cachedRestaurant.name}`);
               stats.successful++;
             } catch (error) {
@@ -441,6 +458,9 @@ export async function buildDatabase(
             town.name,
             combinedRestaurants
           );
+
+          // Add verification here
+          await verifyAndFixRestaurantCount(countyData.name, town.name);
 
         } else {
           // We have enough cached results
@@ -641,6 +661,12 @@ export async function buildDatabase(
     cached: stats.cached,
     apiCalls: stats.apiCalls
   });
+
+    // Before returning stats
+    console.log('\n🏁 Running final count verification...');
+    for (const town of countyData.towns) {
+      await verifyAndFixRestaurantCount(countyData.name, town.name);
+    }
 
   return stats;
 }

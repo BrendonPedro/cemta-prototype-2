@@ -1,53 +1,25 @@
 // lib/database-builder/monitoring.ts
+
 import { db } from './db';
 import { 
   collection, 
   query, 
   where, 
-  getDocs, 
-  orderBy, 
+  getDocs,
+  orderBy,
   limit,
   collectionGroup,
   doc,
-  getDoc,
-  DocumentData
+  getDoc
 } from 'firebase/firestore';
 import { CONFIG } from './config';
-import type { CountyStats } from './types';
+import type { CountyStats, MonitoringStats, ProcessingProgress } from './types';
 
-export interface MonitoringStats {
-  totalRestaurants: number;
-  totalPhotos: number;
-  totalMenus: number;
-  countiesCovered: number;
-  townsCovered: number;
-  lastUpdated: Date | null;
-  counties: Array<{
-    name: string;
-    restaurants: number;
-    photos: number;
-    menus: number;
-    towns: Array<{
-      name: string;
-      restaurants: number;
-      photos: number;
-      menus: number;
-    }>;
-  }>;
-}
-
-export interface ProcessingProgress {
-  lastProcessedLocation: {
-    lat: number;
-    lng: number;
-  };
-  lastProcessedTimestamp: Date;
-  totalLocationsProcessed: number;
-  estimatedCompletion: Date;
-}
-
+// Core monitoring functions
 export async function getCountyStats(countyName: string): Promise<CountyStats> {
-  const countyDoc = await getDoc(doc(db, CONFIG.FIRESTORE.COLLECTIONS.COUNTIES, countyName));
+  const countyRef = doc(db, CONFIG.FIRESTORE.COLLECTIONS.COUNTIES, countyName);
+  const countyDoc = await getDoc(countyRef);
+  
   if (!countyDoc.exists()) {
     throw new Error(`County ${countyName} not found`);
   }
@@ -60,10 +32,10 @@ export async function getCountyStats(countyName: string): Promise<CountyStats> {
     towns: []
   };
 
-  const townsSnapshot = await getDocs(
-    collection(countyDoc.ref, CONFIG.FIRESTORE.COLLECTIONS.TOWNS)
-  );
-
+  // Get all towns in county
+  const townsSnapshot = await getDocs(collection(countyRef, CONFIG.FIRESTORE.COLLECTIONS.TOWNS));
+  
+  // Process each town
   for (const townDoc of townsSnapshot.docs) {
     const townStats = {
       name: townDoc.data().name,
@@ -72,10 +44,12 @@ export async function getCountyStats(countyName: string): Promise<CountyStats> {
       menus: 0
     };
 
+    // Get all restaurants in town
     const restaurantsSnapshot = await getDocs(
       collection(townDoc.ref, CONFIG.FIRESTORE.COLLECTIONS.RESTAURANTS)
     );
 
+    // Calculate town statistics
     restaurantsSnapshot.forEach(restaurantDoc => {
       const data = restaurantDoc.data();
       townStats.restaurants++;
@@ -92,42 +66,58 @@ export async function getCountyStats(countyName: string): Promise<CountyStats> {
   return stats;
 }
 
-export async function findIncompleteData() {
-  const results = {
-    noPhotos: [] as DocumentData[],
-    noMenus: [] as DocumentData[],
-    lowQuality: [] as DocumentData[]
+// Get monitoring stats for multiple counties
+export async function getMonitoringStats(countyNames: string[]): Promise<MonitoringStats> {
+  const countyStats = await Promise.all(
+    countyNames.map(county => getCountyStats(county))
+  );
+
+  const summary = {
+    totalRestaurants: countyStats.reduce((sum, county) => sum + county.restaurants, 0),
+    totalPhotos: countyStats.reduce((sum, county) => sum + county.photos, 0),
+    totalMenus: countyStats.reduce((sum, county) => sum + county.menus, 0),
+    countiesCovered: countyStats.length,
+    townsCovered: countyStats.reduce((sum, county) => sum + county.towns.length, 0),
+    lastUpdated: new Date(),
+    counties: countyStats
   };
 
+  return summary;
+}
+
+// Function to find incomplete/missing data
+export async function findIncompleteData() {
+  const results = {
+    noPhotos: [] as any[],
+    noMenus: [] as any[],
+    incompleteInfo: [] as any[]
+  };
+
+  const restaurantsRef = collection(db, CONFIG.FIRESTORE.COLLECTIONS.RESTAURANTS);
+
   // Find restaurants with no photos
-  const noPhotosQuery = query(
-    collection(db, CONFIG.FIRESTORE.COLLECTIONS.RESTAURANTS),
-    where('photos', '==', [])
-  );
-  const noPhotosSnapshot = await getDocs(noPhotosQuery);
-  results.noPhotos = noPhotosSnapshot.docs.map(doc => ({
+  const noPhotosQuery = query(restaurantsRef, where('photos', '==', []));
+  const noPhotosSnap = await getDocs(noPhotosQuery);
+  results.noPhotos = noPhotosSnap.docs.map(doc => ({
     id: doc.id,
     ...doc.data()
   }));
 
   // Find restaurants with no menus
-  const noMenusQuery = query(
-    collection(db, CONFIG.FIRESTORE.COLLECTIONS.RESTAURANTS),
-    where('menuCount', '==', 0)
-  );
-  const noMenusSnapshot = await getDocs(noMenusQuery);
-  results.noMenus = noMenusSnapshot.docs.map(doc => ({
+  const noMenusQuery = query(restaurantsRef, where('menuCount', '==', 0));
+  const noMenusSnap = await getDocs(noMenusQuery);
+  results.noMenus = noMenusSnap.docs.map(doc => ({
     id: doc.id,
     ...doc.data()
   }));
 
-  // Find low quality entries (e.g., missing important data)
-  const lowQualityQuery = query(
-    collection(db, CONFIG.FIRESTORE.COLLECTIONS.RESTAURANTS),
-    where('rating', '==', 0)
+  // Find restaurants with incomplete information
+  const incompleteQuery = query(
+    restaurantsRef,
+    where('lastUpdated', '<', new Date(Date.now() - CONFIG.CACHE.DURATION))
   );
-  const lowQualitySnapshot = await getDocs(lowQualityQuery);
-  results.lowQuality = lowQualitySnapshot.docs.map(doc => ({
+  const incompleteSnap = await getDocs(incompleteQuery);
+  results.incompleteInfo = incompleteSnap.docs.map(doc => ({
     id: doc.id,
     ...doc.data()
   }));
@@ -135,38 +125,38 @@ export async function findIncompleteData() {
   return results;
 }
 
-export async function getProcessingProgress() {
-  const lastProcessedQuery = query(
-    collection(db, CONFIG.FIRESTORE.COLLECTIONS.CACHE),
+// Function to get processing progress
+export async function getProcessingProgress(): Promise<ProcessingProgress> {
+  const startDate = new Date(CONFIG.PROCESSING.START_DATE);
+  const currentDate = new Date();
+  const elapsedDays = Math.floor((currentDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+
+  const processedLocationsQuery = query(
+    collection(db, CONFIG.FIRESTORE.COLLECTIONS.LOCATION_CACHE),
     orderBy('timestamp', 'desc'),
     limit(1)
   );
 
-  const snapshot = await getDocs(lastProcessedQuery);
-  
-  if (snapshot.empty) {
-    throw new Error('No processing history found');
-  }
-
-  const lastProcessed = snapshot.docs[0].data();
-  const totalProcessed = (await getDocs(
-    collection(db, CONFIG.FIRESTORE.COLLECTIONS.CACHE)
-  )).size;
-
-  const startTime = new Date(CONFIG.PROCESSING.START_DATE).getTime();
-  const currentTime = Date.now();
-  const timeElapsed = currentTime - startTime;
-  const processRate = totalProcessed / timeElapsed;
-  const remainingLocations = CONFIG.PROCESSING.TOTAL_LOCATIONS - totalProcessed;
-  const estimatedTimeRemaining = remainingLocations / processRate;
+  const snapshot = await getDocs(processedLocationsQuery);
+  const lastProcessed = snapshot.docs[0]?.data();
 
   return {
-    lastProcessedLocation: lastProcessed.location,
-    lastProcessedTimestamp: lastProcessed.timestamp.toDate(),
-    totalLocationsProcessed: totalProcessed,
-    estimatedCompletion: new Date(currentTime + estimatedTimeRemaining)
+    totalDays: elapsedDays,
+    lastProcessed: lastProcessed ? {
+      timestamp: lastProcessed.timestamp.toDate(),
+      location: lastProcessed.location
+    } : null,
+    progress: {
+      processed: await getProcessedLocationsCount(),
+      total: CONFIG.PROCESSING.TOTAL_LOCATIONS
+    }
   };
 }
 
-export { processCounty } from './index';
-
+// Helper function to get processed locations count
+async function getProcessedLocationsCount(): Promise<number> {
+  const snapshot = await getDocs(
+    collection(db, CONFIG.FIRESTORE.COLLECTIONS.LOCATION_CACHE)
+  );
+  return snapshot.size;
+}
