@@ -76,6 +76,11 @@ import {
   Timestamp,
   serverTimestamp 
 } from 'firebase/firestore';
+import { 
+  initializeQueue, 
+  getQueueStatus, 
+  getProcessingMetrics 
+} from '../queue-manager';
 
 // Type definitions
 
@@ -211,6 +216,50 @@ const StatsDisplay = ({ apiCallStats }: { apiCallStats: ApiCallStats }) => (
   </div>
 );
 
+const QueueStatusDisplay = ({ queueStatus }: { queueStatus: any }) => (
+  <Card className="mt-4">
+    <CardHeader>
+      <CardTitle>Queue Status</CardTitle>
+    </CardHeader>
+    <CardContent>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <h3 className="text-sm font-medium">Queue Overview</h3>
+          <dl className="mt-2 space-y-1">
+            <div className="flex justify-between">
+              <dt>Pending:</dt>
+              <dd>{queueStatus.pending}</dd>
+            </div>
+            <div className="flex justify-between">
+              <dt>Processing:</dt>
+              <dd>{queueStatus.processing}</dd>
+            </div>
+            <div className="flex justify-between">
+              <dt>Completed:</dt>
+              <dd>{queueStatus.completed}</dd>
+            </div>
+            <div className="flex justify-between">
+              <dt>Failed:</dt>
+              <dd>{queueStatus.failed}</dd>
+            </div>
+          </dl>
+        </div>
+
+        <div>
+          <h3 className="text-sm font-medium">API Usage Today</h3>
+          <Progress 
+            value={(queueStatus.apiCallsToday / 200) * 100}
+            className="mt-2"
+          />
+          <p className="text-sm text-gray-600 mt-1">
+            {queueStatus.apiCallsToday}/200 calls
+          </p>
+        </div>
+      </div>
+    </CardContent>
+  </Card>
+);
+
 const MonitoringStatsDisplay = ({ stats }: { stats: MonitoringStats }) => (
   <Card className="mt-4">
     <CardHeader>
@@ -334,6 +383,7 @@ export default function DatabaseBuilding({
   const [batchProgress, setBatchProgress] = useState<BatchProgress | null>(
     null
   );
+  const [queueStatus, setQueueStatus] = useState<any>(null);
   const [apiCallStats, setApiCallStats] = useState<ApiCallStats>({
     googleCalls: 0,
     yelpCalls: 0,
@@ -387,6 +437,48 @@ const [options, setOptions] = useState<ProcessingOptions>({
     useState<AbortController | null>(null);
 
   // Event handlers
+
+  const handleInitializeQueue = async () => {
+    if (!selectedCounty) return;
+  
+    try {
+      setLoading(true);
+      // Convert county data to queue format
+      const townsToProcess = selectedCounty.towns
+        .filter(town => 
+          !selectedTowns[selectedCounty.name]?.length || 
+          selectedTowns[selectedCounty.name].includes(town.name)
+        )
+        .map(town => ({
+          countyName: selectedCounty.name,
+          townName: town.name,
+          location: town.location,
+          priority: 1
+        }));
+  
+      await initializeQueue(townsToProcess);
+  
+      toast({
+        title: "Queue Initialized",
+        description: `Added ${townsToProcess.length} towns to processing queue`
+      });
+  
+      // Refresh queue status
+      const status = await getQueueStatus();
+      setQueueStatus(status);
+  
+    } catch (error) {
+      console.error('Error initializing queue:', error);
+      toast({
+        title: "Error",
+        description: "Failed to initialize queue",
+        variant: "destructive"
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleCountySelect = (countyName: string) => {
     const county = counties.find((c) => c.name === countyName);
     setSelectedCounty(county || null);
@@ -575,11 +667,14 @@ const handleStartProcessing = async () => {
       if (!selectedCounty) return;
 
       try {
-        const latestStatus = await getLatestProcessingStatus(
-          selectedCounty.name
-        );
-        setStatus(latestStatus);
-        setIsProcessing(latestStatus?.status === "processing");
+        const [processingStatus, queueStats] = await Promise.all([
+          getLatestProcessingStatus(selectedCounty.name),
+          getQueueStatus()
+        ]);
+  
+        setStatus(processingStatus);
+        setQueueStatus(queueStats);
+        setIsProcessing(processingStatus?.status === "processing");
       } catch (error) {
         console.error("Error fetching status:", error);
       }
@@ -589,7 +684,7 @@ const handleStartProcessing = async () => {
       fetchStatus();
       intervalId = setInterval(fetchStatus, refreshInterval);
     }
-
+  
     return () => {
       if (intervalId) clearInterval(intervalId);
     };
@@ -782,6 +877,14 @@ const handleStartProcessing = async () => {
 
           {/* Process Button */}
           <div className="flex space-x-2">
+          <Button
+              onClick={handleInitializeQueue}
+              disabled={!selectedCounty || isProcessing}
+              variant="default"
+            >
+              Initialize Queue
+          </Button>
+
             <Button
               onClick={handleStartProcessing}
               disabled={!selectedCounty || isProcessing}
@@ -866,6 +969,7 @@ const handleStartProcessing = async () => {
                 </Alert>
               ) : (
                 <>
+                  {queueStatus && <QueueStatusDisplay queueStatus={queueStatus} />}
                   {processingProgress && (
                     <ProcessingProgressDisplay progress={processingProgress} />
                   )}

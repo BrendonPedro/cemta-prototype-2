@@ -1,10 +1,26 @@
 // lib/database-builder/places.ts
 
-import { Client, Place as GooglePlace } from "@googlemaps/google-maps-services-js";
+import { Client, Place as GooglePlace, PlacesNearbyRanking, Language } from "@googlemaps/google-maps-services-js";
 import axios from 'axios';
 import { create } from 'zustand';
 import { CONFIG } from '../config';
 import type { ApiError, ProcessingError, Location } from '../types';
+
+const CACHE_CONFIG = {
+  MEMORY: {
+    WINDOW: 5000,
+    PRECISION: 6
+  },
+  LOCATION: {
+    DURATION: 365 * 24 * 60 * 60 * 1000,
+    PRECISION: 6
+  }
+};
+
+interface FetchResults {
+  places: any[];
+  nextPageToken?: string;
+}
 
 // Replace timers/promises setTimeout with a Promise wrapper
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -110,12 +126,13 @@ export async function fetchPlacesWithLimit(
     signal
   } = options;
 
- const store = usePlacesFetcher.getState();
+  const store = usePlacesFetcher.getState();
   const { updateProgress } = store;
   
   updateProgress({ status: 'running' });
   
   const allResults: PlaceResult[] = [];
+  const seenPlaceIds = new Set<string>(); // Track unique place IDs
   
   for (let i = 0; i < locations.length; i += batchSize) {
     if (signal?.aborted) {
@@ -132,28 +149,38 @@ export async function fetchPlacesWithLimit(
       return allResults;
     }
 
-     const batchLocations = locations.slice(i, i + batchSize);
+    const batchLocations = locations.slice(i, i + batchSize);
     for (const location of batchLocations) {
       try {
         const results = await fetchGooglePlaces(client, location, apiKey);
-        allResults.push(...results);
+        
+        // Filter out duplicates and add new places
+        const newPlaces = results.filter(place => {
+          if (!seenPlaceIds.has(place.place_id)) {
+            seenPlaceIds.add(place.place_id);
+            return true;
+          }
+          return false;
+        });
+
+        allResults.push(...newPlaces);
         
         updateProgress({
           googleCallsMade: store.googleCallsMade + 1,
           restaurantsProcessed: allResults.length,
-          totalFound: allResults.length,
+          totalFound: seenPlaceIds.size, // Use unique count
           currentLocation: location,
-          lastBatchResults: results
+          lastBatchResults: newPlaces // Only the new unique places
         });
 
-} catch (error: unknown) {
-  handleFetchError(error);
-  if ((error as ApiError).response?.status === 429) {
-    return allResults;
-  }
-}
+      } catch (error: unknown) {
+        handleFetchError(error);
+        if ((error as ApiError).response?.status === 429) {
+          return allResults;
+        }
+      }
 
-     await delay(CONFIG.API.DELAY_BETWEEN_CALLS);
+      await delay(CONFIG.API.DELAY_BETWEEN_CALLS);
     }
   }
 
@@ -175,61 +202,91 @@ export async function fetchGooglePlaces(
     return cached;
   }
 
+  const allResults: PlaceResult[] = [];
+  let pageToken: string | undefined;
+  let attempts = 0;
+  const maxPages = 3; // Google's maximum pagination limit
+  const delayBetweenPages = 2000; // Required by Google
+
   try {
-    const response = await client.placesNearby({
-      params: {
-        location,
-        radius: 1000,
-        type: 'restaurant',
-        key: apiKey,
-      },
-    });
+    do {
+      // Add required delay between paginated requests
+      if (pageToken) {
+        await delay(delayBetweenPages);
+      }
 
-    const results = response.data.results
-      .filter((place): place is GooglePlace & { place_id: string; name: string } => {
-        return Boolean(place) &&
-               typeof place.place_id === 'string' &&
-               typeof place.name === 'string';
-      })
-      .map(place => ({
-        place_id: place.place_id,
-        name: place.name,
-        geometry: place.geometry ? {
-          location: {
-            lat: place.geometry.location.lat,
-            lng: place.geometry.location.lng
-          },
-          viewport: place.geometry.viewport ? {
-            northeast: {
-              lat: place.geometry.viewport.northeast.lat,
-              lng: place.geometry.viewport.northeast.lng
-            },
-            southwest: {
-              lat: place.geometry.viewport.southwest.lat,
-              lng: place.geometry.viewport.southwest.lng
-            }
-          } : undefined
-        } : undefined,
-        vicinity: place.vicinity,
-        rating: place.rating,
-        photos: place.photos,
-        formatted_address: place.formatted_address,
-        types: place.types,
-        business_status: place.business_status,
-        user_ratings_total: place.user_ratings_total,
-        price_level: place.price_level
-      }));
+      const response = await client.placesNearby({
+        params: {
+          location,
+          rankby: PlacesNearbyRanking.distance, // Fixed TypeScript error
+          type: 'restaurant',
+          key: apiKey,
+          language: Language.zh_TW,
+          ...(pageToken && { pagetoken: pageToken })
+        },
+      });
 
-    requestCache.set(cacheKey, results);
-    return results;
+      // Process the response
+      if (response.data.results.length > 0) {
+        const results = response.data.results
+          .filter((place): place is GooglePlace & { place_id: string; name: string } => {
+            return Boolean(place) &&
+                   typeof place.place_id === 'string' &&
+                   typeof place.name === 'string';
+          })
+          .map(place => ({
+            place_id: place.place_id,
+            name: place.name,
+            geometry: place.geometry ? {
+              location: {
+                lat: place.geometry.location.lat,
+                lng: place.geometry.location.lng
+              },
+              viewport: place.geometry.viewport ? {
+                northeast: {
+                  lat: place.geometry.viewport.northeast.lat,
+                  lng: place.geometry.viewport.northeast.lng
+                },
+                southwest: {
+                  lat: place.geometry.viewport.southwest.lat,
+                  lng: place.geometry.viewport.southwest.lng
+                }
+              } : undefined
+            } : undefined,
+            vicinity: place.vicinity,
+            rating: place.rating,
+            photos: place.photos,
+            formatted_address: place.formatted_address,
+            types: place.types,
+            business_status: place.business_status,
+            user_ratings_total: place.user_ratings_total,
+            price_level: place.price_level
+          }));
+
+        allResults.push(...results);
+        console.log(`Page ${attempts + 1}: Found ${results.length} restaurants`);
+      }
+
+      pageToken = response.data.next_page_token;
+      attempts++;
+
+      // Log progress
+      console.log(`Processed page ${attempts} of ${maxPages} maximum pages`);
+      console.log(`Total restaurants so far: ${allResults.length}`);
+
+    } while (pageToken && attempts < maxPages);
+
+    console.log(`Location ${location.lat},${location.lng} total results: ${allResults.length}`);
+    requestCache.set(cacheKey, allResults);
+    return allResults;
 
   } catch (error) {
     if (retries > 0) {
+      console.log(`Retrying after error (${retries} retries left)`);
       await delay(CONFIG.API.RETRY_DELAY);
       return fetchGooglePlaces(client, location, apiKey, retries - 1);
     }
-    const apiError = error as ApiError;
-    throw new Error(apiError.message || 'Failed to fetch places');
+    throw error;
   }
 }
 

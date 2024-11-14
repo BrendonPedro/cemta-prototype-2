@@ -82,7 +82,7 @@ export class DatabaseManager {
   async getProcessingProgress() {
     const snapshot = await getDocs(
       query(
-        collection(db, CONFIG.FIRESTORE.COLLECTIONS.CACHE),
+        collection(db, CONFIG.FIRESTORE.COLLECTIONS.METRICS_CACHE), //Check this collection name again (i.e. should it be metrics_cache)
         orderBy('timestamp', 'desc'),
         limit(1)
       )
@@ -94,7 +94,7 @@ export class DatabaseManager {
         lastProcessedLocation: lastProcessed.location,
         lastProcessedTimestamp: lastProcessed.timestamp,
         totalLocationsProcessed: (await getDocs(
-          collection(db, CONFIG.FIRESTORE.COLLECTIONS.CACHE)
+          collection(db, CONFIG.FIRESTORE.COLLECTIONS.LOCATION_CACHE) //Check this collection name again (i.e. should it be location_cache)
         )).size
       };
     }

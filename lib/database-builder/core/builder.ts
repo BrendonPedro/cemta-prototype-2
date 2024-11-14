@@ -12,6 +12,12 @@ import { useImageUploader } from '@/lib/database-builder/services/image-handler'
 import { processBatchImages, processAndUploadImage } from '@/lib/database-builder/services/image-handler-server';
 import ngeohash from 'ngeohash';
 import { CONFIG } from '../config';
+import {
+  getNextTownToProcess,
+  trackAPICall,
+  updateTownStatus,
+  type QueuedTown
+} from '@/lib/database-builder/queue-manager';
 
 // ==================== Types & Interfaces ====================
 export interface BuilderConfig {
@@ -250,6 +256,8 @@ export async function buildDatabase(
     checkCacheOnly: config.checkCacheOnly
   });
 
+  let currentQueuedTown: QueuedTown | null = null; 
+  
   // Process each town
   for (const town of countyData.towns) {
     try {
@@ -260,6 +268,13 @@ export async function buildDatabase(
       if (config.signal?.aborted) {
         console.log('❌ Operation aborted by user');
         throw new Error('Operation aborted');
+      }
+
+      // Get town from queue and check API limits
+      currentQueuedTown = await getNextTownToProcess();
+      if (!currentQueuedTown) {
+        console.log('Daily API limit reached or no towns to process');
+        break;
       }
 
       // Handle cache operations
@@ -325,11 +340,21 @@ export async function buildDatabase(
             
               console.log(`✅ Successfully processed cached restaurant ${cachedRestaurant.name}`);
               stats.successful++;
+
+              // Track successful processing in queue
+              await trackAPICall('google', currentQueuedTown.id);
+              await updateTownStatus(currentQueuedTown.id, 'processing', stats.totalProcessed);
+
             } catch (error) {
               console.error(`❌ Error processing cached restaurant ${cachedRestaurant.name}:`, error);
-              stats.failed++;
+              await updateTownStatus(
+                currentQueuedTown.id,
+                'failed',
+                stats.totalProcessed,
+                error instanceof Error ? error.message : 'Unknown error'
+              );
             }
-
+          
             stats.totalProcessed++;
 
             if (config.testMode) {
@@ -463,9 +488,12 @@ export async function buildDatabase(
           // Add verification here
           await verifyAndFixRestaurantCount(countyData.name, town.name);
 
+          await trackAPICall('google', currentQueuedTown.id);
+
         } else {
           // We have enough cached results
           stats.cached += cached.length;
+          await updateTownStatus(currentQueuedTown.id, 'completed', cached.length);
 
           // **Process cached restaurants**
           for (const cachedRestaurant of cached) {
@@ -644,9 +672,33 @@ export async function buildDatabase(
           );
         }
       }
+
+      // Track API calls in queue
+      await trackAPICall('google', currentQueuedTown.id);
+
+      if (currentQueuedTown) {
+        await updateTownStatus(
+          currentQueuedTown.id,
+          'completed',
+          stats.totalProcessed
+        );
+      }
+
+      await verifyAndFixRestaurantCount(countyData.name, town.name);
+
     } catch (error) {
       console.error(`❌ Error processing town ${town.name}:`, error);
       stats.failed++;
+
+      // Update queue status on error
+      if (currentQueuedTown) {
+        await updateTownStatus(
+          currentQueuedTown.id,
+          'failed',
+          0,
+          error instanceof Error ? error.message : 'Unknown error'
+        );
+      }
 
       if (error instanceof Error && error.message === 'Operation aborted') {
         break;
