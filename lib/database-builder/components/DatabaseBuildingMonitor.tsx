@@ -521,89 +521,106 @@ const [options, setOptions] = useState<ProcessingOptions>({
   const { uploadBatch, processing: imageProcessing } = useImageUploader();
 
   // Processing handlers
-const handleStartProcessing = async () => {
-  if (!selectedCounty) return;
-
-  if (!firebaseToken) {
-    console.warn("⚠️ No Firebase token available - photos will be skipped");
-    toast({
-      title: "Warning",
-      description: "No authentication token - photos will be skipped",
-      variant: "destructive",
-    });
-  }
-
-  setIsProcessing(true);
-  setError(null);
-
-  try {
-    const formData = form.getValues();
-
-    // Create a plain serializable object from the county data
-    const countyData = {
-      name: selectedCounty.name,
-      chineseName: selectedCounty.chineseName,
-      towns: selectedCounty.towns.map((town) => ({
-        name: town.name,
-        chineseName: town.chineseName,
-        location: {
-          lat: town.location.lat,
-          lng: town.location.lng,
-        },
-        searchRadiusKm: town.searchRadiusKm,
-      })),
-    };
-
-    // Create plain config object
-    const processConfig: ProcessingOptions = {
-      selectedTowns: selectedTowns[selectedCounty.name] || [],
-      firebaseToken: firebaseToken || undefined,
-      maxResults: Number(formData.maxResults),
-      testMode: Boolean(formData.testMode),
-      checkCacheOnly: Boolean(formData.checkCacheOnly),
-      clearCache: formData.clearExistingCache ? {
-        enabled: true,
-        scope: 'town'
-      } : undefined
-    };
-
-    console.log("Starting processing with config:", {
-      county: countyData.name,
-      selectedTowns: processConfig.selectedTowns,
-      token: !!processConfig.firebaseToken,
-    });
-
-    const result = await buildCountyDatabase(countyData, processConfig);
-
-    if (result.success && result.stats) {
-      setApiCallStats({
-        googleCalls: result.stats.apiCalls.google,
-        yelpCalls: result.stats.apiCalls.yelp,
-        restaurantsProcessed: result.stats.totalProcessed,
-        cacheHits: result.stats.cached,
-        cacheMisses: result.stats.totalProcessed - result.stats.cached,
-      });
-
+  const handleStartProcessing = async () => {
+    if (!selectedCounty) return;
+  
+    if (!firebaseToken) {
+      console.warn("⚠️ No Firebase token available - photos will be skipped");
       toast({
-        title: "Processing Complete",
-        description: `Processed ${result.stats.totalProcessed} locations`,
+        title: "Warning",
+        description: "No authentication token - photos will be skipped",
+        variant: "destructive",
       });
-    } else {
-      throw new Error(result.error || "Failed to process county");
     }
-  } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error occurred";
-    setError(errorMessage);
-    toast({
-      title: "Processing Error",
-      description: errorMessage,
-      variant: "destructive",
-    });
-  } finally {
-    setIsProcessing(false);
-  }
-};
+  
+    setIsProcessing(true);
+    setError(null);
+  
+    try {
+      const formData = form.getValues();
+  
+      // First, initialize the queue with selected towns
+      const townsToProcess = selectedCounty.towns
+        .filter(town => 
+          !selectedTowns[selectedCounty.name]?.length || 
+          selectedTowns[selectedCounty.name].includes(town.name)
+        )
+        .map(town => ({
+          countyName: selectedCounty.name,
+          townName: town.name,
+          location: town.location,
+          priority: 1
+        }));
+  
+      console.log(`Initializing queue with ${townsToProcess.length} towns`);
+      await initializeQueue(townsToProcess);
+  
+      // Create county data object
+      const countyData = {
+        name: selectedCounty.name,
+        chineseName: selectedCounty.chineseName,
+        towns: selectedCounty.towns.map((town) => ({
+          name: town.name,
+          chineseName: town.chineseName,
+          location: {
+            lat: town.location.lat,
+            lng: town.location.lng,
+          },
+          searchRadiusKm: town.searchRadiusKm,
+        })),
+      };
+  
+      // Create processing config
+      const processConfig: ProcessingOptions = {
+        selectedTowns: selectedTowns[selectedCounty.name] || [],
+        firebaseToken: firebaseToken || undefined,
+        maxResults: Number(formData.maxResults),
+        testMode: Boolean(formData.testMode),
+        checkCacheOnly: Boolean(formData.checkCacheOnly),
+        clearCache: formData.clearExistingCache ? {
+          enabled: true,
+          scope: 'town'
+        } : undefined
+      };
+  
+      console.log("Starting processing with config:", {
+        county: countyData.name,
+        selectedTowns: processConfig.selectedTowns,
+        token: !!processConfig.firebaseToken,
+        maxResults: processConfig.maxResults
+      });
+  
+      const result = await buildCountyDatabase(countyData, processConfig);
+  
+      if (result.success && result.stats) {
+        setApiCallStats({
+          googleCalls: result.stats.apiCalls.google,
+          yelpCalls: result.stats.apiCalls.yelp,
+          restaurantsProcessed: result.stats.totalProcessed,
+          cacheHits: result.stats.cached,
+          cacheMisses: result.stats.totalProcessed - result.stats.cached,
+        });
+  
+        toast({
+          title: "Processing Complete",
+          description: `Processed ${result.stats.totalProcessed} locations`,
+        });
+      } else {
+        throw new Error(result.error || "Failed to process county");
+      }
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error occurred";
+      setError(errorMessage);
+      toast({
+        title: "Processing Error",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
 
   const handleBatchProcessing = async () => {
     if (!firebaseToken) {

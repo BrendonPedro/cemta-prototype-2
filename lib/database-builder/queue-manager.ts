@@ -97,56 +97,82 @@ export async function initializeQueue(towns: Array<{
 }
 
 export async function getNextTownToProcess(): Promise<QueuedTown | null> {
-  // Check if we've hit daily API limit
-  const usageToday = await getDailyAPIUsage();
-  if (usageToday >= DAILY_API_LIMIT) {
-    console.log('Daily API limit reached');
-    return null;
+    try {
+      // Check if we've hit daily API limit
+      const usageToday = await getDailyAPIUsage();
+      if (usageToday >= DAILY_API_LIMIT) {
+        console.log(`Daily API limit reached: ${usageToday}/${DAILY_API_LIMIT}`);
+        return null;
+      }
+  
+      const q = query(
+        collection(db, COLLECTIONS.PROCESSING_QUEUE),
+        where('status', 'in', ['pending', 'failed']),
+        where('attempts', '<', MAX_ATTEMPTS),
+        orderBy('priority', 'desc'),
+        orderBy('attempts', 'asc'),
+        limit(1)
+      );
+  
+      const snapshot = await getDocs(q);
+      if (snapshot.empty) {
+        console.log('No pending towns in queue');
+        return null;
+      }
+  
+      const town = {
+        id: snapshot.docs[0].id,
+        ...snapshot.docs[0].data()
+      } as QueuedTown;
+  
+      // Update status to processing
+      await updateDoc(doc(db, COLLECTIONS.PROCESSING_QUEUE, town.id), {
+        status: 'processing',
+        lastAttempt: serverTimestamp(),
+        attempts: increment(1)
+      });
+  
+      return town;
+    } catch (error) {
+      console.error('Error getting next town:', error);
+      return null;
+    }
   }
 
-  const q = query(
-    collection(db, COLLECTIONS.PROCESSING_QUEUE),
-    where('status', 'in', ['pending', 'failed']),
-    where('attempts', '<', MAX_ATTEMPTS),
-    orderBy('priority', 'desc'),
-    orderBy('attempts', 'asc'),
-    limit(1)
-  );
-
-  const snapshot = await getDocs(q);
-  if (snapshot.empty) return null;
-
-  const town = {
-    id: snapshot.docs[0].id,
-    ...snapshot.docs[0].data()
-  } as QueuedTown;
-
-  // Update status to processing
-  await updateDoc(doc(db, COLLECTIONS.PROCESSING_QUEUE, town.id), {
-    status: 'processing',
-    lastAttempt: serverTimestamp(),
-    attempts: increment(1)
-  });
-
-  return town;
-}
-
-export async function trackAPICall(type: 'google' | 'yelp', townId: string) {
-  const today = new Date().toISOString().split('T')[0];
-  const usageRef = doc(db, COLLECTIONS.API_USAGE, today);
-
-  await setDoc(usageRef, {
-    [`${type}APICalls`]: increment(1),
-    timestamp: serverTimestamp()
-  }, { merge: true });
-
-  // Update town's API call count
-  if (townId) {
-    await updateDoc(doc(db, COLLECTIONS.PROCESSING_QUEUE, townId), {
-      [`apiCalls.${type}`]: increment(1)
-    });
+  export async function trackAPICall(type: 'google' | 'yelp', townId: string) {
+    const today = new Date().toISOString().split('T')[0];
+    const usageRef = doc(db, COLLECTIONS.API_USAGE, today);
+  
+    console.log(`Tracking ${type} API call for town ${townId}`);
+  
+    try {
+      await setDoc(usageRef, {
+        [`${type}APICalls`]: increment(1),
+        timestamp: serverTimestamp(),
+        lastUpdated: serverTimestamp()
+      }, { merge: true });
+  
+      if (townId) {
+        await updateDoc(doc(db, COLLECTIONS.PROCESSING_QUEUE, townId), {
+          [`apiCalls.${type}`]: increment(1),
+          lastUpdated: serverTimestamp()
+        });
+      }
+  
+      // Log current usage
+      const updatedUsage = await getDoc(usageRef);
+      if (updatedUsage.exists()) {
+        const data = updatedUsage.data();
+        console.log(`Current API usage for today:`, {
+          google: data.googleAPICalls || 0,
+          yelp: data.yelpAPICalls || 0
+        });
+      }
+    } catch (error) {
+      console.error('Error tracking API call:', error);
+      throw error;
+    }
   }
-}
 
 export async function updateTownStatus(
   townId: string, 
@@ -179,15 +205,19 @@ async function updateProcessingMetrics(newRestaurants: number) {
   }, { merge: true });
 }
 
-async function getDailyAPIUsage(): Promise<number> {
-  const today = new Date().toISOString().split('T')[0];
-  const usageDoc = await getDoc(doc(db, COLLECTIONS.API_USAGE, today));
-  
-  if (!usageDoc.exists()) return 0;
-  
-  const data = usageDoc.data() as APIQuotaUsage;
-  return (data.googleAPICalls || 0) + (data.yelpAPICalls || 0);
-}
+export async function getDailyAPIUsage(): Promise<number> {
+    const today = new Date().toISOString().split('T')[0];
+    const usageDoc = await getDoc(doc(db, COLLECTIONS.API_USAGE, today));
+    
+    if (!usageDoc.exists()) {
+      return 0;
+    }
+    
+    const data = usageDoc.data() as APIQuotaUsage;
+    const totalCalls = (data.googleAPICalls || 0) + (data.yelpAPICalls || 0);
+    console.log(`Current daily API usage: ${totalCalls}/${DAILY_API_LIMIT}`);
+    return totalCalls;
+  }
 
 export async function getProcessingMetrics(): Promise<ProcessingMetrics> {
   const metricsDoc = await getDoc(doc(db, COLLECTIONS.PROCESSING_METRICS, 'current'));

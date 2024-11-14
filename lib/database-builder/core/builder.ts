@@ -557,21 +557,40 @@ export async function buildDatabase(
           }
 
           console.log(`📡 Fetching data from Google Places API for ${town.name}`);
+let allResults = [];
+let pageToken = undefined;
 
-          const response = await client.placesNearby({
-            params: {
-              location: town.location,
-              rankby: PlacesNearbyRanking.distance,
-              type: 'restaurant',
-              key: config.googleApiKey,
-              language: Language.zh_TW
-            }
-          });
+do {
+  const response = await client.placesNearby({
+    params: {
+      location: town.location,
+      rankby: PlacesNearbyRanking.distance,
+      type: 'restaurant',
+      key: config.googleApiKey,
+      language: Language.zh_TW,
+      ...(pageToken ? { pagetoken: pageToken } : {})
+    }
+  });
 
-          stats.apiCalls.google++;
+  stats.apiCalls.google++;
+
+  if (response.data.results.length > 0) {
+    allResults.push(...response.data.results);
+    console.log(`Found ${response.data.results.length} places on this page`);
+  }
+
+  pageToken = response.data.next_page_token;
+  
+  if (pageToken) {
+    console.log('More results available, waiting before next page request...');
+    await new Promise(resolve => setTimeout(resolve, 2000)); // Required delay
+  }
+} while (pageToken && allResults.length < maxResults);
+
+console.log(`Total places found: ${allResults.length}`);
 
           // Process and limit places
-          const validPlaces = processPlaces(response.data.results, maxResults);
+          const validPlaces = processPlaces(allResults, maxResults);
 
           // Collect processed restaurant data
           const processedCachedRestaurants: CachedRestaurant[] = [];
