@@ -64,66 +64,56 @@ async function processCachedRestaurants(
   totalStats: ProcessingStats,
   processedIds: Set<string>
 ): Promise<void> {
-  try {
-    // Get unique restaurants by filtering out duplicates based on ID
-    const uniqueRestaurants = Array.from(
-      new Map(cached.map(restaurant => [restaurant.id, restaurant])).values()
-    );
+  const uniqueRestaurants = Array.from(
+    new Map(cached.map(restaurant => [restaurant.id, restaurant])).values()
+  );
 
-    // Calculate remaining slots
-    const remainingSlots = maxResults - processedIds.size;
-    
-    // Filter and limit restaurants
-    const newRestaurants = uniqueRestaurants
-      .filter(r => !processedIds.has(r.id))
-      .slice(0, remainingSlots);
+  const remainingSlots = maxResults - processedIds.size;
+  const newRestaurants = uniqueRestaurants
+    .filter(r => !processedIds.has(r.id))
+    .slice(0, remainingSlots);
 
-    console.log(`📊 Processing ${newRestaurants.length} new unique restaurants from cache`);
-
-    for (const restaurant of newRestaurants) {
-      try {
-        await saveRestaurantData(
-          {
-            id: restaurant.id,
-            name: restaurant.name,
-            address: restaurant.address,
-            location: {
-              lat: restaurant.latitude,
-              lng: restaurant.longitude
-            },
-            rating: restaurant.rating || 0,
-            googlePlaceId: restaurant.id,
-            photos: restaurant.imageUrl ? [restaurant.imageUrl] : [],
-            menuCount: restaurant.menuCount || 0,
-            lastUpdated: new Date().toISOString(),
-            createdAt: new Date().toISOString(),
-            source: {
-              google: restaurant.hasGoogleData || false,
-              yelp: restaurant.hasYelpData || false
-            }
+  for (const restaurant of newRestaurants) {
+    try {
+      await saveRestaurantData(
+        {
+          id: restaurant.id,
+          name: restaurant.name,
+          address: restaurant.address,
+          location: {
+            lat: restaurant.latitude,
+            lng: restaurant.longitude
           },
-          countyName,
-          townName,
-          true,
-          options.incrementalUpdate
-        );
-        
-        processedIds.add(restaurant.id);
-        totalStats.successful++;
-        totalStats.totalProcessed++;
-      } catch (error) {
-        console.error(`Error processing restaurant ${restaurant.name}:`, error);
-        totalStats.failed++;
-      }
+          rating: restaurant.rating || 0,
+          googlePlaceId: restaurant.id,
+          photos: restaurant.imageUrl ? [restaurant.imageUrl] : [],
+          menuCount: restaurant.menuCount || 0,
+          lastUpdated: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+          source: {
+            google: restaurant.hasGoogleData || false,
+            yelp: restaurant.hasYelpData || false
+          }
+        },
+        countyName,
+        townName,
+        true, // fromCache
+        options.incrementalUpdate
+      );
+      
+      processedIds.add(restaurant.id);
+      totalStats.successful++;
+      totalStats.cached++; // Increment cached count instead of API calls
+      totalStats.totalProcessed++;
+    } catch (error) {
+      console.error(`Error processing restaurant ${restaurant.name}:`, error);
+      totalStats.failed++;
     }
+  }
 
-    // Verify counts if any restaurants were processed
-    if (newRestaurants.length > 0) {
-      await verifyAndFixRestaurantCount(countyName, townName, true);
-    }
-  } catch (error) {
-    console.error('Error in processCachedRestaurants:', error);
-    throw error;
+  // Only verify counts once after processing all cached restaurants
+  if (newRestaurants.length > 0) {
+    await verifyAndFixRestaurantCount(countyName, townName);
   }
 }
 
