@@ -60,54 +60,70 @@ async function processCachedRestaurants(
   countyName: string,
   townName: string,
   maxResults: number,
-  options: ProcessingOptions,
-  totalStats: ProcessingStats
+  options: ProcessingOptions & { incrementalUpdate?: boolean },
+  totalStats: ProcessingStats,
+  processedIds: Set<string>
 ): Promise<void> {
-  for (const cachedRestaurant of cached.slice(0, maxResults)) {
-    try {
-      console.log(`\n🏪 Processing cached restaurant: ${cachedRestaurant.name}`);
+  try {
+    // Get unique restaurants by filtering out duplicates based on ID
+    const uniqueRestaurants = Array.from(
+      new Map(cached.map(restaurant => [restaurant.id, restaurant])).values()
+    );
 
-      const restaurantData: RestaurantData = {
-        id: cachedRestaurant.id,
-        name: cachedRestaurant.name,
-        address: cachedRestaurant.address,
-        rating: cachedRestaurant.rating || 0,
-        location: {
-          lat: cachedRestaurant.latitude,
-          lng: cachedRestaurant.longitude
-        },
-        googlePlaceId: cachedRestaurant.id,
-        photos: cachedRestaurant.imageUrl ? [cachedRestaurant.imageUrl] : [],
-        menuCount: cachedRestaurant.menuCount || 0,
-        lastUpdated: new Date().toISOString(),
-        createdAt: new Date().toISOString(),
-        source: {
-          google: cachedRestaurant.hasGoogleData || false,
-          yelp: cachedRestaurant.hasYelpData || false
-        }
-      };
+    // Calculate remaining slots
+    const remainingSlots = maxResults - processedIds.size;
+    
+    // Filter and limit restaurants
+    const newRestaurants = uniqueRestaurants
+      .filter(r => !processedIds.has(r.id))
+      .slice(0, remainingSlots);
 
-      // Save to database with isFromCache flag
-      await saveRestaurantData(
-        restaurantData,
-        countyName,
-        townName,
-        true // indicate this is from cache
-      );
+    console.log(`📊 Processing ${newRestaurants.length} new unique restaurants from cache`);
 
-      console.log(`✅ Successfully processed cached restaurant ${cachedRestaurant.name}`);
-      totalStats.successful++;
-    } catch (error) {
-      console.error(`❌ Error processing cached restaurant ${cachedRestaurant.name}:`, error);
-      totalStats.failed++;
+    for (const restaurant of newRestaurants) {
+      try {
+        await saveRestaurantData(
+          {
+            id: restaurant.id,
+            name: restaurant.name,
+            address: restaurant.address,
+            location: {
+              lat: restaurant.latitude,
+              lng: restaurant.longitude
+            },
+            rating: restaurant.rating || 0,
+            googlePlaceId: restaurant.id,
+            photos: restaurant.imageUrl ? [restaurant.imageUrl] : [],
+            menuCount: restaurant.menuCount || 0,
+            lastUpdated: new Date().toISOString(),
+            createdAt: new Date().toISOString(),
+            source: {
+              google: restaurant.hasGoogleData || false,
+              yelp: restaurant.hasYelpData || false
+            }
+          },
+          countyName,
+          townName,
+          true,
+          options.incrementalUpdate
+        );
+        
+        processedIds.add(restaurant.id);
+        totalStats.successful++;
+        totalStats.totalProcessed++;
+      } catch (error) {
+        console.error(`Error processing restaurant ${restaurant.name}:`, error);
+        totalStats.failed++;
+      }
     }
 
-    totalStats.totalProcessed++;
-
-    if (options.testMode) {
-      console.log('🔧 Test Mode: Adding delay between places');
-      await new Promise(resolve => setTimeout(resolve, 500));
+    // Verify counts if any restaurants were processed
+    if (newRestaurants.length > 0) {
+      await verifyAndFixRestaurantCount(countyName, townName, true);
     }
+  } catch (error) {
+    console.error('Error in processCachedRestaurants:', error);
+    throw error;
   }
 }
 
@@ -152,7 +168,9 @@ async function validateSetup(countyName: string): Promise<ValidateSetupResult> {
 
 export async function buildCountyDatabase(
   county: SerializableCounty,
-  options: ProcessingOptions
+  options: ProcessingOptions & { 
+    incrementalUpdate?: boolean 
+  }
 ): Promise<{
   success: boolean;
   status?: ProcessingStatus;
@@ -195,29 +213,44 @@ export async function buildCountyDatabase(
 
     let totalStats = initializeStats();
 
+    // Track processed restaurants for incremental updates
+    const processedRestaurants = new Map<string, Set<string>>();
+
+    // Initialize tracking for each town
+    for (const town of townsToProcess) {
+      processedRestaurants.set(town.name, new Set<string>());
+      if (options.incrementalUpdate) {
+        const townRef = doc(db, 'counties', county.name, 'towns', town.name);
+        const existing = await getDocs(collection(townRef, 'restaurants'));
+        existing.forEach(doc => {
+          processedRestaurants.get(town.name)?.add(doc.id);
+        });
+      }
+    }
+
     // Process each batch
     for (let i = 0; i < batches.length; i++) {
       const batchTowns = batches[i];
       
       for (const town of batchTowns) {
         try {
-        // Check cache first
-        const cached = !options.clearCache 
-          ? await getCachedBuildData(
-              town.location.lat,
-              town.location.lng,
-              county.name,
-              town.name
-            )
-          : null;
-
-          if (cached) {
-            console.log(`✅ Cache HIT for ${town.name}: Found ${cached.length} restaurants`);
+          const processedIds = processedRestaurants.get(town.name)!;
           
-            // Process cached data up to maxResults
-            const maxToProcess = options.maxResults || 20;
+          // Check cache first
+          const cached = !options.clearCache 
+            ? await getCachedBuildData(
+                town.location.lat,
+                town.location.lng,
+                county.name,
+                town.name
+              )
+            : null;
+
+          if (cached?.length) {
+            console.log(`✅ Cache HIT for ${town.name}: Found ${cached.length} restaurants`);
             
-            // Update stats for cached portion
+            // Process cached data
+            const maxToProcess = options.maxResults || 20;
             totalStats.cached += cached.length;
 
             await processCachedRestaurants(
@@ -226,85 +259,77 @@ export async function buildCountyDatabase(
               town.name,
               maxToProcess,
               options,
-              totalStats
+              totalStats,
+              processedIds
             );
-          
-            // If we need more results than what's in cache
-            if (cached.length < maxToProcess && !options.checkCacheOnly) {
-              const remainingToFetch = maxToProcess - cached.length;
-              console.log(`⚠️ Cache has ${cached.length} results but ${maxToProcess} requested - fetching ${remainingToFetch} more...`);
-
-          // Update Firestore with cached data
-          await batchUpdateRestaurants(cached, options.signal);
-
-          if (options.checkCacheOnly) {
-            console.log('🔎 Check Cache Only mode - skipping API calls');
-            continue;
           }
-        }}
 
-        // Process non-cached data
-        if (!options.checkCacheOnly) {
-          const builderConfig = {
-            googleApiKey: process.env.GOOGLE_MAPS_API_KEY!,
-            yelpApiKey: process.env.YELP_API_KEY!,
-            projectId: process.env.GOOGLE_CLOUD_PROJECT_ID!,
-            keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS!,
-            firebaseToken: options.firebaseToken,
-            clearCache: options.clearCache,
-            maxResults: options.maxResults,
-            testMode: options.testMode,
-            checkCacheOnly: options.checkCacheOnly,
-            signal: options.signal
-          };
+          // Process non-cached data if needed
+          if (!options.checkCacheOnly) {
+            const builderConfig = {
+              googleApiKey: process.env.GOOGLE_MAPS_API_KEY!,
+              yelpApiKey: process.env.YELP_API_KEY!,
+              projectId: process.env.GOOGLE_CLOUD_PROJECT_ID!,
+              keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS!,
+              firebaseToken: options.firebaseToken,
+              clearCache: options.clearCache,
+              maxResults: options.maxResults,
+              testMode: options.testMode,
+              checkCacheOnly: options.checkCacheOnly,
+              incrementalUpdate: options.incrementalUpdate,
+              signal: options.signal
+            };
 
-          const result = await buildDatabase(
-            {
-              name: county.name,
-              towns: [town]
-            },
-            builderConfig
-          );
+            const result = await buildDatabase(
+              {
+                name: county.name,
+                towns: [town]
+              },
+              builderConfig
+            );
 
-          // Update total stats
-          totalStats = {
-            totalProcessed: totalStats.totalProcessed + result.totalProcessed,
-            successful: totalStats.successful + result.successful,
-            failed: totalStats.failed + result.failed,
-            cached: totalStats.cached + result.cached,
-            apiCalls: {
-              google: totalStats.apiCalls.google + result.apiCalls.google,
-              yelp: totalStats.apiCalls.yelp + result.apiCalls.yelp
+            // Update total stats
+            totalStats = {
+              totalProcessed: totalStats.totalProcessed + result.totalProcessed,
+              successful: totalStats.successful + result.successful,
+              failed: totalStats.failed + result.failed,
+              cached: totalStats.cached + result.cached,
+              apiCalls: {
+                google: totalStats.apiCalls.google + result.apiCalls.google,
+                yelp: totalStats.apiCalls.yelp + result.apiCalls.yelp
+              }
+            };
+
+            // Cache the results if any
+            if (result.restaurants?.length) {
+              await saveBuildCache(
+                town.location.lat,
+                town.location.lng,
+                county.name,
+                town.name,
+                result.restaurants
+              );
             }
-          };
-
-          // Cache the results if any
-          if (result.restaurants?.length) {
-            await saveBuildCache(
-              town.location.lat,
-              town.location.lng,
-              county.name,
-              town.name,
-              result.restaurants
-            );
           }
-        }
-        console.log(`\n🔍 Verifying counts for ${town.name} in ${county.name}`);
-        await verifyAndFixRestaurantCount(county.name, town.name);
-        console.log(`✅ Verified counts for ${town.name}`);
 
-   // Update progress
-   const progress = Math.floor(((i + 1) / batches.length) * 100);
-   await updateProcessingStatus(county.name, {
-     ...status,
-     progress,
-     stats: totalStats
-   });
- } catch (error) {
-   console.error(`Error processing town ${town.name}:`, error);
-   totalStats.failed++;
- }
-}
+          // Verify counts after processing
+          console.log(`\n🔍 Verifying counts for ${town.name} in ${county.name}`);
+          await verifyAndFixRestaurantCount(county.name, town.name);
+          console.log(`✅ Verified counts for ${town.name}`);
+
+          // Update progress
+          const progress = Math.floor(((i + 1) / batches.length) * 100);
+          await updateProcessingStatus(county.name, {
+            ...status,
+            progress,
+            stats: totalStats
+          });
+        } catch (error) {
+          console.error(`Error processing town ${town.name}:`, error);
+          totalStats.failed++;
+        }
+      }
+
       // Add delay between batches if not the last batch
       if (i < batches.length - 1) {
         await new Promise(resolve => setTimeout(resolve, options.delayBetweenBatches || 5000));
@@ -326,9 +351,9 @@ export async function buildCountyDatabase(
     revalidatePath(`/counties/${county.name.toLowerCase()}`);
     revalidatePath('/dashboard');
 
+    // Final count verification
     try {
       console.log('\n🔍 Running final count verification for all towns...');
-      // Verify counts for all processed towns
       for (const town of townsToProcess) {
         console.log(`\n📊 Final verification for ${town.name}`);
         await verifyAndFixRestaurantCount(county.name, town.name);

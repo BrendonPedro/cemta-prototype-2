@@ -1,6 +1,7 @@
 import { Client, PlacesNearbyRanking, Language } from '@googlemaps/google-maps-services-js';
 import {
   createOrUpdateRestaurant,
+  ensureCountyTownStructure,
   getCachedRestaurantsForLocation,
   saveRestaurantData,verifyAndFixRestaurantCount,
   type RestaurantDocument,
@@ -261,6 +262,9 @@ export async function buildDatabase(
   // Process each town
   for (const town of countyData.towns) {
     try {
+      // Ensure structure exists before any processing
+      await ensureCountyTownStructure(countyData.name, town.name);
+      
       console.log(`\n📍 Processing town: ${town.name}`);
       console.log(`Location: ${town.location.lat}, ${town.location.lng}`);
 

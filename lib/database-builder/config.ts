@@ -7,7 +7,7 @@ export const CONFIG = {
     DELAY_BETWEEN_CALLS: 1000,
     MAX_RETRIES: 3,
     RETRY_DELAY: 2000,
-    DAILY_LIMIT: 200, // Added: Daily API call limit
+    DAILY_LIMIT: 400, // Added: Daily API call limit
   },
   PATHS: {
     IMAGES: 'counties/{countyName}/towns/{townName}/restaurants/{restaurantId}/images',
