@@ -411,7 +411,7 @@ const [options, setOptions] = useState<ProcessingOptions>({
   const form = useForm<ProcessingConfigForm>({
     resolver: zodResolver(processingConfigSchema),
     defaultValues: {
-      maxResults: 20, // Limit restaurants per area - Change this number to manage api calls/output results
+      maxResults: 20, // Limit restaurants per area (can be changed in UI) - Change this number to manage api calls/output results
       testMode: true, // Show detailed logs
       checkCacheOnly: false, // check what's cached first
       clearExistingCache: false, // Keep existing cache when false/ Clear before processing when true (don't set to true)

@@ -3,7 +3,8 @@ import {
   createOrUpdateRestaurant,
   ensureCountyTownStructure,
   getCachedRestaurantsForLocation,
-  saveRestaurantData,verifyAndFixRestaurantCount,
+  saveRestaurantData,
+  verifyAndFixRestaurantCount,
   type RestaurantDocument,
 } from '@/app/services/firebaseFirestore';
 import { uploadImageToBucket } from '@/app/services/gcpBucketStorage';
@@ -19,6 +20,12 @@ import {
   updateTownStatus,
   type QueuedTown
 } from '@/lib/database-builder/queue-manager';
+import { db } from '../db';
+import { 
+  writeBatch, 
+  increment, 
+  serverTimestamp 
+} from 'firebase/firestore';
 
 // ==================== Types & Interfaces ====================
 export interface BuilderConfig {
@@ -46,6 +53,27 @@ interface GooglePlacePhoto {
   html_attributions: string[];
 }
 
+// Type guard for place data
+function isValidPlace(place: any): place is { 
+  place_id: string; 
+  name: string; 
+  vicinity?: string;
+  rating?: number;
+  geometry?: { 
+    location: { 
+      lat: number | (() => number); 
+      lng: number | (() => number); 
+    } 
+  };
+  photos?: GooglePlacePhoto[];
+} {
+  return (
+    typeof place === 'object' &&
+    typeof place.place_id === 'string' &&
+    typeof place.name === 'string'
+  );
+}
+
 // ==================== Helper Functions ====================
 function validateFirebaseToken(token: string | null | undefined): token is string {
   if (!token) {
@@ -61,26 +89,6 @@ function validateFirebaseToken(token: string | null | undefined): token is strin
     return false;
   }
   return true;
-}
-
-function getPlaceLocation(place: any): { latitude: number; longitude: number } | undefined {
-  if (place?.geometry?.location) {
-    const lat = typeof place.geometry.location.lat === 'function' 
-      ? place.geometry.location.lat() 
-      : place.geometry.location.lat;
-    
-    const lng = typeof place.geometry.location.lng === 'function'
-      ? place.geometry.location.lng()
-      : place.geometry.location.lng;
-
-    if (typeof lat === 'number' && typeof lng === 'number') {
-      return {
-        latitude: lat,
-        longitude: lng
-      };
-    }
-  }
-  return undefined;
 }
 
 async function clearCache(lat: number, lng: number, scope: 'town' | 'all' = 'town') {
@@ -233,220 +241,156 @@ export async function buildDatabase(
   config: BuilderConfig
 ): Promise<ProcessingStats> {
   const client = new Client({});
-  const stats: ProcessingStats = {
-    totalProcessed: 0,
-    successful: 0,
-    failed: 0,
-    cached: 0,
-    apiCalls: {
-      google: 0,
-      yelp: 0
-    }
-  };
-
-  // Early validation and configuration
-  if (!config.firebaseToken) {
-    console.warn('⚠️ No Firebase token provided - photos will be skipped');
-  }
-
-  const maxResults = config.maxResults || 20;
-  console.log(`🚀 Starting database build for ${countyData.name}`);
-  console.log('Configuration:', {
-    maxResults,
-    testMode: config.testMode,
-    checkCacheOnly: config.checkCacheOnly
-  });
-
-  let currentQueuedTown: QueuedTown | null = null; 
+  const stats = initializeStats();
+  const processedRestaurants = new Set<string>();
   
-  // Process each town
   for (const town of countyData.towns) {
+    let currentQueuedTown = null;
+    
     try {
-      // Ensure structure exists before any processing
-      await ensureCountyTownStructure(countyData.name, town.name);
-      
       console.log(`\n📍 Processing town: ${town.name}`);
-      console.log(`Location: ${town.location.lat}, ${town.location.lng}`);
-
-      // Check for abort signal
-      if (config.signal?.aborted) {
-        console.log('❌ Operation aborted by user');
-        throw new Error('Operation aborted');
-      }
-
-      // Get town from queue and check API limits
-      currentQueuedTown = await getNextTownToProcess();
-      if (!currentQueuedTown) {
-        console.log('Daily API limit reached or no towns to process');
-        break;
-      }
+      
+      // Ensure structure exists before processing
+      await ensureCountyTownStructure(countyData.name, town.name);
 
       // Handle cache operations
-      if (config.clearCache) {
-        console.log(`🧹 Clearing cache for ${town.name}`);
-        await clearCache(town.location.lat, town.location.lng);
+      if (config.clearCache?.enabled) {
+        await clearBuilderCache(town.location.lat, town.location.lng);
       }
 
       // Check cache first
-      const cached = await getCachedBuildData(
-        town.location.lat,
-        town.location.lng,
-        countyData.name,
-        town.name
-      );
+      const cached = !config.clearCache?.enabled
+        ? await getCachedBuildData(
+            town.location.lat,
+            town.location.lng,
+            countyData.name,
+            town.name
+          )
+        : null;
 
-      if (cached) {
-        console.log(`✅ Cache HIT for ${town.name}: Found ${cached.length} restaurants`);
+      const maxResults = config.maxResults || 20;
 
-        // Remove duplicates from cached data
-        const uniqueRestaurants = Array.from(
-          new Map(cached.map(item => [item.id, item])).values()
-        );
-      
-        if (uniqueRestaurants.length < maxResults && !config.checkCacheOnly) {
-          console.log(`⚠️ Cache has ${uniqueRestaurants.length} unique results but ${maxResults} requested - fetching more...`);
+      if (cached?.length) {
+        // Process cached restaurants
+        for (const cachedRestaurant of cached) {
+          if (processedRestaurants.has(cachedRestaurant.id)) continue;
+          processedRestaurants.add(cachedRestaurant.id);
 
-          // Update stats for cached portion
-          stats.cached += cached.length;
+          if (processedRestaurants.size > maxResults) break;
 
-          // **Process cached restaurants**
-          for (const cachedRestaurant of cached) {
-            try {
-              console.log(`\n🏪 Processing cached restaurant: ${cachedRestaurant.name}`);
+          try {
+            const restaurantData: RestaurantData = {
+              id: cachedRestaurant.id,
+              name: cachedRestaurant.name,
+              address: cachedRestaurant.address,
+              rating: cachedRestaurant.rating || 0,
+              location: {
+                lat: cachedRestaurant.latitude,
+                lng: cachedRestaurant.longitude
+              },
+              googlePlaceId: cachedRestaurant.id,
+              photos: cachedRestaurant.imageUrl ? [cachedRestaurant.imageUrl] : [],
+              menuCount: cachedRestaurant.menuCount || 0,
+              lastUpdated: new Date().toISOString(),
+              createdAt: new Date().toISOString(),
+              source: {
+                google: cachedRestaurant.hasGoogleData || false,
+                yelp: cachedRestaurant.hasYelpData || false
+              }
+            };
 
-              // Create restaurant data object
-              const restaurantData: RestaurantData = {
-                id: cachedRestaurant.id,
-                name: cachedRestaurant.name,
-                address: cachedRestaurant.address,
-                rating: cachedRestaurant.rating || 0,
-                location: {
-                  lat: cachedRestaurant.latitude,
-                  lng: cachedRestaurant.longitude
-                },
-                googlePlaceId: cachedRestaurant.id,
-                photos: cachedRestaurant.imageUrl ? [cachedRestaurant.imageUrl] : [],
-                menuCount: cachedRestaurant.menuCount || 0,
-                lastUpdated: new Date().toISOString(),
-                createdAt: new Date().toISOString(),
-                source: {
-                  google: cachedRestaurant.hasGoogleData || false,
-                  yelp: cachedRestaurant.hasYelpData || false
-                }
-              };
+            await saveRestaurantData(
+              restaurantData,
+              countyData.name,
+              town.name,
+              true,
+              config.incrementalUpdate
+            );
 
-              // Save to database
-              await saveRestaurantData(
-                restaurantData,
-                countyData.name,
-                town.name
-              );
-            
-              console.log(`✅ Successfully processed cached restaurant ${cachedRestaurant.name}`);
-              stats.successful++;
-
-              // Track successful processing in queue
-              await trackAPICall('google', currentQueuedTown.id);
-              await updateTownStatus(currentQueuedTown.id, 'processing', stats.totalProcessed);
-
-            } catch (error) {
-              console.error(`❌ Error processing cached restaurant ${cachedRestaurant.name}:`, error);
-              await updateTownStatus(
-                currentQueuedTown.id,
-                'failed',
-                stats.totalProcessed,
-                error instanceof Error ? error.message : 'Unknown error'
-              );
-            }
-          
-            stats.totalProcessed++;
-
-            if (config.testMode) {
-              console.log('🔧 Test Mode: Adding delay between places');
-              await new Promise(resolve => setTimeout(resolve, 500));
-            }
+            stats.successful++;
+            stats.cached++;
+          } catch (error) {
+            console.error(`Error processing cached restaurant:`, error);
+            stats.failed++;
           }
+          stats.totalProcessed++;
+        }
+      }
 
-          // Proceed with API call for additional results
-          console.log(`📡 Fetching additional data from Google Places API for ${town.name}`);
+      // Fetch additional restaurants if needed
+      if (processedRestaurants.size < maxResults && !config.checkCacheOnly) {
+        let newRestaurants: CachedRestaurant[] = [];
+        let pageToken: string | undefined;
 
+        do {
           const response = await client.placesNearby({
             params: {
               location: town.location,
               rankby: PlacesNearbyRanking.distance,
               type: 'restaurant',
               key: config.googleApiKey,
-              language: Language.zh_TW
+              language: Language.zh_TW,
+              ...(pageToken ? { pagetoken: pageToken } : {})
             }
           });
 
           stats.apiCalls.google++;
 
-          // Process and limit additional places
-          const additionalPlaces = processPlaces(
-            response.data.results,
-            maxResults - cached.length // Only get the additional results needed
-          );
-
-          // Collect processed restaurant data
-          const additionalCachedRestaurants: CachedRestaurant[] = [];
-
-          // Process new places
-          for (const place of additionalPlaces) {
-            // Check for abort signal before each place
-            if (config.signal?.aborted) {
-              console.log('⛔ Processing aborted by user');
-              break;
+          for (const place of response.data.results) {
+            if (!isValidPlace(place) || processedRestaurants.has(place.place_id)) {
+              continue;
             }
 
+            if (processedRestaurants.size >= maxResults) break;
+
+            const location = getPlaceLocation(place);
+            if (!location) continue;
+
+            processedRestaurants.add(place.place_id);
+
             try {
-              console.log(`\n🏪 Processing additional place: ${place.name}`);
-
-              if (config.testMode) {
-                console.log('🔧 Test Mode: Detailed place data:', {
-                  id: place.place_id,
-                  name: place.name,
-                  address: place.vicinity,
-                  rating: place.rating
-                });
-              }
-
-              const location = getPlaceLocation(place);
-              if (!location || !place.place_id) continue;
-
-              // Process photos
-              const photos = await processPlacePhotos(place, config, {
-                countyName: countyData.name,
-                townName: town.name
-              });
-
-              // Save to database
-              await saveRestaurantData(
+              const photos = await processPlacePhotos(
+                { 
+                  place_id: place.place_id, 
+                  name: place.name, 
+                  photos: place.photos 
+                }, 
+                config, 
                 {
-                  id: place.place_id,
-                  name: place.name,
-                  address: place.vicinity || 'No address available',
-                  rating: place.rating || 0,
-                  location: {
-                    lat: location.latitude,
-                    lng: location.longitude
-                  },
-                  googlePlaceId: place.place_id,
-                  photos,
-                  menuCount: 0,
-                  lastUpdated: new Date().toISOString(),
-                  createdAt: new Date().toISOString(),
-                  source: {
-                    google: true,
-                    yelp: false
-                  }
-                },
-                countyData.name,
-                town.name
+                  countyName: countyData.name,
+                  townName: town.name
+                }
               );
 
-              // Collect cached restaurant data
-              additionalCachedRestaurants.push({
+              const restaurantData: RestaurantData = {
+                id: place.place_id,
+                name: place.name,
+                address: place.vicinity || 'No address available',
+                rating: place.rating || 0,
+                location: {
+                  lat: location.latitude,
+                  lng: location.longitude
+                },
+                googlePlaceId: place.place_id,
+                photos,
+                menuCount: 0,
+                lastUpdated: new Date().toISOString(),
+                createdAt: new Date().toISOString(),
+                source: {
+                  google: true,
+                  yelp: false
+                }
+              };
+
+              await saveRestaurantData(
+                restaurantData,
+                countyData.name,
+                town.name,
+                false,
+                config.incrementalUpdate
+              );
+
+              newRestaurants.push({
                 id: place.place_id,
                 name: place.name,
                 address: place.vicinity || 'No address available',
@@ -458,29 +402,28 @@ export async function buildDatabase(
                 source: 'google',
                 hasMenu: false,
                 imageUrl: photos[0] || '',
-                hasYelpData: false,
-                hasGoogleData: true
+                hasGoogleData: true,
+                hasYelpData: false
               });
 
-              console.log(`✅ Successfully processed additional place ${place.name}`);
               stats.successful++;
             } catch (error) {
-              console.error(`❌ Error processing additional place ${place.name}:`, error);
+              console.error(`Error processing place:`, error);
               stats.failed++;
             }
-
             stats.totalProcessed++;
-
-            if (config.testMode) {
-              console.log('🔧 Test Mode: Adding delay between places');
-              await new Promise(resolve => setTimeout(resolve, 500));
-            }
           }
 
-          // Combine cached and new restaurants
-          const combinedRestaurants = [...cached, ...additionalCachedRestaurants];
+          pageToken = response.data.next_page_token;
+          if (pageToken) {
+            await new Promise(resolve => setTimeout(resolve, 2000));
+          }
 
-          // Save combined data back to the cache
+        } while (pageToken && processedRestaurants.size < maxResults);
+
+        // Update cache with combined results
+        if (newRestaurants.length > 0) {
+          const combinedRestaurants = [...(cached || []), ...newRestaurants];
           await saveBuildCache(
             town.location.lat,
             town.location.lng,
@@ -488,267 +431,45 @@ export async function buildDatabase(
             town.name,
             combinedRestaurants
           );
-
-          // Add verification here
-          await verifyAndFixRestaurantCount(countyData.name, town.name);
-
-          await trackAPICall('google', currentQueuedTown.id);
-
-        } else {
-          // We have enough cached results
-          stats.cached += cached.length;
-          await updateTownStatus(currentQueuedTown.id, 'completed', cached.length);
-
-          // **Process cached restaurants**
-          for (const cachedRestaurant of cached) {
-            try {
-              console.log(`\n🏪 Processing cached restaurant: ${cachedRestaurant.name}`);
-
-              // Create restaurant data object
-              const restaurantData: RestaurantData = {
-                id: cachedRestaurant.id,
-                name: cachedRestaurant.name,
-                address: cachedRestaurant.address,
-                rating: cachedRestaurant.rating || 0,
-                location: {
-                  lat: cachedRestaurant.latitude,
-                  lng: cachedRestaurant.longitude
-                },
-                googlePlaceId: cachedRestaurant.id,
-                photos: cachedRestaurant.imageUrl ? [cachedRestaurant.imageUrl] : [],
-                menuCount: cachedRestaurant.menuCount || 0,
-                lastUpdated: new Date().toISOString(),
-                createdAt: new Date().toISOString(),
-                source: {
-                  google: cachedRestaurant.hasGoogleData || false,
-                  yelp: cachedRestaurant.hasYelpData || false
-                }
-              };
-
-              // Save to database
-              await saveRestaurantData(
-                restaurantData,
-                countyData.name,
-                town.name
-              );
-
-              console.log(`✅ Successfully processed cached restaurant ${cachedRestaurant.name}`);
-              stats.successful++;
-            } catch (error) {
-              console.error(`❌ Error processing cached restaurant ${cachedRestaurant.name}:`, error);
-              stats.failed++;
-            }
-
-            stats.totalProcessed++;
-
-            if (config.testMode) {
-              console.log('🔧 Test Mode: Adding delay between places');
-              await new Promise(resolve => setTimeout(resolve, 500));
-            }
-          }
-
-          continue; // Skip to the next town
-        }
-      } else {
-        console.log(`⚠️ Cache MISS for ${town.name}`);
-
-        // Only proceed with API calls if no cache hit
-        if (!config.checkCacheOnly) {
-          // Test mode delay
-          if (config.testMode) {
-            console.log(`🔧 Test Mode: Adding delay before processing ${town.name}`);
-            await new Promise(resolve => setTimeout(resolve, 1000));
-          }
-
-          console.log(`📡 Fetching data from Google Places API for ${town.name}`);
-let allResults = [];
-let pageToken = undefined;
-
-do {
-  const response = await client.placesNearby({
-    params: {
-      location: town.location,
-      rankby: PlacesNearbyRanking.distance,
-      type: 'restaurant',
-      key: config.googleApiKey,
-      language: Language.zh_TW,
-      ...(pageToken ? { pagetoken: pageToken } : {})
-    }
-  });
-
-  stats.apiCalls.google++;
-
-  if (response.data.results.length > 0) {
-    allResults.push(...response.data.results);
-    console.log(`Found ${response.data.results.length} places on this page`);
-  }
-
-  pageToken = response.data.next_page_token;
-  
-  if (pageToken) {
-    console.log('More results available, waiting before next page request...');
-    await new Promise(resolve => setTimeout(resolve, 2000)); // Required delay
-  }
-} while (pageToken && allResults.length < maxResults);
-
-console.log(`Total places found: ${allResults.length}`);
-
-          // Process and limit places
-          const validPlaces = processPlaces(allResults, maxResults);
-
-          // Collect processed restaurant data
-          const processedCachedRestaurants: CachedRestaurant[] = [];
-
-          // Process each place
-          for (const place of validPlaces) {
-            // Check for abort signal before each place
-            if (config.signal?.aborted) {
-              console.log('⛔ Processing aborted by user');
-              break;
-            }
-
-            try {
-              console.log(`\n🏪 Processing place: ${place.name}`);
-
-              if (config.testMode) {
-                console.log('🔧 Test Mode: Detailed place data:', {
-                  id: place.place_id,
-                  name: place.name,
-                  address: place.vicinity,
-                  rating: place.rating
-                });
-              }
-
-              const location = getPlaceLocation(place);
-              if (!location || !place.place_id) continue;
-
-              // Process photos
-              const photos = await processPlacePhotos(place, config, {
-                countyName: countyData.name,
-                townName: town.name
-              });
-
-              // Save to database
-              await saveRestaurantData(
-                {
-                  id: place.place_id,
-                  name: place.name,
-                  address: place.vicinity || 'No address available',
-                  rating: place.rating || 0,
-                  location: {
-                    lat: location.latitude,
-                    lng: location.longitude
-                  },
-                  googlePlaceId: place.place_id,
-                  photos,
-                  menuCount: 0,
-                  lastUpdated: new Date().toISOString(),
-                  createdAt: new Date().toISOString(),
-                  source: {
-                    google: true,
-                    yelp: false
-                  }
-                },
-                countyData.name,
-                town.name
-              );
-
-              // Collect cached restaurant data
-              processedCachedRestaurants.push({
-                id: place.place_id,
-                name: place.name,
-                address: place.vicinity || 'No address available',
-                rating: place.rating || 0,
-                latitude: location.latitude,
-                longitude: location.longitude,
-                menuCount: 0,
-                county: countyData.name,
-                source: 'google',
-                hasMenu: false,
-                imageUrl: photos[0] || '',
-                hasYelpData: false,
-                hasGoogleData: true
-              });
-
-              console.log(`✅ Successfully processed ${place.name}`);
-              stats.successful++;
-            } catch (error) {
-              console.error(`❌ Error processing place ${place.name}:`, error);
-              stats.failed++;
-            }
-
-            stats.totalProcessed++;
-
-            if (config.testMode) {
-              console.log('🔧 Test Mode: Adding delay between places');
-              await new Promise(resolve => setTimeout(resolve, 500));
-            }
-          }
-
-          // Save processed data to the cache
-          await saveBuildCache(
-            town.location.lat,
-            town.location.lng,
-            countyData.name,
-            town.name,
-            processedCachedRestaurants
-          );
         }
       }
 
-      // Track API calls in queue
-      await trackAPICall('google', currentQueuedTown.id);
-
-      if (currentQueuedTown) {
-        await updateTownStatus(
-          currentQueuedTown.id,
-          'completed',
-          stats.totalProcessed
-        );
-      }
-
-      await verifyAndFixRestaurantCount(countyData.name, town.name);
+      // Verify counts after processing town
+      await verifyAndFixRestaurantCount(countyData.name, town.name, true);
 
     } catch (error) {
-      console.error(`❌ Error processing town ${town.name}:`, error);
+      console.error(`Error processing town:`, error);
       stats.failed++;
-
-      // Update queue status on error
-      if (currentQueuedTown) {
-        await updateTownStatus(
-          currentQueuedTown.id,
-          'failed',
-          0,
-          error instanceof Error ? error.message : 'Unknown error'
-        );
-      }
-
-      if (error instanceof Error && error.message === 'Operation aborted') {
-        break;
-      }
     }
   }
 
-  console.log('\n🏁 Processing complete!');
-  console.log('Final Statistics:', {
-    totalProcessed: stats.totalProcessed,
-    successful: stats.successful,
-    failed: stats.failed,
-    cached: stats.cached,
-    apiCalls: stats.apiCalls
-  });
-
-    // Before returning stats
-    console.log('\n🏁 Running final count verification...');
-    for (const town of countyData.towns) {
-      await verifyAndFixRestaurantCount(countyData.name, town.name);
-    }
+  // Final verification for all towns
+  for (const town of countyData.towns) {
+    await verifyAndFixRestaurantCount(countyData.name, town.name, true);
+  }
 
   return stats;
 }
 
+function getPlaceLocation(place: any): { latitude: number; longitude: number } | undefined {
+  if (place?.geometry?.location) {
+    const lat = typeof place.geometry.location.lat === 'function' 
+      ? place.geometry.location.lat() 
+      : place.geometry.location.lat;
+    
+    const lng = typeof place.geometry.location.lng === 'function'
+      ? place.geometry.location.lng()
+      : place.geometry.location.lng;
 
-
+    if (typeof lat === 'number' && typeof lng === 'number') {
+      return {
+        latitude: lat,
+        longitude: lng
+      };
+    }
+  }
+  return undefined;
+}
 
 // ==================== Batch Processing Functions ====================
 export async function processBatch(

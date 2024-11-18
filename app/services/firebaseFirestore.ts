@@ -1186,78 +1186,76 @@ export async function saveRestaurantData(
 ): Promise<void> {
   console.log(`\n🔄 Starting save process for restaurant: ${restaurantData.name}`);
   console.log(`County: ${countyName}, Town: ${townName}`);
-  console.log(`From Cache: ${fromCache}, Incremental Update: ${incrementalUpdate}`);
 
   try {
-    // Always ensure structure exists when force parameter is true
     if (forceEnsureStructure) {
       await ensureCountyTownStructure(countyName, townName);
     }
 
     const batch = writeBatch(db);
+    
+    // References
     const countyRef = doc(db, 'counties', countyName);
     const townRef = doc(countyRef, 'towns', townName);
     const restaurantRef = doc(townRef, 'restaurants', restaurantData.id);
     const globalRestaurantRef = doc(db, 'restaurants', restaurantData.id);
 
-    // Check if restaurant exists in BOTH locations
+    // Check existing data
     const [existingTownRestaurant, existingGlobalRestaurant] = await Promise.all([
       getDoc(restaurantRef),
       getDoc(globalRestaurantRef)
     ]);
 
-    console.log(`Restaurant ${restaurantData.name} exists in:`);
-    console.log(`- Town collection: ${existingTownRestaurant.exists()}`);
-    console.log(`- Global collection: ${existingGlobalRestaurant.exists()}`);
-
-    // Save restaurant data
+    // Prepare data with county and town information
     const dataToSave = {
       ...restaurantData,
       countyName,
       townName,
-      lastUpdated: serverTimestamp()
+      lastUpdated: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      ...((!existingTownRestaurant.exists() || !existingGlobalRestaurant.exists()) && {
+        createdAt: serverTimestamp()
+      })
     };
 
-    // Always save the data to both locations
-    batch.set(restaurantRef, dataToSave, { merge: true });
-    batch.set(globalRestaurantRef, dataToSave, { merge: true });
+    // Save to both locations
+    batch.set(restaurantRef, dataToSave, { merge: incrementalUpdate });
+    batch.set(globalRestaurantRef, dataToSave, { merge: incrementalUpdate });
 
-    // Only increment counts if this is a truly new restaurant
-    if (!existingTownRestaurant.exists() && !existingGlobalRestaurant.exists()) {
-      console.log(`📈 Incrementing counts for new restaurant: ${restaurantData.name}`);
-      
-      // Update town count
+    // Update counts for truly new restaurants
+    if (!existingTownRestaurant.exists()) {
       batch.update(townRef, {
         restaurantCount: increment(1),
         lastUpdated: serverTimestamp()
       });
 
-      // Update county count
-      batch.update(countyRef, {
-        restaurantCount: increment(1),
-        lastUpdated: serverTimestamp()
-      });
-    } else {
-      console.log(`ℹ️ Skipping count increment for existing restaurant: ${restaurantData.name}`);
+      // Only increment county count if it's also new in global collection
+      if (!existingGlobalRestaurant.exists()) {
+        batch.update(countyRef, {
+          restaurantCount: increment(1),
+          lastUpdated: serverTimestamp()
+        });
+      }
     }
 
+    // Commit all changes
     await batch.commit();
-    console.log(`✅ Successfully saved ${restaurantData.name}`);
 
-    // Verify the save
+    // Verify changes
     const [verifyTown, verifyGlobal] = await Promise.all([
       getDoc(restaurantRef),
       getDoc(globalRestaurantRef)
     ]);
-    console.log('\n📊 Verification results:');
-    console.log(`- Town document exists: ${verifyTown.exists()}`);
-    console.log(`- Global document exists: ${verifyGlobal.exists()}`);
 
-    // Force a count verification after save
+    if (!verifyTown.exists() || !verifyGlobal.exists()) {
+      throw new Error('Verification failed: Restaurant not saved correctly');
+    }
+
+    // Force count verification
     await verifyAndFixRestaurantCount(countyName, townName, true);
 
   } catch (error) {
-    console.error(`❌ Error saving restaurant data for ${restaurantData.name}:`, error);
+    console.error(`Error saving restaurant data for ${restaurantData.name}:`, error);
     throw error;
   }
 }
@@ -1269,53 +1267,74 @@ export async function verifyAndFixRestaurantCount(
   forceUpdate: boolean = true
 ): Promise<void> {
   try {
-    console.log(`\n🔍 Starting count verification for ${townName}, ${countyName}`);
+    console.log(`\n🔍 Verifying counts for ${townName}, ${countyName}`);
     
     const countyRef = doc(db, 'counties', countyName);
     const townRef = doc(countyRef, 'towns', townName);
 
-    // Get all unique restaurants in the county from global collection
-    const globalRestaurantsQuery = query(
+    // Get all restaurants from both collections
+    const [globalRestaurants, townRestaurants] = await Promise.all([
+      getDocs(query(
+        collection(db, 'restaurants'),
+        where('countyName', '==', countyName),
+        where('townName', '==', townName)
+      )),
+      getDocs(collection(townRef, 'restaurants'))
+    ]);
+
+    // Get unique counts
+    const globalIds = new Set(globalRestaurants.docs.map(doc => doc.id));
+    const townIds = new Set(townRestaurants.docs.map(doc => doc.id));
+
+    // Get county-wide restaurant count
+    const allCountyRestaurants = await getDocs(query(
       collection(db, 'restaurants'),
       where('countyName', '==', countyName)
-    );
-    const globalRestaurants = await getDocs(globalRestaurantsQuery);
-    
-    // Create a Set of unique restaurant IDs
-    const uniqueRestaurantIds = new Set(
-      globalRestaurants.docs.map(doc => doc.id)
-    );
-    const totalCountyCount = uniqueRestaurantIds.size;
+    ));
+    const totalCountyCount = new Set(allCountyRestaurants.docs.map(doc => doc.id)).size;
 
-    // Get current town's unique restaurants
-    const townRestaurants = await getDocs(collection(townRef, 'restaurants'));
-    const uniqueTownRestaurantIds = new Set(
-      townRestaurants.docs.map(doc => doc.id)
-    );
-    const actualTownCount = uniqueTownRestaurantIds.size;
+    // If counts don't match or force update is true, fix them
+    if (forceUpdate || globalIds.size !== townIds.size || townRestaurants.size !== townIds.size) {
+      const batch = writeBatch(db);
 
-    const batch = writeBatch(db);
-    
-    // Update town count with unique count
-    batch.update(townRef, {
-      restaurantCount: actualTownCount,
-      lastUpdated: serverTimestamp()
-    });
+      // Update town count
+      batch.update(townRef, {
+        restaurantCount: townIds.size,
+        lastUpdated: serverTimestamp()
+      });
 
-    // Update county count with total unique count
-    batch.update(countyRef, {
-      restaurantCount: totalCountyCount,
-      lastUpdated: serverTimestamp()
-    });
+      // Update county count
+      batch.update(countyRef, {
+        restaurantCount: totalCountyCount,
+        lastUpdated: serverTimestamp()
+      });
 
-    await batch.commit();
-    
-    console.log(`✅ Updated counts - Town: ${actualTownCount}, County: ${totalCountyCount}`);
+      await batch.commit();
+
+      // Verify the updates
+      const [townDoc, countyDoc] = await Promise.all([
+        getDoc(townRef),
+        getDoc(countyRef)
+      ]);
+
+      const updatedTownCount = townDoc.data()?.restaurantCount || 0;
+      const updatedCountyCount = countyDoc.data()?.restaurantCount || 0;
+
+      if (updatedTownCount !== townIds.size || updatedCountyCount !== totalCountyCount) {
+        throw new Error('Count verification failed after update');
+      }
+
+      console.log(`✅ Updated counts - Town: ${updatedTownCount}, County: ${updatedCountyCount}`);
+    } else {
+      console.log('✅ Counts are accurate, no update needed');
+    }
+
   } catch (error) {
     console.error(`❌ Error verifying counts:`, error);
     throw error;
   }
 }
+
 // A helper function to create county/town structure if it doesn't exist
 export async function ensureCountyTownStructure(countyName: string, townName: string): Promise<void> {
   try {
