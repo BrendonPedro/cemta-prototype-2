@@ -5,6 +5,7 @@ import {
   getCachedRestaurantsForLocation,
   saveRestaurantData,
   verifyAndFixRestaurantCount,
+  trackApiUsage,
   type RestaurantDocument,
 } from '@/app/services/firebaseFirestore';
 import { uploadImageToBucket } from '@/app/services/gcpBucketStorage';
@@ -436,6 +437,8 @@ export async function buildDatabase(
 
       // Verify counts after processing town
       await verifyAndFixRestaurantCount(countyData.name, town.name, true);
+      await trackApiUsage('google', stats.apiCalls.google);
+await trackApiUsage('yelp', stats.apiCalls.yelp);
 
     } catch (error) {
       console.error(`Error processing town:`, error);

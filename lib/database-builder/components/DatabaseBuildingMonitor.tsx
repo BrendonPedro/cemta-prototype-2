@@ -6,7 +6,7 @@ import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import {
   Table,
   TableBody,
@@ -41,7 +41,8 @@ import {
   Settings,
   Pause,
   Square as Stop,
-  Play,
+  Play, 
+  BarChart, 
 } from "lucide-react";
 import { counties } from "@/lib/data/counties";
 import type { EnhancedCountyData } from "@/lib/data/counties";
@@ -81,6 +82,14 @@ import {
   getQueueStatus, 
   getProcessingMetrics 
 } from '../queue-manager';
+import { format } from 'date-fns';
+import { 
+  getQuotaStats, 
+  suggestProcessingStrategy,
+  canMakeApiCall,
+  trackApiCall,
+  type QuotaStats 
+} from '@/lib/database-builder/quota-manager';
 
 // Type definitions
 
@@ -131,6 +140,32 @@ interface Props {
   refreshInterval?: number;
 }
 
+interface QuotaDisplay {
+  dailyUsed: number;
+  dailyLimit: number;
+  monthlyUsed: number;
+  monthlyLimit: number;
+  remainingCalls: number;
+  nextReset: Date;
+}
+
+//helper function for monthly reset calculation
+const getMonthlyReset = (date: Date) => {
+  const nextMonth = new Date(date);
+  nextMonth.setMonth(nextMonth.getMonth() + 1);
+  nextMonth.setDate(1);
+  return nextMonth;
+};
+
+//  helper function to transform quota stats
+const transformQuotaStats = (stats: QuotaStats): QuotaDisplay => ({
+  dailyUsed: stats.dailyCallsUsed,
+  dailyLimit: 1000, // Using the default quota limit
+  monthlyUsed: stats.monthlyCallsUsed,
+  monthlyLimit: 30000, // Using the default quota limit
+  remainingCalls: 1000 - stats.dailyCallsUsed,
+  nextReset: stats.lastReset.toDate()
+});
 
 // Zod schema for form validation
 const processingConfigSchema = z.object({
@@ -142,7 +177,55 @@ const processingConfigSchema = z.object({
 
 type ProcessingConfigForm = z.infer<typeof processingConfigSchema>;
 
-// Sub-components
+// -----Sub-components-----
+
+// Quota Status Display
+function QuotaStatusDisplay({ quota }: { quota: QuotaDisplay }) {
+  const usagePercentage = (quota.dailyUsed / quota.dailyLimit) * 100;
+  const isWarning = usagePercentage > 80;
+  
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>API Quota Status</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-4">
+          <div>
+            <div className="flex justify-between mb-2">
+              <span>Daily Usage</span>
+              <span>{quota.dailyUsed}/{quota.dailyLimit}</span>
+            </div>
+            <Progress value={usagePercentage} 
+                      className={isWarning ? 'bg-red-200' : 'bg-blue-200'} />
+          </div>
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <span className="text-sm text-gray-500">Monthly Usage</span>
+              <p>{quota.monthlyUsed}/{quota.monthlyLimit}</p>
+            </div>
+            <div>
+              <span className="text-sm text-gray-500">Next Reset</span>
+              <p>{format(quota.nextReset, 'PP')}</p>
+            </div>
+          </div>
+
+          {isWarning && (
+            <Alert variant="destructive">
+              <AlertTitle>Approaching Daily Limit</AlertTitle>
+              <AlertDescription>
+                Consider using cache-only mode or reducing batch size.
+              </AlertDescription>
+            </Alert>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// Stats Display
 const StatsDisplay = ({ apiCallStats }: { apiCallStats: ApiCallStats }) => (
   <div className="mt-4 bg-gray-50 rounded-lg p-4">
     <h4 className="text-sm font-medium mb-3">Processing Statistics</h4>
@@ -365,7 +448,8 @@ function formatTimestamp(timestamp: Timestamp | Date): string {
   return date.toLocaleString();
 }
 
-// Main component
+// -----Main component-----
+
 export default function DatabaseBuilding({
   refreshInterval = 5000,
 }: Props): JSX.Element {
@@ -421,8 +505,9 @@ const [options, setOptions] = useState<ProcessingOptions>({
   const [monitoringStats, setMonitoringStats] = useState<MonitoringStats | null>(null);
   const [processingProgress, setProcessingProgress] = useState<ProcessingProgress | null>(null);
   const [loading, setLoading] = useState(true);
+  const [quotaStats, setQuotaStats] = useState<QuotaDisplay | null>(null);
 
-  // Add this to track processing state
+  // Track processing state
   const [processingState, setProcessingState] = useState<{
     isProcessing: boolean;
     isPaused: boolean;
@@ -436,8 +521,7 @@ const [options, setOptions] = useState<ProcessingOptions>({
   const [processingController, setProcessingController] =
     useState<AbortController | null>(null);
 
-  // Event handlers
-
+    // Event handlers
   const handleInitializeQueue = async () => {
     if (!selectedCounty) return;
   
@@ -520,24 +604,55 @@ const [options, setOptions] = useState<ProcessingOptions>({
 
   const { uploadBatch, processing: imageProcessing } = useImageUploader();
 
+  useEffect(() => {
+    const loadQuotaStats = async () => {
+      try {
+        const stats = await getQuotaStats(); // Using imported function
+        setQuotaStats(transformQuotaStats(stats));
+      } catch (error) {
+        console.error('Error loading quota stats:', error);
+      }
+    };
+  
+    loadQuotaStats();
+    const interval = setInterval(loadQuotaStats, 60000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Processing handlers
   const handleStartProcessing = async () => {
-    if (!selectedCounty) return;
-  
-    if (!firebaseToken) {
-      console.warn("⚠️ No Firebase token available - photos will be skipped");
-      toast({
-        title: "Warning",
-        description: "No authentication token - photos will be skipped",
-        variant: "destructive",
-      });
-    }
-  
-    setIsProcessing(true);
-    setError(null);
-  
     try {
+      const canProcess = await canMakeApiCall();
+      if (!canProcess) {
+        toast({
+          title: "Quota Limit",
+          description: "Daily API quota reached. Try again tomorrow.",
+          variant: "destructive"
+        });
+        return;
+      }
+  
+      const strategy = await suggestProcessingStrategy();
       const formData = form.getValues();
+      
+      // Update form with suggested values
+      form.setValue('maxResults', strategy.maxResults);
+      form.setValue('checkCacheOnly', strategy.shouldUseCacheOnly);
+      
+      if (!selectedCounty) return;
+  
+      if (!firebaseToken) {
+        console.warn("⚠️ No Firebase token available - photos will be skipped");
+        toast({
+          title: "Warning",
+          description: "No authentication token - photos will be skipped",
+          variant: "destructive",
+        });
+      }
+  
+      setIsProcessing(true);
+      setError(null);
+     
   
       // First, initialize the queue with selected towns
       const townsToProcess = selectedCounty.towns
@@ -574,6 +689,7 @@ const [options, setOptions] = useState<ProcessingOptions>({
       const processConfig: ProcessingOptions = {
         selectedTowns: selectedTowns[selectedCounty.name] || [],
         firebaseToken: firebaseToken || undefined,
+        ...strategy, // Prioritize suggested values over UI input values
         maxResults: Number(formData.maxResults),
         testMode: Boolean(formData.testMode),
         checkCacheOnly: Boolean(formData.checkCacheOnly),
@@ -593,6 +709,9 @@ const [options, setOptions] = useState<ProcessingOptions>({
       const result = await buildCountyDatabase(countyData, processConfig);
   
       if (result.success && result.stats) {
+        // Track API calls here, after successful processing
+        await trackApiCall();
+        
         setApiCallStats({
           googleCalls: result.stats.apiCalls.google,
           yelpCalls: result.stats.apiCalls.yelp,
@@ -752,6 +871,8 @@ const [options, setOptions] = useState<ProcessingOptions>({
     };
     return variants[status] || "bg-gray-100 text-gray-800";
   };
+
+
 
   // Component render
   return (
@@ -954,26 +1075,116 @@ const [options, setOptions] = useState<ProcessingOptions>({
 
         {/* Tabs Section */}
         {selectedCounty && (
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList>
-              <TabsTrigger value="status">
-                <Database className="mr-2 h-4 w-4" />
-                Status
-              </TabsTrigger>
-              <TabsTrigger value="coverage">
-                <Map className="mr-2 h-4 w-4" />
-                Coverage
-              </TabsTrigger>
-              <TabsTrigger value="settings">
-                <Settings className="mr-2 h-4 w-4" />
-                Settings
-              </TabsTrigger>
-              <TabsTrigger value="monitoring">
-                <RefreshCcw className="mr-2 h-4 w-4" />
-                Monitoring
-              </TabsTrigger>
-            </TabsList>
+  <Tabs value={activeTab} onValueChange={setActiveTab}>
+    <TabsList>
+      <TabsTrigger value="status">
+        <Database className="mr-2 h-4 w-4" />
+        Status
+      </TabsTrigger>
+      <TabsTrigger value="coverage">
+        <Map className="mr-2 h-4 w-4" />
+        Coverage
+      </TabsTrigger>
+      <TabsTrigger value="settings">
+        <Settings className="mr-2 h-4 w-4" />
+        Settings
+      </TabsTrigger>
+      <TabsTrigger value="monitoring">
+        <RefreshCcw className="mr-2 h-4 w-4" />
+        Monitoring
+      </TabsTrigger>
+      {/* Add new Quota tab */}
+      <TabsTrigger value="quota">
+        <BarChart className="mr-2 h-4 w-4" />
+        API Quota
+      </TabsTrigger>
+    </TabsList>
 
+    {/* Add new Quota tab content */}
+    <TabsContent value="quota" className="space-y-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>API Quota Management</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-6">
+            {/* First Grid - API Usage Stats */}
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <h3 className="text-sm font-medium">API Usage</h3>
+                <dl className="mt-2 space-y-1">
+                  <div className="flex justify-between">
+                    <dt>Daily Usage:</dt>
+                    <dd>{quotaStats?.dailyUsed}/{quotaStats?.dailyLimit}</dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt>Monthly Usage:</dt>
+                    <dd>{quotaStats?.monthlyUsed}/{quotaStats?.monthlyLimit}</dd>
+                  </div>
+                </dl>
+              </div>
+              
+              <div>
+                <h3 className="text-sm font-medium">Remaining</h3>
+                <div className="mt-2">
+                <Progress 
+  value={((quotaStats?.dailyUsed ?? 0) / (quotaStats?.dailyLimit ?? 1000)) * 100} 
+  className="h-2"
+/>
+                  <p className="text-sm mt-1">
+                    {quotaStats?.remainingCalls} calls remaining today
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Daily Usage Breakdown */}
+            <div className="mt-4">
+              <h3 className="text-lg font-medium">Daily Usage Breakdown</h3>
+              <div className="mt-2 space-y-2">
+                <div>
+                  <div className="flex justify-between">
+                    <span>Google Places API</span>
+                    <span>{apiCallStats.googleCalls} calls</span>
+                  </div>
+                  <Progress 
+                    value={(apiCallStats.googleCalls / 1000) * 100} 
+                    className="mt-1"
+                  />
+                </div>
+                <div>
+                  <div className="flex justify-between">
+                    <span>Yelp API</span>
+                    <span>{apiCallStats.yelpCalls} calls</span>
+                  </div>
+                  <Progress 
+                    value={(apiCallStats.yelpCalls / 1000) * 100} 
+                    className="mt-1"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Reset Times */}
+            <div className="mt-4">
+              <h3 className="text-lg font-medium">Quota Reset Times</h3>
+              <div className="mt-2 grid grid-cols-2 gap-4">
+                <div>
+                  <span className="text-sm text-gray-500">Daily Reset</span>
+                  <p>{quotaStats && format(quotaStats.nextReset, 'pp')}</p>
+                </div>
+                <div>
+                  <span className="text-sm text-gray-500">Monthly Reset</span>
+                  <p>{quotaStats && format(getMonthlyReset(quotaStats.nextReset), 'PP')}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </TabsContent>
+
+            {/* Monitoring Tab Content */}
             <TabsContent value="monitoring" className="space-y-4">
               {loading ? (
                 <div className="flex items-center justify-center p-8">
@@ -986,6 +1197,7 @@ const [options, setOptions] = useState<ProcessingOptions>({
                 </Alert>
               ) : (
                 <>
+                {quotaStats && <QuotaStatusDisplay quota={quotaStats} />}
                   {queueStatus && <QueueStatusDisplay queueStatus={queueStatus} />}
                   {processingProgress && (
                     <ProcessingProgressDisplay progress={processingProgress} />

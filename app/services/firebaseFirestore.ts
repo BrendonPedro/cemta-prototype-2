@@ -1408,3 +1408,21 @@ export async function verifyRestaurantCount(countyName: string, townName: string
   }
 }
 
+export async function trackApiUsage(
+  type: 'google' | 'yelp',
+  count: number = 1
+): Promise<void> {
+  const today = new Date().toISOString().split('T')[0];
+  const usageRef = doc(db, 'apiQuotaUsage', today);
+  
+  try {
+    await setDoc(usageRef, {
+      [`${type}Calls`]: increment(count),
+      lastUpdated: serverTimestamp()
+    }, { merge: true });
+  } catch (error) {
+    console.error('Error tracking API usage:', error);
+    throw error;
+  }
+}
+
