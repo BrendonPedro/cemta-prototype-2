@@ -792,137 +792,96 @@ const [availableTowns, setAvailableTowns] = useState<EnhancedTownData[]>([]);
             {/* Restaurant Table */}
             <Table className="table-auto w-full">
             <TableHeader>
-  <TableRow className="bg-customTeal/10">
-    <TableHead className="text-customTeal w-2/5 text-left hover:bg-customTeal/10">
-      Restaurant
-      <DropdownMenu>
-        <DropdownMenuTrigger className="inline-flex items-center ml-2">
-          <ChevronDown className="h-4 w-4" />
-        </DropdownMenuTrigger>
-        <DropdownMenuContent>
-          <DropdownMenuItem onSelect={() => setNameFilter("all")}>
-            All Restaurants
-          </DropdownMenuItem>
-          {Array.from(new Set(restaurants.map((r) => r.name))).map((name) => (
-            <DropdownMenuItem key={name} onSelect={() => setNameFilter(name)}>
-              {name}
-            </DropdownMenuItem>
-          ))}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </TableHead>
-    <TableHead className="text-customTeal w-1/6 text-center hover:bg-customTeal/10">
-                    Menus
-                    <DropdownMenu>
-                      <DropdownMenuTrigger className="inline-flex items-center ml-2">
+              <TableRow className="bg-customTeal/10">
+                {/* Restaurant Column */}
+                <TableHead className="text-customTeal w-2/5 text-left hover:bg-customTeal/10 p-0">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger className="w-full h-full px-4 py-2 flex items-center gap-1 outline-none">
+                      <div className="flex items-center gap-1">
+                        Restaurant
                         <ChevronDown className="h-4 w-4" />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent>
-                        <DropdownMenuItem
-                          onSelect={() => setMenuCountFilter("all")}
-                        >
-                          All
+                      </div>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent 
+                      align="start" 
+                      className="min-w-[200px] ml-[200px]"
+                    >
+                      <DropdownMenuItem onSelect={() => setNameFilter("all")}>
+                        All Restaurants
+                      </DropdownMenuItem>
+                      {Array.from(new Set(restaurants.map((r) => r.name))).map((name) => (
+                        <DropdownMenuItem key={name} onSelect={() => setNameFilter(name)}>
+                          {name}
                         </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onSelect={() => setMenuCountFilter("0")}
-                        >
-                          No menus
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onSelect={() => setMenuCountFilter("1-3")}
-                        >
-                          1-3 menus
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onSelect={() => setMenuCountFilter("4+")}
-                        >
-                          4+ menus
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableHead>
-                  <TableHead className="text-customTeal w-1/5 text-center hover:bg-customTeal/10">
-                    Rating
-                    <DropdownMenu>
-                      <DropdownMenuTrigger className="inline-flex items-center ml-2">
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TableHead>
+
+                {/* Menus Column */}
+                <TableHead className="text-customTeal w-1/6 text-center hover:bg-customTeal/10 p-0">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger className="w-full h-full px-4 py-2 flex items-center justify-center outline-none">
+                      <div className="flex items-center gap-1">
+                        Menus
                         <ChevronDown className="h-4 w-4" />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent>
-                        <DropdownMenuItem
-                          onSelect={() => setRatingFilter("all")}
-                        >
-                          All Ratings
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onSelect={() => setRatingFilter("4+")}
-                        >
-                          4+ stars
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onSelect={() => setRatingFilter("3-4")}
-                        >
-                          3-4 stars
-                        </DropdownMenuItem>
-                        <DropdownMenuItem
-                          onSelect={() => setRatingFilter("0-3")}
-                        >
-                          Below 3 stars
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                    </TableHead>
-                  <TableHead className="text-customTeal w-1/6 text-center hover:bg-customTeal/10">
-                    Location
-                    <DropdownMenu>
-                      <DropdownMenuTrigger className="inline-flex items-center ml-2">
+                      </div>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="center">
+                      <DropdownMenuItem onSelect={() => setMenuCountFilter("all")}>
+                        All
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setMenuCountFilter("0")}>
+                        No menus
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setMenuCountFilter("1-3")}>
+                        1-3 menus
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setMenuCountFilter("4+")}>
+                        4+ menus
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TableHead>
+
+                {/* Rating Column */}
+                <TableHead className="text-customTeal w-1/12 text-center hover:bg-customTeal/10 p-0">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger className="w-full h-full px-4 py-2 flex items-center justify-center outline-none">
+                      <div className="flex items-center gap-1">
+                        Rating
                         <ChevronDown className="h-4 w-4" />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent>
-                        <DropdownMenuItem onSelect={() => setCountyFilter("all")}>
-                          All Counties
-                        </DropdownMenuItem>
-                        {counties.map((county: EnhancedCountyData) => (
-                          <DropdownMenuItem
-                            key={county.name}
-                            onSelect={() => {
-                              setCountyFilter(county.name);
-                              const countyTowns = getTownsByCounty(county.name);
-                              setTownFilter("all");
-                              setAvailableTowns(countyTowns);
-                            }}
-                          >
-                            {county.name}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableHead>
-                  <TableHead className="text-customTeal w-1/6 text-center hover:bg-customTeal/10">
-                    Town
-                    <DropdownMenu>
-                      <DropdownMenuTrigger 
-                        className="inline-flex items-center ml-2"
-                        disabled={countyFilter === "all"} // Disable if no county selected
-                      >
-                        <ChevronDown className="h-4 w-4" />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent>
-                        <DropdownMenuItem onSelect={() => setTownFilter("all")}>
-                          All Towns
-                        </DropdownMenuItem>
-                        {availableTowns.map((town) => (
-                          <DropdownMenuItem
-                            key={town.name}
-                            onSelect={() => setTownFilter(town.name)}
-                          >
-                            {town.name}
-                          </DropdownMenuItem>
-                        ))}
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
+                      </div>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="center">
+                      <DropdownMenuItem onSelect={() => setRatingFilter("all")}>
+                        All Ratings
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setRatingFilter("4+")}>
+                        4+ stars
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setRatingFilter("3-4")}>
+                        3-4 stars
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onSelect={() => setRatingFilter("0-3")}>
+                        Below 3 stars
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </TableHead>
+
+                {/* Location Column - No dropdown */}
+                <TableHead className="text-customTeal w-1/6 text-center px-4 py-2 hover:bg-customTeal/10 p-0">
+                  Location
+                </TableHead>
+
+                {/* Town Column - No dropdown */}
+                <TableHead className="text-customTeal w-1/6 text-center px-4 py-2 hover:bg-customTeal/10 p-0">
+                  Town
+                </TableHead>
+              </TableRow>
+            </TableHeader>
+
               <TableBody>
                 {filteredRestaurants.map((restaurant) => (
                   <TableRow
@@ -992,7 +951,7 @@ const [availableTowns, setAvailableTowns] = useState<EnhancedTownData[]>([]);
                         </Button>
                       )}
                     </TableCell>
-                    <TableCell className="w-1/6 text-center">
+                    <TableCell className="w-1/12 text-center">
                       {restaurant.rating.toFixed(1)}
                     </TableCell>
                     <TableCell className="w-1/6 text-center">
