@@ -38,12 +38,6 @@ import {
   clearLocationCache  
 } from '@/lib/database-builder/cache';
 import type { EnhancedCountyData } from '@/lib/data/counties';
-import type { BuilderConfig } from '@/lib/database-builder/core/builder'
-import {
-  createOrUpdateRestaurant,
-  getCachedRestaurantsForLocation,
-  batchUpdateRestaurants
-} from '@/app/services/firebaseFirestore';
 import { RestaurantData } from '@/lib/database-builder/types';
 import { saveRestaurantData } from '@/app/services/firebaseFirestore';
 
@@ -97,8 +91,7 @@ async function processCachedRestaurants(
         },
         countyName,
         townName,
-        true, // fromCache
-        options.incrementalUpdate
+        { fromCache: true, incrementalUpdate: options.incrementalUpdate }
       );
       
       processedIds.add(restaurant.id);

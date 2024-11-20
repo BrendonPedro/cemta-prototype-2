@@ -66,8 +66,30 @@ interface RequestBody {
   restaurantId: string;
   forceReprocess?: boolean;
   menuId?: string;
+  yelpId?: string; 
 }
 
+interface SaveData {
+  userId: string;
+  menuData: any;
+  menuId: string;
+  restaurantId: string;
+  menuName: string;
+  imageUrl: string;
+  restaurantName: string;
+  yelpId?: string; 
+}
+
+// Helper function for error handling
+function getErrorDetails(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (typeof error === 'object' && error !== null && 'message' in error) {
+    return String((error as { message: unknown }).message);
+  }
+  return String(error);
+}
 // Initialize Vision API client
 const visionClient = new vision.ImageAnnotatorClient();
 
@@ -509,23 +531,72 @@ Now, analyze the following image and output the JSON accordingly, capturing as m
             menuName ||
             "Unknown Restaurant";
 
-          console.log("Processing menuId:", menuId);
-          let processingId;
-          try {
-            processingId = await saveVertexAiResults(
-              userId,
-              combinedMenuData,
-              menuId,
-              restaurantId,
-              menuName,
-              imageUrl,
-              restaurantName,
-            );
-            await saveImageUrlCache(userId, menuName, processedImageUrl);
-          } catch (saveError) {
-            console.error("Error saving results:", saveError);
-            throw saveError;
-          }
+            console.log("Processing menuId:", menuId);
+let processingId;
+try {
+  const cleanedMenuData = {
+    ...combinedMenuData,
+    restaurant_info: {
+      ...combinedMenuData.restaurant_info,
+      name: {
+        original: restaurantName || menuName || "Unknown Restaurant",
+        english: combinedMenuData.restaurant_info?.name?.english || ""
+      }
+    }
+  };
+
+  // Update saveData to use undefined instead of null
+  const saveData: SaveData = {
+    userId,
+    menuData: cleanedMenuData,
+    menuId,
+    restaurantId,
+    menuName,
+    imageUrl,
+    restaurantName: restaurantName || menuName || "Unknown Restaurant",
+    // Don't include yelpId if it's not provided
+  };
+
+  console.log("Saving menu data:", {
+    menuId,
+    restaurantId,
+    menuName,
+    restaurantName,
+    yelpId: saveData.yelpId
+  });
+
+  processingId = await saveVertexAiResults(
+    saveData.userId,
+    saveData.menuData,
+    saveData.menuId,
+    saveData.restaurantId,
+    saveData.menuName,
+    saveData.imageUrl,
+    saveData.restaurantName,
+    saveData.yelpId // This will be undefined if not set
+  );
+
+  await saveImageUrlCache(userId, menuName, processedImageUrl);
+  console.log("Successfully saved menu data with ID:", processingId);
+
+} catch (error) {
+  const errorMessage = getErrorDetails(error);
+  console.error("Error saving results:", errorMessage);
+  
+  resolve(
+    NextResponse.json(
+      { 
+        error: "Failed to save menu data",
+        details: errorMessage,
+        menuId,
+        restaurantId,
+        context: "Menu data save operation failed"
+      },
+      { status: 500 }
+    )
+  );
+  return;
+}
 
           console.log(
             "Combined menu data:",
@@ -543,9 +614,11 @@ Now, analyze the following image and output the JSON accordingly, capturing as m
                 apiCallCount,
                 cached: false,
                 timestamp: new Date().toISOString(),
+                restaurantName,
+                restaurantId
               },
-              { status: 200 },
-            ),
+              { status: 200 }
+            )
           );
         } catch (error: any) {
           console.error("Error in Vertex AI processing:", error);

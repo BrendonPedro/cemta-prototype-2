@@ -12,7 +12,7 @@ import {
   yelpMenuBucket,
 } from "@/config/googleCloudConfig";
 
-// Define the metadata interface
+// Keep your existing interfaces and helper functions
 interface StorageMetadata {
   [key: string]: any; 
   restaurantId?: string;
@@ -24,7 +24,6 @@ interface StorageMetadata {
   type: "menu" | "restaurant" | "processed";
 }
 
-// Helper function to get the bucket based on metadata
 function getBucket(
   type: StorageMetadata["type"],
   source: StorageMetadata["source"]
@@ -40,7 +39,6 @@ function getBucket(
   }
 }
 
-// Helper function to get image data from URL
 async function getImageFromUrl(imageUrl: string): Promise<Buffer> {
   try {
     const response = await fetch(imageUrl);
@@ -55,13 +53,11 @@ async function getImageFromUrl(imageUrl: string): Promise<Buffer> {
   }
 }
 
-// Helper function to get error message
 function getErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return String(error);
 }
 
-// Authentication helper
 async function verifyAuth(req: NextRequest): Promise<DecodedIdToken | null> {
   try {
     const authHeader = req.headers.get("authorization");
@@ -76,7 +72,6 @@ async function verifyAuth(req: NextRequest): Promise<DecodedIdToken | null> {
       return null;
     }
 
-    // Verify token
     const decodedToken = await admin.auth().verifyIdToken(token);
     return decodedToken;
   } catch (error) {
@@ -86,7 +81,9 @@ async function verifyAuth(req: NextRequest): Promise<DecodedIdToken | null> {
 }
 
 export async function POST(req: NextRequest) {
+  console.log("Storage API route hit");
   const contentType = req.headers.get("content-type") || "";
+  console.log("Content-Type:", contentType);
 
   try {
     // Authentication
@@ -128,10 +125,7 @@ export async function POST(req: NextRequest) {
         });
 
         const fileUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
-
-        // Save to cache (if applicable)
         await saveImageUrlCache(decodedToken.uid, fileName, fileUrl);
-
         return NextResponse.json({ url: fileUrl }, { status: 200 });
       } catch (error) {
         console.error("Error processing image:", error);
@@ -142,32 +136,38 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Handle multipart form-data
+    // Handle multipart form-data with improved error handling
     if (contentType.includes("multipart/form-data")) {
-      const headersObj: { [key: string]: string } = {};
-      req.headers.forEach((value, key) => {
-        headersObj[key.toLowerCase()] = value;
-      });
+      return new Promise((resolve, reject) => {
+        const headersObj: { [key: string]: string } = {};
+        req.headers.forEach((value, key) => {
+          headersObj[key.toLowerCase()] = value;
+        });
 
-      const bb = Busboy({ headers: headersObj });
-      const fileWritePromises: Promise<void>[] = [];
-      let fileUrl = "";
-      let fileName = "";
-      let metadata: StorageMetadata = {
-        filename: "",
-        contentType: "image/jpeg",
-        source: "user",
-        type: "restaurant",
-      };
+        console.log("Processing multipart form-data with headers:", headersObj);
 
-      bb.on(
-        "file",
-        (
-          fieldname: string,
-          file: NodeJS.ReadableStream,
-          info: { filename: string; encoding: string; mimeType: string }
-        ) => {
+        const bb = Busboy({ 
+          headers: headersObj,
+          limits: {
+            files: 1,
+            fileSize: 10 * 1024 * 1024, // 10MB limit
+          }
+        });
+
+        const fileWritePromises: Promise<void>[] = [];
+        let fileUrl = "";
+        let fileName = "";
+        let metadata: StorageMetadata = {
+          filename: "",
+          contentType: "image/jpeg",
+          source: "user",
+          type: "menu", // Changed default to menu
+        };
+
+        bb.on("file", (fieldname, file, info) => {
+          console.log("Processing file:", info.filename);
           const { filename, mimeType } = info;
+          
           fileName = `${Date.now()}-${decodedToken.uid}-${filename}`;
           metadata.filename = filename;
           metadata.contentType = mimeType;
@@ -187,67 +187,105 @@ export async function POST(req: NextRequest) {
           file.pipe(fileStream);
 
           fileWritePromises.push(
-            new Promise((resolve, reject) => {
+            new Promise((resolveFile, rejectFile) => {
               fileStream.on("finish", () => {
                 fileUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
-                resolve();
+                console.log("File uploaded successfully:", fileUrl);
+                resolveFile();
               });
-              fileStream.on("error", reject);
+
+              fileStream.on("error", (error) => {
+                console.error("File stream error:", error);
+                rejectFile(error);
+              });
+
+              file.on("error", (error) => {
+                console.error("File read error:", error);
+                rejectFile(error);
+              });
             })
           );
-        }
-      );
+        });
 
-      bb.on("field", (fieldname: string, val: string) => {
-        // Collect additional metadata from form fields if needed
-        if (fieldname in metadata) {
-          (metadata[fieldname as keyof StorageMetadata] as any) = val;
-        }
-      });
-
-      bb.on("finish", async () => {
-        try {
-          await Promise.all(fileWritePromises);
-          if (!fileUrl) {
-            return NextResponse.json(
-              { message: "No file uploaded" },
-              { status: 400 }
-            );
+        bb.on("field", (fieldname: string, val: string) => {
+          console.log("Received field:", fieldname, val);
+          try {
+            if (fieldname === 'metadata') {
+              const parsedMetadata = JSON.parse(val);
+              metadata = { ...metadata, ...parsedMetadata };
+              console.log("Parsed metadata:", metadata);
+            }
+          } catch (error) {
+            console.error("Error parsing field:", error);
           }
+        });
 
-          // Save to cache (if applicable)
-          await saveImageUrlCache(decodedToken.uid, fileName, fileUrl);
+        bb.on("finish", async () => {
+          try {
+            await Promise.all(fileWritePromises);
+            if (!fileUrl) {
+              console.error("No file URL generated");
+              resolve(NextResponse.json(
+                { message: "No file uploaded" },
+                { status: 400 }
+              ));
+              return;
+            }
 
-          return NextResponse.json({ url: fileUrl }, { status: 200 });
-        } catch (error) {
-          console.error("Error during file upload:", error);
-          return NextResponse.json(
-            {
-              message: "File upload failed",
-              error: getErrorMessage(error),
-            },
+            await saveImageUrlCache(decodedToken.uid, fileName, fileUrl);
+            console.log("File processed successfully");
+            resolve(NextResponse.json({ url: fileUrl }, { status: 200 }));
+          } catch (error) {
+            console.error("Error in finish event:", error);
+            resolve(NextResponse.json(
+              {
+                message: "File upload failed",
+                error: getErrorMessage(error),
+              },
+              { status: 500 }
+            ));
+          }
+        });
+
+        bb.on("error", (error) => {
+          console.error("Busboy error:", error);
+          resolve(NextResponse.json(
+            { message: "File processing error", error: getErrorMessage(error) },
             { status: 500 }
-          );
-        }
-      });
+          ));
+        });
 
-      const reader = req.body?.getReader();
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          bb.write(value);
+        // Process the request body
+        const reader = req.body?.getReader();
+        if (!reader) {
+          console.error("No request body reader available");
+          resolve(NextResponse.json(
+            { message: "Failed to get reader from request body" },
+            { status: 400 }
+          ));
+          return;
         }
-        bb.end();
-      } else {
-        return NextResponse.json(
-          { message: "Failed to get reader from request body" },
-          { status: 400 }
-        );
-      }
+
+        (async () => {
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              bb.write(value);
+            }
+            bb.end();
+          } catch (error) {
+            console.error("Error reading request body:", error);
+            resolve(NextResponse.json(
+              { message: "Error reading request body", error: getErrorMessage(error) },
+              { status: 400 }
+            ));
+          }
+        })();
+      });
     }
 
-    // If none of the above, return an error
+    console.error("Unsupported content type:", contentType);
     return NextResponse.json(
       { message: "Unsupported content type" },
       { status: 400 }

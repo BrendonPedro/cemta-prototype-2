@@ -1,6 +1,6 @@
 {
   "compilerOptions": {
-     "target": "ESNext",
+    "target": "ESNext",
     "lib": [
       "dom",
       "dom.iterable",
@@ -18,7 +18,7 @@
     "jsx": "preserve",
     "incremental": true,
     "typeRoots": ["./node_modules/@types", "./@types"],
-    "baseUrl": ".", // Ensure baseUrl is set
+    "baseUrl": ".",
     "paths": {
       "@/*": [
         "./*"
@@ -35,7 +35,7 @@
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
-    "app/api/upload-to-gcs/route.ts",
+    "app/api/storage/route.ts",
     "app/api/process-document-ai/route.ts"
   ],
   "exclude": [

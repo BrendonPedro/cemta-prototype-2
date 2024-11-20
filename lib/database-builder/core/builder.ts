@@ -1,6 +1,5 @@
 import { Client, PlacesNearbyRanking, Language } from '@googlemaps/google-maps-services-js';
 import {
-  createOrUpdateRestaurant,
   ensureCountyTownStructure,
   getCachedRestaurantsForLocation,
   saveRestaurantData,
@@ -297,15 +296,18 @@ export async function buildDatabase(
               source: {
                 google: cachedRestaurant.hasGoogleData || false,
                 yelp: cachedRestaurant.hasYelpData || false
-              }
+              },
+              townName: town.name 
             };
 
             await saveRestaurantData(
               restaurantData,
               countyData.name,
               town.name,
-              true,
-              config.incrementalUpdate
+              { 
+                fromCache: true,
+                incrementalUpdate: config.incrementalUpdate 
+              }
             );
 
             stats.successful++;
@@ -380,15 +382,18 @@ export async function buildDatabase(
                 source: {
                   google: true,
                   yelp: false
-                }
+                },
+                townName: town.name 
               };
 
               await saveRestaurantData(
                 restaurantData,
                 countyData.name,
                 town.name,
-                false,
-                config.incrementalUpdate
+                { 
+                  fromCache: false,
+                  incrementalUpdate: config.incrementalUpdate 
+                }
               );
 
               newRestaurants.push({
@@ -404,7 +409,8 @@ export async function buildDatabase(
                 hasMenu: false,
                 imageUrl: photos[0] || '',
                 hasGoogleData: true,
-                hasYelpData: false
+                hasYelpData: false,
+                townName: town.name
               });
 
               stats.successful++;

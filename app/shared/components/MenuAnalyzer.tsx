@@ -25,7 +25,7 @@ import { Input } from "@/components/ui/input";
 import Combobox from "@/components/ui/Combobox";
 
 
-const MAX_MENUS_PER_USER = 150;
+const MAX_MENUS_PER_USER = 200;
 
 const MenuAnalyzer = () => {
   const { firebaseToken, userId, loading } = useAuth();
@@ -192,37 +192,42 @@ const MenuAnalyzer = () => {
         
 
       // Save the results
-        console.log("Saving Vertex AI results...");
-        const saveResponse = await fetch("/api/saveVertexAiResults", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${firebaseToken}`,
-          },
-          body: JSON.stringify({
-            menuData: result.menuData,
-            menuId: result.processingId,
-            restaurantId,
-            menuName: restaurantName, 
-            imageUrl: menuImageUrl,
-          }),
-        });
+       // Save the results
+console.log("Saving Vertex AI results...");
+const saveResponse = await fetch("/api/saveVertexAiResults", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${firebaseToken}`,
+  },
+  body: JSON.stringify({
+    menuData: result.menuData,
+    menuId: result.processingId,
+    restaurantId,
+    menuName: restaurantName,
+    imageUrl: menuImageUrl
+  })
+});
 
-        if (!saveResponse.ok) {
-          const errorData = await saveResponse.json();
-          throw new Error(
-            errorData.error || `HTTP error! status: ${saveResponse.status}`
-          );
-        }
+if (!saveResponse.ok) {
+  const errorText = await saveResponse.text();
+  console.error("Save response error:", errorText);
+  const errorData = JSON.parse(errorText);
+  throw new Error(
+    errorData.error || `HTTP error! status: ${saveResponse.status}`
+  );
+}
 
-        console.log("Vertex AI results saved successfully");
+const saveResult = await saveResponse.json();
+console.log("Save Vertex operation result:", saveResult);
 
-         // Update existingMenuInfo with the new menu's info
-        setExistingMenuInfo({
-          id: menuId,
-          restaurantName: restaurantName, // Update with restaurantName
-          timestamp: new Date().toISOString(),
-        });
+// Update existingMenuInfo with the new menu's info
+setExistingMenuInfo({
+  id: menuId,
+  restaurantName: restaurantName,
+  menuData: result.menuData,
+  timestamp: new Date().toISOString()
+});
       } catch (error: any) {
         console.error("Vertex AI processing failed", error);
         setProcessingError(

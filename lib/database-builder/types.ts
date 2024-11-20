@@ -42,6 +42,7 @@ export interface RestaurantData {
     google: boolean;
     yelp: boolean;
   };
+  townName: string; 
 }
 
 // Add CachedRestaurant interface to match your existing firestore service
@@ -49,17 +50,19 @@ export interface CachedRestaurant {
   id: string;
   name: string;
   address: string;
-  rating: number;
   latitude: number;
   longitude: number;
+  rating: number;
   menuCount: number;
-  county: string;
-  source: 'google' | 'yelp';
   hasMenu: boolean;
+  county: string;
+  townName: string;
+  source: 'google' | 'yelp';
+  hasGoogleData: boolean;
+  hasYelpData: boolean;
   imageUrl: string;
   yelpId?: string;
-  hasYelpData?: boolean;
-  hasGoogleData?: boolean;
+  photos?: string[];
 }
 
 
