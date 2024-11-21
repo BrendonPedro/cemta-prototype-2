@@ -14,10 +14,12 @@ import admin from "@/config/firebaseAdmin";
 import { 
   Client, 
   PlaceData,
+  PlacesNearbyRanking,
 } from "@googlemaps/google-maps-services-js";
 import { ApiError } from "@/config/googleCloudConfig";
 import { DecodedIdToken } from "firebase-admin/auth";
-
+import { EXCLUDED_ESTABLISHMENTS } from '@/app/constants/excludedEstablishments';
+import { Language } from "@googlemaps/google-maps-services-js";
 
 // Constants for rate limiting
 const RATE_LIMIT = {
@@ -202,11 +204,37 @@ export async function GET(request: Request) {
     const placesResponse = await client.placesNearby({
       params: {
         location: { lat: params.lat, lng: params.lng },
-        radius: 1000,
-        type: 'restaurant',
-        key: apiKey
-      }
+        radius: 1500,
+        type: "restaurant",
+        language: Language.en, // Specify the language enum
+        key: apiKey,
+        rankby: PlacesNearbyRanking.distance,
+        // Remove or comment out any undefined or null parameters
+      },
+      timeout: 5000
     });
+
+     // Filter out excluded establishments
+     const filteredResults = placesResponse.data.results.filter(place => {
+      if (!place.name) return false;
+
+      const normalizedName = place.name.toLowerCase();
+      
+      // Check if the place name matches any excluded establishment
+      const isExcluded = EXCLUDED_ESTABLISHMENTS.some(excluded => 
+        normalizedName.includes(excluded.toLowerCase())
+      );
+
+      // Also check place types to exclude convenience stores
+      const hasConvenienceType = place.types?.some(type => 
+        type.includes('convenience_store') || 
+        type.includes('convenience')
+      );
+
+      return !isExcluded && !hasConvenienceType;
+    });
+
+    console.log(`Found ${placesResponse.data.results.length} places, ${filteredResults.length} after filtering`)
 
     const { county, townName } = await determineLocationDetails(params.lat, params.lng);
 
@@ -355,7 +383,7 @@ export async function GET(request: Request) {
 
 // Update the restaurants mapping
 const restaurants: CachedRestaurant[] = await Promise.all(
-  placesResponse.data.results
+  filteredResults
     .filter((place): place is PlaceData => 
       Boolean(place?.place_id && place?.name && place?.geometry?.location)
     )
@@ -363,12 +391,16 @@ const restaurants: CachedRestaurant[] = await Promise.all(
 );
 
 if (restaurants.length === 0) {
-  console.warn('No valid restaurants found in Places API response');
+  console.warn('No valid restaurants found after filtering');
+  console.log('Original results:', placesResponse.data.results.map(p => p.name));
+  console.log('Filtered out:', placesResponse.data.results.filter(p => 
+    !filteredResults.includes(p)).map(p => p.name)
+  );
 }
 
 // Save to cache
 if (restaurants.length > 0) {
-  console.log(`Saving ${restaurants.length} restaurants to cache`);
+  console.log(`Saving ${restaurants.length} filtered restaurants to cache`);
   await saveCachedRestaurantsForLocation(params.lat, params.lng, restaurants);
   await batchUpdateRestaurants(restaurants);
 }

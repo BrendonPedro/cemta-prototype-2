@@ -3,6 +3,7 @@
 import { NextResponse } from "next/server";
 import axios from "axios";
 import { YelpBusiness } from "@/app/services/firebaseFirestore";
+import { EXCLUDED_ESTABLISHMENTS } from '@/app/constants/excludedEstablishments';
 
 interface YelpCategory {
   alias: string;
@@ -19,30 +20,6 @@ interface YelpSearchResponse {
     };
   };
 }
-
-// List of convenience store chains and establishments to exclude
-const EXCLUDED_ESTABLISHMENTS = [
-  'family mart',
-  'familymart',
-  '7-eleven',
-  '7-11',
-  'seven eleven',
-  'hi-life',
-  'hi life',
-  'hilife',
-  'ok mart',
-  'okmart',
-  'simple mart',
-  'simplemart',
-  'mini stop',
-  'ministop',
-  '全家',  // Family Mart in Chinese
-  '7-11',
-  '萊爾富',  // Hi-Life in Chinese
-  '便利商店', // Convenience store in Chinese
-  'convenience store',
-  '超商',  // Convenience store abbreviated in Chinese
-];
 
 export async function GET(request: Request) {
   try {
