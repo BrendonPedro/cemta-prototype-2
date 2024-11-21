@@ -103,10 +103,15 @@ export interface Restaurant {
   rating: number;
   menuCount: number;
   county: string;
-  townName: string; 
-  photoUrl?: string;
-  menuImageUrl?: string;
-  menuId?: string;
+  townName: string;
+  imageUrl?: string;  
+  hasGoogleData?: boolean;  
+  hasYelpData?: boolean;  
+  photoUrl?: string;  
+  contribution?: boolean;
+  menuImageUrl?: string; 
+  menuId?: string;      
+  hasMenu?: boolean;    
 }
 
 // (Used in FindRestaurantsAndMenus.tsx and nearby-restaurants/route.ts)
@@ -118,15 +123,18 @@ export interface CachedRestaurant {
   longitude: number;
   rating: number;
   menuCount: number;
-  hasMenu: boolean;
   county: string;
   townName: string;
   source: 'google' | 'yelp';
   hasGoogleData: boolean;
   hasYelpData: boolean;
   imageUrl: string;
-  yelpId?: string;
-  photos?: string[];
+  hasMenu: boolean;
+  priceLevel?: string | null;
+  phone?: string | null;
+  website?: string | null;
+  yelpId?: string | null;
+  yelpRating?: number | null;
 }
 
 // ======= Menu Related Interfaces =======

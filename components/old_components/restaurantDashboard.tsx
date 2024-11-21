@@ -18,7 +18,6 @@ import { useAuth as useClerkAuth } from "@clerk/nextjs";
 import { GoogleMap, useJsApiLoader, Marker } from "@react-google-maps/api";
 import {
   getMenuCountForRestaurant,
-  saveVertexAiResults,
 } from "@/app/services/firebaseFirestore";
 import {
   Tooltip,
@@ -39,6 +38,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { saveVertexAiResults } from "@/app/services/firebaseFirestore.server";
 
 interface Restaurant {
   id: string;
@@ -157,8 +157,9 @@ export default function RestaurantDashboard() {
   );
 
   const determineCounty = (location: string): string => {
-    if (location.includes("Zhunan")) return "Miaoli County";
-    return "Unknown County";
+    // Extract county from address if possible
+    const countyMatch = location.match(/([^,]+County|[^,]+City)/);
+    return countyMatch ? countyMatch[0] : 'Unknown County';
   };
 
   useEffect(() => {

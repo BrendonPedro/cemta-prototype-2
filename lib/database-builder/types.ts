@@ -37,12 +37,16 @@ export interface RestaurantData {
   photos: string[];
   menuCount: number;
   lastUpdated: string;
-  createdAt?: string;  // Add this
+  createdAt?: string;
   source: {
     google: boolean;
     yelp: boolean;
   };
-  townName: string; 
+  townName: string;
+  hasGoogleData?: boolean;  // Add this
+  hasYelpData?: boolean;    // Add this
+  hasMenu?: boolean;        // Add this
+  imageUrl?: string;        // Add this
 }
 
 // Add CachedRestaurant interface to match your existing firestore service
@@ -54,17 +58,19 @@ export interface CachedRestaurant {
   longitude: number;
   rating: number;
   menuCount: number;
-  hasMenu: boolean;
   county: string;
   townName: string;
   source: 'google' | 'yelp';
   hasGoogleData: boolean;
   hasYelpData: boolean;
   imageUrl: string;
-  yelpId?: string;
-  photos?: string[];
+  hasMenu: boolean;
+  priceLevel?: string | null;
+  phone?: string | null;
+  website?: string | null;
+  yelpId?: string | null;
+  yelpRating?: number | null;
 }
-
 
 export interface CountyStats {
   name: string;

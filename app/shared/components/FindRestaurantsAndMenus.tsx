@@ -61,6 +61,10 @@ import {
 import { EnhancedTownData, getTownsByCounty } from "@/lib/data/counties";
 import { determineLocationDetails } from "@/app/services/locationService";
 import { fetchWithError } from "@/app/utils/clientUtils";
+import { Switch } from "@/components/ui/switch";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AlertTriangle } from "lucide-react";
+import { AnimatePresence } from "framer-motion";
 
 
 interface LatLngLiteral {
@@ -80,35 +84,15 @@ interface GooglePlacePhoto {
   html_attributions?: string[];
 }
 
+const DEFAULT_CENTER = {
+  lat: 23.5737,
+  lng: 121.0229 // Center of Taiwan
+};
 
 const mapContainerStyle = {
   width: "100%",
   height: "400px",
 };
-
-const taiwanCounties = [
-  "Taipei City",
-  "New Taipei City",
-  "Taoyuan City",
-  "Taichung City",
-  "Tainan City",
-  "Kaohsiung City",
-  "Hsinchu City",
-  "Hsinchu County",
-  "Miaoli County",
-  "Changhua County",
-  "Nantou County",
-  "Yunlin County",
-  "Chiayi City",
-  "Chiayi County",
-  "Pingtung County",
-  "Yilan County",
-  "Hualien County",
-  "Taitung County",
-  "Penghu County",
-  "Kinmen County",
-  "Lienchiang County",
-];
 
 const useDebouncedCallback = (callback: Function, delay: number) => {
   const timeoutRef = useRef<number | null>(null);
@@ -126,14 +110,6 @@ const useDebouncedCallback = (callback: Function, delay: number) => {
   );
 
   return debouncedFunction;
-};
-
-const determineCounty = (countyName: string): string => {
-  if (taiwanCounties.includes(countyName)) {
-    return countyName;
-  } else {
-    return "Unknown County";
-  }
 };
 
 async function getCountyName(lat: number, lng: number): Promise<string> {
@@ -157,13 +133,11 @@ export default function FindRestaurantsAndMenus() {
     []
   );
   const [nameFilter, setNameFilter] = useState("all");
-  const [countyFilter, setCountyFilter] = useState("all");
   const [menuCountFilter, setMenuCountFilter] = useState("all");
   const [ratingFilter, setRatingFilter] = useState("all");
 const [center, setCenter] = useState<LatLngLiteral>({
-  // Default to center of Taiwan
-  lat: 23.5737,
-  lng: 121.0229,
+  lat: 0,
+  lng: 0
 });
   const [pinLocation, setPinLocation] = useState<{
     lat: number;
@@ -188,6 +162,46 @@ const [center, setCenter] = useState<LatLngLiteral>({
     googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!, // Use the libraries constant
   });
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [isInitialized, setIsInitialized] = useState(false);
+  const [locationEnabled, setLocationEnabled] = useState(false);
+  const [permissionStatus, setPermissionStatus] = useState<PermissionState | null>(null);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  
+
+   // Location permission check
+   useEffect(() => {
+    const checkLocationPermission = async () => {
+      try {
+        const permission = await navigator.permissions.query({ name: 'geolocation' });
+        setPermissionStatus(permission.state);
+        setLocationEnabled(permission.state === 'granted');
+        
+        permission.addEventListener('change', () => {
+          setPermissionStatus(permission.state);
+          setLocationEnabled(permission.state === 'granted');
+        });
+      } catch (error) {
+        console.error('Error checking location permission:', error);
+        setLocationEnabled(false);
+      }
+    };
+
+    checkLocationPermission();
+  }, []);
+
+  // Handle location toggle
+  const handleLocationToggle = async (enabled: boolean) => {
+    setLocationEnabled(enabled);
+    if (enabled) {
+      await handleRefreshLocation(true);
+    } else {
+      // Reset to Taiwan center
+      setCenter(DEFAULT_CENTER);
+      setPinLocation(DEFAULT_CENTER);
+      await fetchNearbyRestaurants(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng);
+    }
+  };
+
 
   // This function fetch menu image from Google Places API
   const fetchMenuImageFromGoogle = async (placeId: string, apiKey: string) => {
@@ -323,7 +337,6 @@ const processCombinedResults = async (
       longitude,
       rating: googleResult.rating || 0,
       menuCount: menuExists ? 1 : 0,
-      county: determineCounty(countyName),
       source: "google",
       hasGoogleData: true,
       imageUrl: googleResult.photos?.[0]?.photo_reference
@@ -357,8 +370,8 @@ const processCombinedResults = async (
 
       if (!latitude || !longitude) continue;
 
-      const countyName = await getCountyName(latitude, longitude);
       const menuExists = await checkExistingMenuForRestaurant(yelpResult.id);
+      const { county, townName } = await determineLocationDetails(latitude, longitude);
 
       processedResults.set(normalizedName, {
         id: yelpResult.id,
@@ -368,14 +381,18 @@ const processCombinedResults = async (
         longitude,
         rating: yelpResult.rating || 0,
         menuCount: menuExists ? 1 : 0,
-        county: determineCounty(countyName),
-        townName: "", // Add this initially empty, will be populated by determineLocationDetails
+        county, // Add this
+        townName,
         source: "yelp",
+        hasGoogleData: false,
         hasYelpData: true,
         yelpId: yelpResult.id,
         imageUrl: yelpResult.image_url || "",
         hasMenu: menuExists,
-        photos: yelpResult.photos || []
+        photos: yelpResult.photos || [],
+        priceLevel: yelpResult.price || null,
+        phone: yelpResult.display_phone || null,
+        website: yelpResult.url || null
       } as CachedRestaurant);
     }
   }
@@ -384,103 +401,106 @@ const processCombinedResults = async (
 };
 
   useEffect(() => {
-    let isMounted = true; // Add mounted check
+    if (authLoading || !firebaseToken || !userId) return;
 
-    const getCurrentLocation = async () => {
-      if (!firebaseToken || !userId) {
-        console.log('Waiting for auth...');
-        return;
-      }
-
+    const initializeLocation = async () => {
       try {
-        setIsLoadingLocation(true);
-        console.log('Getting current location...');
-        
+        setIsLoading(true);
         const position = await new Promise<GeolocationPosition>((resolve, reject) => {
           navigator.geolocation.getCurrentPosition(resolve, reject, {
             enableHighAccuracy: true,
-            timeout: 15000,
-            maximumAge: 30000
+            timeout: 5000,
+            maximumAge: 0
           });
         });
 
-        if (!isMounted) return;
-
         const { latitude, longitude } = position.coords;
-        console.log('Location obtained:', { latitude, longitude });
+        console.log('Initial location:', { latitude, longitude });
         
         setCenter({ lat: latitude, lng: longitude });
+        setPinLocation({ lat: latitude, lng: longitude });
         await fetchNearbyRestaurants(latitude, longitude);
-        setError(null);
-
+        setIsInitialized(true);
       } catch (error) {
         console.error('Location error:', error);
-        if (!isMounted) return;
-
-        // Fallback to default location
-        const fallbackCenter = { lat: 24.5601, lng: 120.8215 };
-        console.log('Using fallback location:', fallbackCenter);
-        
-        setCenter(fallbackCenter);
-        await fetchNearbyRestaurants(fallbackCenter.lat, fallbackCenter.lng);
-        setError('Could not get your location. Showing default area.');
-      } finally {
-        if (isMounted) {
-          setIsLoadingLocation(false);
-          setIsInitialLoad(false);
-          console.log('Location setup complete');
+        // Only set default location if we haven't initialized yet
+        if (!isInitialized) {
+          const defaultCenter = { lat: 23.5737, lng: 121.0229 }; // Taiwan center
+          setCenter(defaultCenter);
+          setPinLocation(defaultCenter);
+          setError('Could not get your location. Using default location in Taiwan.');
+          await fetchNearbyRestaurants(defaultCenter.lat, defaultCenter.lng);
         }
+      } finally {
+        setIsLoading(false);
       }
     };
 
-    getCurrentLocation();
+    initializeLocation();
+  }, [userId, firebaseToken, authLoading, fetchNearbyRestaurants, isInitialized]);
 
-    return () => {
-      isMounted = false;
-    };
-  }, [userId, firebaseToken, fetchNearbyRestaurants]);
-
-// Also update handleRefreshLocation with similar improvements
-const handleRefreshLocation = () => {
-  setIsRefreshing(true);
-  setError(null);
-
-  const geolocationOptions = {
-    enableHighAccuracy: true,
-    timeout: 15000,
-    maximumAge: 0,
-  };
-
-  navigator.geolocation.getCurrentPosition(
-    (position) => {
+  const handleRefreshLocation = async (showPrompt = false) => {
+    setIsRefreshing(true);
+    setError(null);
+  
+    // If location is disabled and not showing prompt, use default immediately
+    if (!locationEnabled && !showPrompt) {
+      setCenter(DEFAULT_CENTER);
+      setPinLocation(DEFAULT_CENTER);
+      await fetchNearbyRestaurants(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng);
+      setIsRefreshing(false);
+      return;
+    }
+  
+    try {
+      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+        const timeoutId = setTimeout(() => {
+          reject(new Error('Location request timed out. Using default location.'));
+        }, 10000); // 10 second timeout
+  
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            clearTimeout(timeoutId);
+            resolve(pos);
+          },
+          (error) => {
+            clearTimeout(timeoutId);
+            if (error.code === error.PERMISSION_DENIED) {
+              reject(new Error('Location permission denied. Please enable location services.'));
+            } else {
+              reject(new Error('Unable to get location. Using default location.'));
+            }
+          },
+          {
+            enableHighAccuracy: true,
+            timeout: 5000,
+            maximumAge: 0
+          }
+        );
+      });
+  
       const { latitude, longitude } = position.coords;
       const newCenter = { lat: latitude, lng: longitude };
       setCenter(newCenter);
-      setIsLoading(true);
-
-      Promise.resolve(fetchNearbyRestaurants(latitude, longitude))
-        .catch((error: Error) => {
-          console.error("Geolocation refresh error:", error);
-          setError(error.message || "Failed to refresh location");
-        })
-        .finally(() => {
-          setIsLoading(false);
-          setIsRefreshing(false);
-        });
-    },
-    (error) => {
-      console.error("Geolocation error:", error);
+      setPinLocation(newCenter);
+      setFocusedRestaurant(null);
+      await fetchNearbyRestaurants(latitude, longitude);
+      setLocationError(null);
+  
+    } catch (error) {
+      console.error('Location error:', error);
+      setLocationError(error instanceof Error ? error.message : 'Unknown location error');
+      
+      // Add a small delay before falling back to default location
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      setCenter(DEFAULT_CENTER);
+      setPinLocation(DEFAULT_CENTER);
+      await fetchNearbyRestaurants(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng);
+    } finally {
       setIsRefreshing(false);
-      const errorMessages = {
-        1: "Location access denied. Please enable location services.",
-        2: "Location unavailable. Please try again.",
-        3: "Location request timed out. Please try again.",
-      };
-      setError(errorMessages[error.code as keyof typeof errorMessages] || "Failed to refresh location.");
-    },
-    geolocationOptions
-  );
-};
+    }
+  };
 
  // Update handleMapClick
  const handleMapClick = (event: google.maps.MapMouseEvent) => {
@@ -536,7 +556,7 @@ const handleRefreshLocation = () => {
         longitude
       );
 
-      const { townName } = await determineLocationDetails(latitude, longitude);
+      const { county, townName } = await determineLocationDetails(latitude, longitude);
 
       if (!yelpBusiness || !yelpBusiness.photos?.length) {
         // Set the selected restaurant and show warning instead of throwing error
@@ -547,12 +567,12 @@ const handleRefreshLocation = () => {
           longitude,
           menuCount: 0,
           address: yelpBusiness?.location?.address1 || "Unknown address",
-          county: determineCounty(yelpBusiness?.location?.address1 || "Unknown address"),
           rating: yelpBusiness?.rating || 0,
-          townName: townName, // Use the determined town name
+          county, // Add this
+          townName,
           photoUrl: undefined,
           menuImageUrl: undefined,
-          menuId: undefined,
+          menuId: undefined
         });
         setShowWarning(true);
         return;
@@ -600,7 +620,8 @@ const handleRefreshLocation = () => {
                 menuCount: 1,
                 menuImageUrl: result.imageUrl,
                 menuId: result.menuId,
-              }
+                hasMenu: true
+              } as Restaurant  // Add type assertion
             : r
         )
       );
@@ -632,50 +653,34 @@ const handleRefreshLocation = () => {
     setFocusedRestaurant(null); // Reset the focused restaurant to show all markers
   };
 
-  const [townFilter, setTownFilter] = useState("all");
-const [availableTowns, setAvailableTowns] = useState<EnhancedTownData[]>([]);
+const handleFilter = useCallback(() => {
+  const filtered = restaurants.filter((restaurant) => {
+    const matchesName = nameFilter === "all" || restaurant.name === nameFilter;
+    const matchesRating =
+      ratingFilter === "all" ||
+      (ratingFilter === "4+" && restaurant.rating >= 4) ||
+      (ratingFilter === "3-4" && restaurant.rating >= 3 && restaurant.rating < 4) ||
+      (ratingFilter === "0-3" && restaurant.rating < 3);
+    const matchesMenuCount =
+      menuCountFilter === "all" ||
+      (menuCountFilter === "0" && restaurant.menuCount === 0) ||
+      (menuCountFilter === "1-3" && restaurant.menuCount >= 1 && restaurant.menuCount <= 3) ||
+      (menuCountFilter === "4+" && restaurant.menuCount >= 4);
 
-  const handleFilter = useCallback(() => {
-    const filtered = restaurants.filter((restaurant) => {
-      const matchesName = nameFilter === "all" || restaurant.name === nameFilter;
-      const matchesCounty = countyFilter === "all" || restaurant.county === countyFilter;
-      const matchesTown = townFilter === "all" || restaurant.townName === townFilter;
-      const matchesRating =
-        ratingFilter === "all" ||
-        (ratingFilter === "4+" && restaurant.rating >= 4) ||
-        (ratingFilter === "3-4" && restaurant.rating >= 3 && restaurant.rating < 4) ||
-        (ratingFilter === "0-3" && restaurant.rating < 3);
-      const matchesMenuCount =
-        menuCountFilter === "all" ||
-        (menuCountFilter === "0" && restaurant.menuCount === 0) ||
-        (menuCountFilter === "1-3" && restaurant.menuCount >= 1 && restaurant.menuCount <= 3) ||
-        (menuCountFilter === "4+" && restaurant.menuCount >= 4);
-  
-      return matchesName && matchesCounty && matchesTown && matchesRating && matchesMenuCount;
-    });
-  
-    setFilteredRestaurants(filtered.slice(currentPage * 10, (currentPage + 1) * 10));
-  }, [
-    restaurants,
-    nameFilter,
-    countyFilter,
-    townFilter,
-    ratingFilter,
-    menuCountFilter,
-    currentPage,
-  ]);
+    return matchesName && matchesRating && matchesMenuCount;
+  });
 
-  useEffect(() => {
-    if (countyFilter !== "all") {
-      const towns = getTownsByCounty(countyFilter);
-      setAvailableTowns(towns);
-    } else {
-      setAvailableTowns([]);
-      setTownFilter("all");
-    }
-  }, [countyFilter]);
+  setFilteredRestaurants(filtered.slice(currentPage * 10, (currentPage + 1) * 10));
+}, [
+  restaurants,
+  nameFilter,
+  ratingFilter,
+  menuCountFilter,
+  currentPage,
+]);
+
   
-  // Update existing filter effect
+  // Filter effect
   useEffect(() => {
     handleFilter();
   }, [handleFilter]);
@@ -718,22 +723,84 @@ const [availableTowns, setAvailableTowns] = useState<EnhancedTownData[]>([]);
   }
 
   const isLastPage = currentPage === 1 || restaurants.length <= 10;
+  
 
   return (
     <div className="h-full flex flex-col relative">
+      {/* Top Location Controls */}
+      <div className="flex justify-between items-center mb-4 px-4 py-2 bg-white rounded-lg shadow">
+        <div className="flex items-center space-x-4">
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  onClick={() => handleRefreshLocation(true)}
+                  className="bg-customTeal hover:bg-customTeal/90 text-white"
+                  disabled={isRefreshing}
+                >
+                  <RefreshCw className={`mr-2 h-4 w-4 ${isRefreshing ? "animate-spin" : ""}`} />
+                  {isRefreshing ? "Refreshing..." : "Refresh Location"}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                <p>Refreshes restaurants based on your current GPS location.</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+          
+          <div className="flex items-center space-x-2">
+            <Switch
+              checked={locationEnabled}
+              onCheckedChange={handleLocationToggle}
+              className="data-[state=checked]:bg-customTeal"
+            />
+            <span className="text-sm text-gray-600">
+              Location Services {locationEnabled ? 'Enabled' : 'Disabled'}
+            </span>
+          </div>
+        </div>
+  
+        <div className="flex items-center space-x-2">
+          <MapPin className="h-5 w-5 text-customTeal" />
+          <span className="text-sm text-gray-600">
+            {locationEnabled ? 'Using precise location' : 'Using default location'}
+          </span>
+        </div>
+      </div>
+  
+      {/* Location Error Alert */}
+      <AnimatePresence>
+        {locationError && (
+          <motion.div
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="mb-4"
+          >
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Location Error</AlertTitle>
+              <AlertDescription>{locationError}</AlertDescription>
+            </Alert>
+          </motion.div>
+        )}
+      </AnimatePresence>
+  
       {/* Loading Overlay */}
       {(isLoading || isRefreshing) && !isInitialLoad && (
-  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-    <div className="bg-white p-6 rounded-lg shadow-xl">
-      <div className="flex items-center space-x-4">
-        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-customTeal"></div>
-        <p className="text-lg font-semibold text-gray-700">
-          {isRefreshing ? "Refreshing location..." : "Loading nearby restaurants..."}
-        </p>
-      </div>
-    </div>
-  </div>
-)}
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white p-6 rounded-lg shadow-xl">
+            <div className="flex items-center space-x-4">
+              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-customTeal"></div>
+              <p className="text-lg font-semibold text-gray-700">
+                {isRefreshing ? "Refreshing location..." : "Loading nearby restaurants..."}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+  
+      {/* Main Content */}
       <div className="flex-grow flex flex-col lg:flex-row gap-6">
         <Card className="w-full lg:w-3/5 bg-gradient-to-br from-gray-50 to-gray-100 shadow-xl overflow-auto">
           <CardHeader>
@@ -742,29 +809,15 @@ const [availableTowns, setAvailableTowns] = useState<EnhancedTownData[]>([]);
                 <span className="text-customTeal">Nearby Restaurants</span>
               </motion.span>
             </CardTitle>
-            {/* Refresh Location Button */}
-            <div className="flex justify-start items-center mb-4">
-              <Button
-                onClick={handleRefreshLocation}
-                className="bg-customTeal hover:bg-customTeal/90 text-white"
-                disabled={isRefreshing}
-              >
-                <RefreshCw
-                  className={`mr-2 h-4 w-4 ${
-                    isRefreshing ? "animate-spin" : ""
-                  }`}
-                />
-                {isRefreshing ? "Refreshing..." : "Refresh Location"}
-              </Button>
+            {/* Remove duplicate refresh button and keep just the Info tooltip */}
+            <div className="flex justify-end items-center mb-4">
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger>
-                    <Info className="ml-3 h-6 w-6 text-customTeal" />
+                    <Info className="h-6 w-6 text-customTeal" />
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p>
-                      Refreshes restaurants based on your current GPS location.
-                    </p>
+                    <p>Toggle location services above to control location precision</p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -772,51 +825,32 @@ const [availableTowns, setAvailableTowns] = useState<EnhancedTownData[]>([]);
           </CardHeader>
           <CardContent>
             {/* Search bar for county */}
-            <div className="mb-4">
-              <Select onValueChange={setCountyFilter} value={countyFilter}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Filter by county" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Counties</SelectItem>
-                  {taiwanCounties.map((county) => (
-                    <SelectItem key={county} value={county}>
-                      {county}
-                    </SelectItem>
-                  ))}
-                  <SelectItem value="Unknown County">Unknown County</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
+            
             {/* Restaurant Table */}
             <Table className="table-auto w-full">
             <TableHeader>
-              <TableRow className="bg-customTeal/10">
-                {/* Restaurant Column */}
-                <TableHead className="text-customTeal w-2/5 text-left hover:bg-customTeal/10 p-0">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger className="w-full h-full px-4 py-2 flex items-center gap-1 outline-none">
-                      <div className="flex items-center gap-1">
-                        Restaurant
-                        <ChevronDown className="h-4 w-4" />
-                      </div>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent 
-                      align="start" 
-                      className="min-w-[200px] ml-[200px]"
-                    >
-                      <DropdownMenuItem onSelect={() => setNameFilter("all")}>
-                        All Restaurants
-                      </DropdownMenuItem>
-                      {Array.from(new Set(restaurants.map((r) => r.name))).map((name) => (
-                        <DropdownMenuItem key={name} onSelect={() => setNameFilter(name)}>
-                          {name}
+                <TableRow className="bg-customTeal/10">
+                  {/* Restaurant Column */}
+                  <TableHead className="text-customTeal w-2/5 text-left hover:bg-customTeal/10 p-0">
+                    <DropdownMenu>
+                      <DropdownMenuTrigger className="w-full h-full px-4 py-2 flex items-center gap-1 outline-none">
+                        <div className="flex items-center gap-1">
+                          Restaurant
+                          <ChevronDown className="h-4 w-4" />
+                        </div>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="start" className="min-w-[200px] ml-[200px]">
+                        <DropdownMenuItem onSelect={() => setNameFilter("all")}>
+                          All Restaurants
                         </DropdownMenuItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </TableHead>
+                        {Array.from(new Set(restaurants.map((r) => r.name))).map((name) => (
+                          <DropdownMenuItem key={name} onSelect={() => setNameFilter(name)}>
+                            {name}
+                          </DropdownMenuItem>
+                        ))}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </TableHead>
 
                 {/* Menus Column */}
                 <TableHead className="text-customTeal w-1/6 text-center hover:bg-customTeal/10 p-0">
@@ -870,9 +904,9 @@ const [availableTowns, setAvailableTowns] = useState<EnhancedTownData[]>([]);
                   </DropdownMenu>
                 </TableHead>
 
-                {/* Location Column - No dropdown */}
+                {/* County Column - No dropdown */}
                 <TableHead className="text-customTeal w-1/6 text-center px-4 py-2 hover:bg-customTeal/10 p-0">
-                  Location
+                  County
                 </TableHead>
 
                 {/* Town Column - No dropdown */}
@@ -1053,17 +1087,28 @@ const [availableTowns, setAvailableTowns] = useState<EnhancedTownData[]>([]);
                     <>
                       {/* Restaurant Image */}
                       <div className="relative h-48 w-full rounded-lg overflow-hidden">
-                        <Image
-                          src={
-                            focusedRestaurant.photoUrl ||
-                            "/placeholder-restaurant.jpg"
-                          }
-                          alt={focusedRestaurant.name}
-                          fill
-                          className="object-cover transition-transform duration-300 hover:scale-105"
-                          sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                        />
-                      </div>
+                      <Image
+                        src={
+                          focusedRestaurant.imageUrl || 
+                          focusedRestaurant.photoUrl || 
+                          '/placeholder-restaurant.jpg'
+                        }
+                        alt={focusedRestaurant.name}
+                        fill
+                        className="object-cover transition-transform duration-300 hover:scale-105"
+                        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                        onError={(e) => {
+                          const img = e.target as HTMLImageElement;
+                          img.src = '/placeholder-restaurant.jpg';
+                        }}
+                      />
+                      {/* Optional: Show image source badge */}
+                      {(focusedRestaurant.imageUrl || focusedRestaurant.photoUrl) && (
+                        <div className="absolute bottom-2 right-2 bg-black/60 text-white px-2 py-1 rounded text-xs">
+                          {focusedRestaurant.hasGoogleData ? 'Google' : 'Yelp'}
+                        </div>
+                      )}
+                    </div>
 
                       {/* Restaurant Details */}
                       <div className="text-center space-y-2">

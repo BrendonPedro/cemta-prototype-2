@@ -52,7 +52,7 @@ export async function saveVertexAiResults(
       timestamp,
       uploadedBy: userId,
       imageUrl: imageUrl || '',
-      processedImageUrl: `gs://${processedMenuBucket.name}/${userId}/${menuId}_processed.png`,
+      processedImageUrl: `gs://${processedMenuBucket?.name || ''}/${userId}/${menuId}_processed.png`,
       restaurantName: restaurantName || menuName || 'Unnamed Restaurant',
       menuSource: yelpId ? 'yelp' : 'user',
       yelpId: yelpId || null, // Explicitly set to null if undefined

@@ -87,7 +87,8 @@ async function processCachedRestaurants(
           source: {
             google: restaurant.hasGoogleData || false,
             yelp: restaurant.hasYelpData || false
-          }
+          },
+          townName: ''
         },
         countyName,
         townName,
