@@ -15,6 +15,9 @@ import {
   Client, 
   PlaceData,
   PlacesNearbyRanking,
+  PlaceType2,
+  AddressType,
+  PlaceType1
 } from "@googlemaps/google-maps-services-js";
 import { ApiError } from "@/config/googleCloudConfig";
 import { DecodedIdToken } from "firebase-admin/auth";
@@ -125,148 +128,56 @@ async function checkRateLimit(userId: string): Promise<void> {
   });
 }
 
-export async function GET(request: Request) {
-  try {
-    // Get Google Maps API key from environment
-    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-    if (!apiKey) {
-      throw new Error('Google Maps API key is not configured');
-    }
+// Helper function to calculate distance
+function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const R = 6371e3; // metres
+  const φ1 = lat1 * Math.PI/180;
+  const φ2 = lat2 * Math.PI/180;
+  const Δφ = (lat2-lat1) * Math.PI/180;
+  const Δλ = (lon2-lon1) * Math.PI/180;
 
-    // 1. Authentication
-    const decodedToken = await validateFirebaseToken(
-      request.headers.get("authorization")
-    );
-    
-    if (!decodedToken.uid) {
-      return NextResponse.json(
-        { error: "Unauthorized - invalid user ID" },
-        { status: 401 }
+  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
+          Math.cos(φ1) * Math.cos(φ2) *
+          Math.sin(Δλ/2) * Math.sin(Δλ/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+  return R * c; // in metres
+}
+
+const googleMapsClient = new Client({});
+
+async function processPlaceDetails(
+  place: PlaceData,
+  apiKey: string,
+  client: Client = googleMapsClient
+): Promise<CachedRestaurant> {
+  const { county, townName } = await determineLocationDetails(
+    place.geometry!.location.lat,
+    place.geometry!.location.lng
+  );
+
+  let imageUrl = '/placeholder-restaurant.jpg';
+  let hasGoogleImage = false;
+  let yelpData = null;
+
+  // Try to get Google image first
+  if (place.photos?.[0] && 'photo_reference' in place.photos[0]) {
+    try {
+      const photoRef = (place.photos[0] as any).photo_reference;
+      const googlePhotoUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${photoRef}&key=${apiKey}`;
+      const savedImageUrl = await uploadRestaurantImage(
+        place.place_id ?? '',
+        Buffer.from((await axios.get(googlePhotoUrl, { responseType: 'arraybuffer' })).data),
+        'image/jpeg',
+        'google'
       );
+      imageUrl = savedImageUrl;
+      hasGoogleImage = true;
+    } catch (error) {
+      console.error(`Failed to fetch Google image for ${place.name}:`, error);
     }
+  }
 
-    // 2. Rate Limiting
-    await checkRateLimit(decodedToken.uid);
-
-    // 3. Parameter Validation
-    const { searchParams } = new URL(request.url);
-    const params = validateRequestParams(searchParams);
-    
-    // 4. User Document Check
-    const userRef = admin.firestore().collection('users').doc(decodedToken.uid);
-    const userDoc = await userRef.get();
-    
-    if (!userDoc.exists) {
-      return NextResponse.json(
-        { error: "User document not found" },
-        { status: 404 }
-      );
-    }
-
-    // 5. Process Request with Validated Parameters
-    const now = Date.now();
-    const gridKey = geohash.encode(params.lat, params.lng, 6);
-
-    // Log request for audit purposes
-    await admin.firestore().collection('requestLogs').add({
-      userId: decodedToken.uid,
-      timestamp: admin.firestore.FieldValue.serverTimestamp(),
-      params,
-      gridKey
-    });
-
-    // Check cache first
-    console.log("Checking cache for location:", { lat: params.lat, lng: params.lng });
-    const cachedRestaurants = await getCachedRestaurantsForLocation(params.lat, params.lng);
-
-    if (cachedRestaurants?.length) {
-      return NextResponse.json({
-        restaurants: cachedRestaurants.slice(0, params.limit),
-        county: cachedRestaurants[0]?.county || 'Unknown County',
-        cached: true,
-        lastUpdated: {
-          county: now,
-          restaurants: now,
-          images: now,
-        },
-        metadata: {
-          total: cachedRestaurants.length,
-          returned: Math.min(cachedRestaurants.length, params.limit),
-          gridKey
-        }
-      });
-    }
-     
-    // If no cache, fetch from Places API
-    console.log("Cache miss, fetching from Places API");
-    const client = new Client({});
-    
-    const placesResponse = await client.placesNearby({
-      params: {
-        location: { lat: params.lat, lng: params.lng },
-        radius: 1500,
-        type: "restaurant",
-        language: Language.en, // Specify the language enum
-        key: apiKey,
-        rankby: PlacesNearbyRanking.distance,
-        // Remove or comment out any undefined or null parameters
-      },
-      timeout: 5000
-    });
-
-     // Filter out excluded establishments
-     const filteredResults = placesResponse.data.results.filter(place => {
-      if (!place.name) return false;
-
-      const normalizedName = place.name.toLowerCase();
-      
-      // Check if the place name matches any excluded establishment
-      const isExcluded = EXCLUDED_ESTABLISHMENTS.some(excluded => 
-        normalizedName.includes(excluded.toLowerCase())
-      );
-
-      // Also check place types to exclude convenience stores
-      const hasConvenienceType = place.types?.some(type => 
-        type.includes('convenience_store') || 
-        type.includes('convenience')
-      );
-
-      return !isExcluded && !hasConvenienceType;
-    });
-
-    console.log(`Found ${placesResponse.data.results.length} places, ${filteredResults.length} after filtering`)
-
-    const { county, townName } = await determineLocationDetails(params.lat, params.lng);
-
-    // Process results
-    const processPlaceDetails = async (place: PlaceData): Promise<CachedRestaurant> => {
-      let imageUrl = '/placeholder-restaurant.jpg';
-      let hasGoogleImage = false;
-      let yelpData = null;
-          
-          // Try to get Google image first
-          if (place.photos?.[0] && 'photo_reference' in place.photos[0]) {
-            try {
-              const photoRef = (place.photos[0] as any).photo_reference;
-              const googlePhotoUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${photoRef}&key=${apiKey}`;
-              const savedImageUrl = await uploadRestaurantImage(
-                place.place_id ?? '',
-                Buffer.from((await axios.get(googlePhotoUrl, { responseType: 'arraybuffer' })).data),
-                'image/jpeg',
-                'google'
-              );
-              imageUrl = savedImageUrl;
-              hasGoogleImage = true;
-            } catch (error) {
-              console.error(`Failed to fetch Google image for ${place.name}:`, error);
-            }
-          }
-
-        // Fix geometry access
-  const lat = place.geometry?.location?.lat ?? 0;
-  const lng = place.geometry?.location?.lng ?? 0;
-  
-  
   // Try to get Yelp data if no Google image
   if (!hasGoogleImage) {
     try {
@@ -289,17 +200,27 @@ export async function GET(request: Request) {
       console.error(`Failed to fetch Yelp data for ${place.name}:`, error);
     }
   }
-    
-    // Get place details for additional information
-    try {
-      const detailsResponse = await client.placeDetails({
-        params: {
-          place_id: place.place_id ?? '',
-          key: apiKey,
-          fields: ['website', 'formatted_phone_number', 'price_level']
-        }
-      });
-      const details = detailsResponse.data.result;
+
+  // Get place details for additional information
+  try {
+    const detailsResponse = await client.placeDetails({
+      params: {
+        place_id: place.place_id ?? '',
+        key: apiKey,
+        // Add operating hours to the fields
+        fields: [
+          'website',
+          'formatted_phone_number',
+          'price_level',
+          'opening_hours',
+          'formatted_address',
+          'name',
+          'rating',
+          'photos'
+        ]
+      }
+    });
+    const details = detailsResponse.data.result;
 
     // Save restaurant data with all available information
     await saveRestaurantData(
@@ -357,7 +278,12 @@ export async function GET(request: Request) {
       phone: details.formatted_phone_number || null,
       website: details.website || null,
       yelpId: yelpData?.id || null,
-      yelpRating: yelpData?.rating || null
+      yelpRating: yelpData?.rating || null,
+      openingHours: details.opening_hours ? {
+        openNow: details.opening_hours.open_now,
+        periods: details.opening_hours.periods,
+        weekdayText: details.opening_hours.weekday_text
+      } : null
     } as CachedRestaurant;
   } catch (error) {
     console.error(`Failed to fetch place details for ${place.name}:`, error);
@@ -379,15 +305,210 @@ export async function GET(request: Request) {
       imageUrl
     } as CachedRestaurant;
   }
-};
+}
 
-// Update the restaurants mapping
+export async function GET(request: Request) {
+  try {
+    // Get Google Maps API key from environment
+    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+    if (!apiKey) {
+      throw new Error('Google Maps API key is not configured');
+    }
+
+    // 1. Authentication
+    const decodedToken = await validateFirebaseToken(
+      request.headers.get("authorization")
+    );
+    
+    if (!decodedToken.uid) {
+      return NextResponse.json(
+        { error: "Unauthorized - invalid user ID" },
+        { status: 401 }
+      );
+    }
+
+    // 2. Rate Limiting
+    await checkRateLimit(decodedToken.uid);
+
+    // 3. Parameter Validation
+    const { searchParams } = new URL(request.url);
+    const params = validateRequestParams(searchParams);
+    
+    // 4. User Document Check
+    const userRef = admin.firestore().collection('users').doc(decodedToken.uid);
+    const userDoc = await userRef.get();
+    
+    if (!userDoc.exists) {
+      return NextResponse.json(
+        { error: "User document not found" },
+        { status: 404 }
+      );
+    }
+
+    // 5. Process Request with Validated Parameters
+    const now = Date.now();
+    const gridKey = geohash.encode(params.lat, params.lng, 6);
+
+    // Log request for audit purposes
+    await admin.firestore().collection('requestLogs').add({
+      userId: decodedToken.uid,
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      params,
+      gridKey
+    });
+
+ 
+     
+    // If no cache, fetch from Places API
+    console.log("Cache miss, fetching from Places API");
+    const client = new Client({});
+
+    // Make Places API call first
+    console.log("Fetching from Places API");
+    const placesResponse = await googleMapsClient.placesNearby({
+      params: {
+        location: { lat: params.lat, lng: params.lng },
+        radius: 50, // 50 meters for precision
+        // Remove the type parameter to get all establishments
+        // type: 'restaurant' as AddressType, // Remove this
+        language: Language.zh_TW,
+        key: apiKey,
+        // Expanded keyword to catch more types of establishments
+        keyword: [
+          'restaurant', 'cafe', 'food', 
+          'meal_delivery', 'meal_takeaway',
+          'bar', 'night_club', 'bakery',
+          'KFC', '肯德基', 'Nu Pasta', 
+          'restaurant|餐廳|food|drink|cafe|飲料|茶|咖啡',
+          'fast food', 'chain restaurant'
+        ].join('|')
+      },
+      timeout: 10000 
+    });
+    
+    const filteredResults = placesResponse.data.results.filter(place => {
+      if (!place?.name) return false;
+    
+      const normalizedName = place.name.toLowerCase();
+      
+      // Check exclusions first
+      const isExcluded = EXCLUDED_ESTABLISHMENTS.some(excluded => 
+        normalizedName.includes(excluded.toLowerCase())
+      );
+    
+      if (isExcluded) return false;
+    
+      // Check if it's any type of food establishment
+      const validTypes = [
+        'restaurant',
+        'food',
+        'meal_takeaway',
+        'cafe',
+        'meal_delivery',
+        'bakery',
+        'bar',
+        'establishment',
+        'point_of_interest'
+      ];
+    
+      const isValidEstablishment = place.types?.some(type => 
+        validTypes.includes(type.toLowerCase())
+      );
+    
+      // Log what we found for debugging
+      console.log(`Checking place: ${place.name}`, {
+        types: place.types,
+        isValid: isValidEstablishment,
+        location: place.geometry?.location,
+        address: place.vicinity
+      });
+    
+      return isValidEstablishment;
+    });
+
+        // Now check cache
+       console.log("Checking cache for location:", { lat: params.lat, lng: params.lng });
+       const cachedRestaurants = await getCachedRestaurantsForLocation(params.lat, params.lng);
+   
+       if (cachedRestaurants?.length) {
+         // Find new restaurants that aren't in cache
+         const newRestaurants = filteredResults.filter(place => 
+           !cachedRestaurants.some(cached => cached.id === place.place_id)
+         );
+       
+         if (newRestaurants.length > 0) {
+           // Process new restaurants with proper type handling
+           const processedNewRestaurants = await Promise.all(
+            newRestaurants.map(place => processPlaceDetails(place as PlaceData, apiKey))
+          );
+           
+           const combinedRestaurants = [...cachedRestaurants, ...processedNewRestaurants];
+           await saveCachedRestaurantsForLocation(params.lat, params.lng, combinedRestaurants);
+           
+           // Return combined results
+           return NextResponse.json({
+             restaurants: combinedRestaurants.slice(0, params.limit),
+             county: combinedRestaurants[0]?.county || 'Unknown County',
+             cached: false,
+             lastUpdated: {
+               county: now,
+               restaurants: now,
+               images: now,
+             },
+             metadata: {
+               total: combinedRestaurants.length,
+               returned: Math.min(combinedRestaurants.length, params.limit),
+               gridKey,
+               newlyAdded: processedNewRestaurants.length
+             }
+           });
+         }
+       
+         // If no new restaurants, return cached results
+         return NextResponse.json({
+           restaurants: cachedRestaurants.slice(0, params.limit),
+           county: cachedRestaurants[0]?.county || 'Unknown County',
+           cached: true,
+           lastUpdated: {
+             county: now,
+             restaurants: now,
+             images: now,
+           },
+           metadata: {
+             total: cachedRestaurants.length,
+             returned: Math.min(cachedRestaurants.length, params.limit),
+             gridKey
+           }
+         });
+       }
+
+    // Add detailed logging to help debug
+    console.log('Search Parameters:', {
+      location: { lat: params.lat, lng: params.lng },
+      resultsFound: placesResponse.data.results.length,
+      validRestaurants: filteredResults.length
+    });
+    
+    console.log('Found Establishments:', 
+      placesResponse.data.results.map(p => ({
+        name: p.name,
+        types: p.types,
+        isRestaurant: p.types?.includes('restaurant' as AddressType), // Type assertion
+        address: p.vicinity
+      }))
+    );
+
+    const { county, townName } = await determineLocationDetails(params.lat, params.lng);
+
+
+
+// Process all results if no cache exists
 const restaurants: CachedRestaurant[] = await Promise.all(
   filteredResults
     .filter((place): place is PlaceData => 
       Boolean(place?.place_id && place?.name && place?.geometry?.location)
     )
-    .map(processPlaceDetails)
+    .map(place => processPlaceDetails(place, apiKey))
 );
 
 if (restaurants.length === 0) {

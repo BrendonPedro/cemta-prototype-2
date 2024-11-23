@@ -43,10 +43,25 @@ export interface RestaurantData {
     yelp: boolean;
   };
   townName: string;
-  hasGoogleData?: boolean;  // Add this
-  hasYelpData?: boolean;    // Add this
-  hasMenu?: boolean;        // Add this
-  imageUrl?: string;        // Add this
+  hasGoogleData?: boolean;  
+  hasYelpData?: boolean;    
+  hasMenu?: boolean;        
+  imageUrl?: string;        
+}
+
+export interface OpeningHours {
+  openNow: boolean;
+  periods: {
+    open: {
+      day: number;
+      time: string;
+    };
+    close: {
+      day: number;
+      time: string;
+    };
+  }[];
+  weekdayText: string[];
 }
 
 // Add CachedRestaurant interface to match your existing firestore service
@@ -70,6 +85,7 @@ export interface CachedRestaurant {
   website?: string | null;
   yelpId?: string | null;
   yelpRating?: number | null;
+  openingHours?: OpeningHours | null;
 }
 
 export interface CountyStats {

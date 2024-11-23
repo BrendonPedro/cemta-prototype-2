@@ -22,7 +22,7 @@ import {
 import geohash from "ngeohash";
 import { db } from "@/lib/database-builder/db";
 import { CONFIG } from '@/lib/database-builder/config';
-import type { RestaurantData } from '@/lib/database-builder/types';
+import type { RestaurantData, OpeningHours } from '@/lib/database-builder/types';
 
 
 // ======= Basic Types and Shared Interfaces =======
@@ -91,6 +91,7 @@ export interface RestaurantDetails {
   photos?: Photo[];
   yelpId?: string;
   location?: Location;
+  openingHours?: OpeningHours | null;
 }
 
 // (Used in FindRestaurantsAndMenus.tsx)
@@ -112,6 +113,7 @@ export interface Restaurant {
   menuImageUrl?: string; 
   menuId?: string;      
   hasMenu?: boolean;    
+  openingHours?: OpeningHours | null;
 }
 
 // (Used in FindRestaurantsAndMenus.tsx and nearby-restaurants/route.ts)
@@ -135,6 +137,7 @@ export interface CachedRestaurant {
   website?: string | null;
   yelpId?: string | null;
   yelpRating?: number | null;
+  openingHours?: OpeningHours | null;
 }
 
 // ======= Menu Related Interfaces =======

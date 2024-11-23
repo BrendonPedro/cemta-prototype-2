@@ -65,7 +65,7 @@ import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertTriangle } from "lucide-react";
 import { AnimatePresence } from "framer-motion";
-
+import { RestaurantDetails } from "@/app/shared/components/RestaurantDetails";
 
 interface LatLngLiteral {
   lat: number;
@@ -504,28 +504,29 @@ const processCombinedResults = async (
 
  // Update handleMapClick
  const handleMapClick = (event: google.maps.MapMouseEvent) => {
-  const clickedLatLng = event.latLng;
-  if (clickedLatLng) {
-    const newCenter = {
-      lat: clickedLatLng.lat(),
-      lng: clickedLatLng.lng(),
-    };
-    setPinLocation(newCenter);
-    setCenter(newCenter);
-    setFocusedRestaurant(null);
-    setIsLoading(true);
-    
-    Promise.resolve(fetchNearbyRestaurants(newCenter.lat, newCenter.lng))
-      .catch((error: Error) => {
-        console.error("Error in handleMapClick:", error);
-        setError(error.message || "Failed to fetch restaurants");
-      })
-      .finally(() => {
-        console.log('Finished loading restaurants');
-        setIsLoading(false);
-        setIsRefreshing(false);
-      });
-  }
+  if (!event.latLng) return;
+
+  const lat = event.latLng.lat();
+  const lng = event.latLng.lng();
+  
+  // Log the exact click coordinates
+  console.log('Map clicked at:', { lat, lng });
+  
+  setPinLocation({ lat, lng });
+  setCenter({ lat, lng });
+  setFocusedRestaurant(null);
+  setIsLoading(true);
+  
+  // Use the exact coordinates
+  fetchNearbyRestaurants(lat, lng)
+    .catch((error: Error) => {
+      console.error("Error in handleMapClick:", error);
+      setError(error.message || "Failed to fetch restaurants");
+    })
+    .finally(() => {
+      setIsLoading(false);
+      setIsRefreshing(false);
+    });
 };
  
   const handleRequestMenu = async (
@@ -1079,81 +1080,45 @@ const handleFilter = useCallback(() => {
                 </GoogleMap>
 
                 <div className="mt-4 space-y-4">
-                  {!focusedRestaurant ? (
-                    <p className="text-center text-sm text-gray-500">
-                      Click on a restaurant marker to view details
-                    </p>
-                  ) : (
-                    <>
-                      {/* Restaurant Image */}
-                      <div className="relative h-48 w-full rounded-lg overflow-hidden">
-                      <Image
-                        src={
-                          focusedRestaurant.imageUrl || 
-                          focusedRestaurant.photoUrl || 
-                          '/placeholder-restaurant.jpg'
-                        }
-                        alt={focusedRestaurant.name}
-                        fill
-                        className="object-cover transition-transform duration-300 hover:scale-105"
-                        sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                        onError={(e) => {
-                          const img = e.target as HTMLImageElement;
-                          img.src = '/placeholder-restaurant.jpg';
-                        }}
-                      />
-                      {/* Optional: Show image source badge */}
-                      {(focusedRestaurant.imageUrl || focusedRestaurant.photoUrl) && (
-                        <div className="absolute bottom-2 right-2 bg-black/60 text-white px-2 py-1 rounded text-xs">
-                          {focusedRestaurant.hasGoogleData ? 'Google' : 'Yelp'}
-                        </div>
-                      )}
-                    </div>
+  {!focusedRestaurant ? (
+    <p className="text-center text-sm text-gray-500">
+      Click on a restaurant marker to view details
+    </p>
+  ) : (
+    <>
+      {/* Restaurant Image */}
+      <div className="relative h-48 w-full rounded-lg overflow-hidden">
+        <Image
+          src={
+            focusedRestaurant.imageUrl || 
+            focusedRestaurant.photoUrl || 
+            '/placeholder-restaurant.jpg'
+          }
+          alt={focusedRestaurant.name}
+          fill
+          className="object-cover transition-transform duration-300 hover:scale-105"
+          sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+          onError={(e) => {
+            const img = e.target as HTMLImageElement;
+            img.src = '/placeholder-restaurant.jpg';
+          }}
+        />
+        {/* Image source badge */}
+        {(focusedRestaurant.imageUrl || focusedRestaurant.photoUrl) && (
+          <div className="absolute bottom-2 right-2 bg-black/60 text-white px-2 py-1 rounded text-xs">
+            {focusedRestaurant.hasGoogleData ? 'Google' : 'Yelp'}
+          </div>
+        )}
+      </div>
 
-                      {/* Restaurant Details */}
-                      <div className="text-center space-y-2">
-                        <h3 className="font-semibold text-lg text-gray-900">
-                          {focusedRestaurant.name}
-                        </h3>
-                        <span className="text-gray-700 block">
-                          Address: {focusedRestaurant.address}
-                        </span>
-                        {focusedRestaurant.rating > 0 && (
-                          <div className="flex items-center justify-center gap-1">
-                            <Star className="h-4 w-4 text-yellow-400" />
-                            <span className="text-gray-700">
-                              {focusedRestaurant.rating.toFixed(1)}
-                            </span>
-                          </div>
-                        )}
-                        {focusedRestaurant.menuCount > 0 && (
-                          <div className="text-sm text-gray-600">
-                            Available Menus: {focusedRestaurant.menuCount}
-                          </div>
-                        )}
-
-                        <div className="flex flex-col gap-2">
-                          <a
-                            href={`https://www.google.com/maps/search/?api=1&query=${focusedRestaurant.latitude},${focusedRestaurant.longitude}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-customTeal hover:underline flex items-center justify-center"
-                          >
-                            <MapPin className="mr-1 h-4 w-4" />
-                            View on Google Maps
-                          </a>
-                          <Button
-                            onClick={resetFocus}
-                            size="sm"
-                            className="w-auto mt-2 text-customTeal hover:bg-customTeal/10"
-                          >
-                            Show All Restaurants
-                          </Button>
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </div>
+      {/* Restaurant Details Component */}
+      <RestaurantDetails 
+        restaurant={focusedRestaurant} 
+        onReset={resetFocus}
+      />
+    </>
+  )}
+</div>
               </>
             ) : loadError ? (
               <div className="flex justify-center items-center h-[400px] bg-gray-100">
