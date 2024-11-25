@@ -9,6 +9,13 @@ export const CONFIG = {
     RETRY_DELAY: 2000,
     DAILY_LIMIT: 200, // Daily API call limit
   },
+  SEARCH: {  // shared search config
+    INITIAL_RADIUS: 25,
+    MAX_RADIUS: 500,
+    RADIUS_INCREMENT: 25,
+    MIN_RESULTS: 5,
+    MAX_RESULTS: 30
+  },
   PATHS: {
     IMAGES: 'counties/{countyName}/towns/{townName}/restaurants/{restaurantId}/images',
     ORIGINAL_MENUS: 'counties/{countyName}/towns/{townName}/restaurants/{restaurantId}/menus/original',
@@ -31,7 +38,7 @@ export const CONFIG = {
   CACHE: {
     DURATION: 365 * 24 * 60 * 60 * 1000, // 365 days
     GEOHASH: {
-      LOCATION_PRECISION: 5,  // For locationCaches (broader area grouping)
+      LOCATION_PRECISION: 7,  // For locationCaches (Increased precision for finer location caching - restaurants nearby)
       METRICS_PRECISION: 6    // For cacheMetrics (exact location tracking)
     }
   },

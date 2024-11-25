@@ -19,11 +19,10 @@ import {
   increment,
   collectionGroup 
 } from "firebase/firestore";
-import geohash from "ngeohash";
+import geohash from 'ngeohash';
 import { db } from "@/lib/database-builder/db";
 import { CONFIG } from '@/lib/database-builder/config';
 import type { RestaurantData, OpeningHours } from '@/lib/database-builder/types';
-
 
 // ======= Basic Types and Shared Interfaces =======
 // (Used across multiple components)
@@ -83,14 +82,20 @@ export interface RestaurantDetails {
   name: string;
   address: string;
   rating: number;
-  imageUrl?: string;
+  location?: {
+    latitude: number;
+    longitude: number;
+  };
   phone?: string;
   website?: string;
-  hours?: BusinessHours[];
   priceLevel?: string;
+  hours?: BusinessHours[];
   photos?: Photo[];
   yelpId?: string;
-  location?: Location;
+  menuCount?: number;
+  county?: string;
+  createdAt?: Date;
+  updatedAt?: Date;
   openingHours?: OpeningHours | null;
 }
 
@@ -611,9 +616,12 @@ export async function getCachedRestaurantDetails(
   return null;
 }
 
-function getLocationCacheKey(lat: number, lng: number): string {
-  // Geohash with precision level 5 covers an area of ~4.9km x 4.9km
-  return geohash.encode(lat, lng, 5);
+export function getLocationCacheKey(lat: number, lng: number): string {
+  return geohash.encode(
+    lat, 
+    lng, 
+    CONFIG.CACHE.GEOHASH.LOCATION_PRECISION // Uses precision level 5 from config script
+  );
 }
 
 export const CACHE_CONSTANTS = {

@@ -341,6 +341,7 @@ const RestaurantPage: React.FC<RestaurantPageProps> = ({ restaurantId }) => {
           website: yelpData?.url || details.website,
           priceLevel: yelpData?.price_level || details.priceLevel,
           hours: details.hours || formatYelpHours(yelpData?.hours),
+          photos: photoArray,
         };
 
         if (mounted) {

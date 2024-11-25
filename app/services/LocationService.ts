@@ -688,3 +688,36 @@ export async function getLocationData(
 
   return promise;
 }
+
+export async function getTopRatedRestaurants(
+  lat: number,
+  lng: number,
+  limit: number = 10,
+  firebaseToken: string | null
+): Promise<CachedRestaurant[]> {
+  try {
+    const baseUrl = typeof window !== 'undefined' 
+      ? window.location.origin 
+      : 'http://localhost:3000';
+
+    const response = await fetch(
+      `${baseUrl}/api/restaurants?lat=${lat}&lng=${lng}&type=top_rated&limit=${limit}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${firebaseToken}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch top-rated restaurants');
+    }
+
+    const data = await response.json();
+    return data.restaurants || [];
+  } catch (error) {
+    console.error('Error fetching top-rated restaurants:', error);
+    throw error;
+  }
+}

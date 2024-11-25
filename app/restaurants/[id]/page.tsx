@@ -99,15 +99,13 @@ export default function RestaurantPageWrapper({ params }: PageProps) {
 // Add metadata generation
 export async function generateMetadata({ params }: PageProps) {
   try {
-    // You can fetch basic restaurant info here for metadata
-    // Using your existing services
     return {
-      title: `Restaurant Details`,
-      description: `View menu, photos, and details`,
+      title: `Restaurant Details | CEMTA`,
+      description: `View menu, photos, and details for this restaurant`,
     };
   } catch (error) {
     return {
-      title: "Restaurant Not Found",
+      title: "Restaurant Not Found | CEMTA",
       description: "The requested restaurant could not be found.",
     };
   }

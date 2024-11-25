@@ -1,5 +1,3 @@
-// app/about-page/page.tsx
-
 "use client";
 
 import React, { useState, useEffect } from "react";
@@ -10,7 +8,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MapPin, Search, Camera, ChevronRight, Loader2 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
-import axios from "axios";
 import {
   Carousel,
   CarouselContent,
@@ -18,6 +15,8 @@ import {
   CarouselNext,
   CarouselPrevious,
 } from "@/components/ui/carousel";
+import axios from "axios";
+import { useAuth } from "@/components/AuthProvider";
 
 interface Restaurant {
   id: string;
@@ -110,46 +109,54 @@ export default function AboutPage() {
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { firebaseToken } = useAuth();
 
-useEffect(() => {
-  const fetchNearbyRestaurants = async () => {
-    try {
-      setLoading(true);
-      const position = await new Promise<GeolocationPosition>(
-        (resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, {
-            timeout: 5000,
-            maximumAge: 0,
-            enableHighAccuracy: true,
-          });
+  useEffect(() => {
+    const fetchNearbyRestaurants = async () => {
+      try {
+        setLoading(true);
+        const position = await new Promise<GeolocationPosition>(
+          (resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+              timeout: 5000,
+              maximumAge: 0,
+              enableHighAccuracy: true,
+            });
+          }
+        );
+
+        const { latitude, longitude } = position.coords;
+        
+        const headers: HeadersInit = {
+          'Content-Type': 'application/json',
+        };
+        
+        if (firebaseToken) {
+          headers['Authorization'] = `Bearer ${firebaseToken}`;
         }
-      );
 
-      const { latitude, longitude } = position.coords;
-      const response = await axios.get(
-        `/api/nearby-restaurants?lat=${latitude}&lng=${longitude}&limit=20` // Get more restaurants initially
-      );
+        const response = await axios.get(
+          `/api/restaurants?lat=${latitude}&lng=${longitude}&limit=20&type=top_rated`,
+          { headers }
+        );
 
-      // Sort restaurants by rating and get top 9
-      const topRestaurants = response.data.restaurants
-        .sort((a: Restaurant, b: Restaurant) => b.rating - a.rating)
-        .slice(0, 9);
+        // Sort restaurants by rating and get top 9
+        const topRestaurants = response.data.restaurants
+          .sort((a: Restaurant, b: Restaurant) => b.rating - a.rating)
+          .slice(0, 9);
 
-      setRestaurants(topRestaurants);
-    } catch (error) {
-      console.error("Error fetching nearby restaurants:", error);
-      setError(
-        error instanceof GeolocationPositionError
-          ? "Please enable location services to see trending restaurants near you."
-          : "Failed to fetch nearby restaurants. Please try again later."
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
+        setRestaurants(topRestaurants);
+      } catch (error) {
+        console.error("Error fetching restaurants:", error);
+        setError("Unable to fetch nearby restaurants. Please try again later.");
+        setRestaurants([]);
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  fetchNearbyRestaurants();
-}, []);
+    fetchNearbyRestaurants();
+  }, [firebaseToken]);
 
   return (
     <div className="min-h-screen">
