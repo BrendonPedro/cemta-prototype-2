@@ -250,7 +250,7 @@ const [center, setCenter] = useState<LatLngLiteral>({
         console.log('Fetching restaurants for:', { lat, lng });
 
         const response = await fetch(
-          `/api/restaurants?lat=${lat}&lng=${lng}&type=full`,
+          `/api/restaurants?lat=${lat}&lng=${lng}&type=full&precision=7&radius=1000`,
           {
             headers: {
               Authorization: `Bearer ${firebaseToken}`,
@@ -263,10 +263,12 @@ const [center, setCenter] = useState<LatLngLiteral>({
         }
 
         const data = await response.json();
-        console.log('Received data:', {
-          restaurantsCount: data.restaurants?.length,
-          cached: data.cached,
-          county: data.county
+        console.log('Search Results:', {
+          total: data.metadata?.total,
+          cached: data.metadata?.cachedRestaurants,
+          new: data.metadata?.newRestaurants,
+          searchRadius: data.metadata?.searchRadius,
+          gridKey: data.metadata?.gridKey
         });
 
         if (!data.restaurants) {
@@ -284,11 +286,6 @@ const [center, setCenter] = useState<LatLngLiteral>({
       } finally {
         setIsLoading(false);
         setIsRefreshing(false);
-        console.log('Fetch complete, states:', {
-          isLoading: false,
-          isRefreshing: false,
-          restaurantsCount: restaurants.length
-        });
       }
     },
     [userId, firebaseToken]
@@ -1037,46 +1034,37 @@ const handleFilter = useCallback(() => {
               <>
                 <GoogleMap
                   mapContainerStyle={mapContainerStyle}
-                  center={
-                    focusedRestaurant
-                      ? {
-                          lat: focusedRestaurant.latitude,
-                          lng: focusedRestaurant.longitude,
-                        }
-                      : center
-                  }
-                  zoom={focusedRestaurant ? 16 : 14}
+                  center={center}
+                  zoom={14}
                   onClick={handleMapClick}
-                  options={{
-                    disableDefaultUI: false,
-                    clickableIcons: false,
-                    mapTypeControl: false,
-                    zoomControl: true,
-                  }}
                 >
-                  {/* Show all restaurant markers unless focusing on one */}
-                  {focusedRestaurant ? (
+                  {/* User location marker */}
+                  {locationEnabled && pinLocation && (
                     <Marker
-                      key={focusedRestaurant.id}
-                      position={{
-                        lat: focusedRestaurant.latitude,
-                        lng: focusedRestaurant.longitude,
+                      position={pinLocation}
+                      icon={{
+                        path: google.maps.SymbolPath.CIRCLE,
+                        scale: 8,
+                        fillColor: "#4A90E2",
+                        fillOpacity: 1,
+                        strokeColor: "#FFFFFF",
+                        strokeWeight: 2,
                       }}
-                      title={focusedRestaurant.name}
+                      title="Your Location"
                     />
-                  ) : (
-                    restaurants.map((restaurant) => (
-                      <Marker
-                        key={restaurant.id}
-                        position={{
-                          lat: restaurant.latitude,
-                          lng: restaurant.longitude,
-                        }}
-                        title={restaurant.name}
-                        onClick={() => handleRestaurantClick(restaurant)}
-                      />
-                    ))
                   )}
+                  
+                  {/* Restaurant markers */}
+                  {restaurants.map((restaurant) => (
+                    <Marker
+                      key={restaurant.id}
+                      position={{
+                        lat: restaurant.latitude!,
+                        lng: restaurant.longitude!,
+                      }}
+                      title={restaurant.name}
+                    />
+                  ))}
                 </GoogleMap>
 
                 <div className="mt-4 space-y-4">
