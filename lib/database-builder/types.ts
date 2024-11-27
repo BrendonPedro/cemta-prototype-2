@@ -64,7 +64,6 @@ export interface OpeningHours {
   weekdayText: string[];
 }
 
-// Add CachedRestaurant interface to match your existing firestore service
 export interface CachedRestaurant {
   id: string;
   name: string;
@@ -78,14 +77,19 @@ export interface CachedRestaurant {
   source: 'google' | 'yelp';
   hasGoogleData: boolean;
   hasYelpData: boolean;
-  imageUrl: string;
+  imageUrl?: string;
+  photoUrl?: string;  // Added
+  menuImageUrl?: string;  // Added
+  menuId?: string;  // Added
   hasMenu: boolean;
+  contribution?: boolean;  // Added
   priceLevel?: string | null;
   phone?: string | null;
   website?: string | null;
   yelpId?: string | null;
   yelpRating?: number | null;
   openingHours?: OpeningHours | null;
+  hasDetailsFetched?: boolean;  // Added to track fetch status
 }
 
 export interface CountyStats {

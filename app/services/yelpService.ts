@@ -82,6 +82,13 @@ export async function fetchYelpBusinessDirectly(
       return null;
     }
 
+    // Normalize and encode the search term
+    const normalizedName = name
+      .trim()
+      .toLowerCase()
+      .replace(/[^\w\s\u4e00-\u9fff]/g, '') // Keep only word chars, spaces, and Chinese characters
+      .slice(0, 64); // Limit length to avoid extremely long queries
+
     // Search for the business
     const response = await axios.get<{ businesses: YelpBusiness[] }>(
       "https://api.yelp.com/v3/businesses/search",
@@ -91,23 +98,47 @@ export async function fetchYelpBusinessDirectly(
           Accept: "application/json",
         },
         params: {
-          term: name,
+          term: normalizedName,
           latitude,
           longitude,
           radius: 100,
           categories: "restaurants,food",
           limit: 3,
           sort_by: "distance",
+          locale: 'zh_TW', // Add locale parameter for better handling of Chinese
         },
       }
     );
 
-    const businesses = response.data.businesses || [];
-    const business = businesses[0];
+    // Additional validation of response
+    if (!response.data?.businesses?.length) {
+      console.log(`No Yelp results found for: ${normalizedName}`);
+      return null;
+    }
 
-    return business || null;
+    // Find best match
+    const bestMatch = response.data.businesses.find(business => {
+      const businessName = business.name.toLowerCase();
+      const searchName = normalizedName.toLowerCase();
+      return (
+        businessName.includes(searchName) ||
+        searchName.includes(businessName)
+      );
+    }) || response.data.businesses[0];
+
+    return bestMatch;
+
   } catch (error) {
-    console.error("Error fetching Yelp business directly:", error);
+    if (axios.isAxiosError(error)) {
+      console.error("Error fetching Yelp business directly:", {
+        status: error.response?.status,
+        data: error.response?.data,
+        name: name,
+        coordinates: { latitude, longitude }
+      });
+    } else {
+      console.error("Unknown error fetching Yelp business:", error);
+    }
     return null;
   }
 }

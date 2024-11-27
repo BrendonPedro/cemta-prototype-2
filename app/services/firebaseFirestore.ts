@@ -23,6 +23,7 @@ import geohash from 'ngeohash';
 import { db } from "@/lib/database-builder/db";
 import { CONFIG } from '@/lib/database-builder/config';
 import type { RestaurantData, OpeningHours } from '@/lib/database-builder/types';
+import { calculateDistance } from '@/app/utils/locationUtils'
 
 // ======= Basic Types and Shared Interfaces =======
 // (Used across multiple components)
@@ -124,6 +125,7 @@ export interface Restaurant {
   website?: string;
   yelpId?: string;
   yelpRating?: number;
+  hasDetailsFetched?: boolean;
 }
 
 // (Used in FindRestaurantsAndMenus.tsx and nearby-restaurants/route.ts)
@@ -140,14 +142,19 @@ export interface CachedRestaurant {
   source: 'google' | 'yelp';
   hasGoogleData: boolean;
   hasYelpData: boolean;
-  imageUrl: string;
+  imageUrl?: string;
+  photoUrl?: string;  
+  menuImageUrl?: string;  
+  menuId?: string; 
   hasMenu: boolean;
+  contribution?: boolean; 
   priceLevel?: string | null;
   phone?: string | null;
   website?: string | null;
   yelpId?: string | null;
   yelpRating?: number | null;
   openingHours?: OpeningHours | null;
+  hasDetailsFetched?: boolean;  // Added to track fetch status
 }
 
 // ======= Menu Related Interfaces =======
@@ -299,6 +306,11 @@ export type Menu = MenuDetails;
 export type LatLngLiteral = Location
 
 const RESTAURANT_DETAILS_COLLECTION = "restaurantDetails";
+
+const SAVE_DEBOUNCE_TIME = 2000; // 2 seconds
+const VERIFICATION_INTERVAL = 30000; // 30 seconds
+const saveQueue = new Map<string, NodeJS.Timeout>();
+let lastVerificationTime = 0;
 
 export async function batchUpdateRestaurants(
   restaurants: CachedRestaurant[],
@@ -638,54 +650,67 @@ export const CACHE_CONSTANTS = {
   GEOHASH_PRECISION: CONFIG.CACHE.GEOHASH.LOCATION_PRECISION
 };
 
+const CACHE_DURATION = CONFIG.CACHE.DURATION || 365 * 24 * 60 * 60 * 1000;
+const SAVE_DEBOUNCE = 2000; // 2 seconds
+
 export async function getCachedRestaurantsForLocation(
   lat: number,
-  lng: number,
+  lng: number
 ): Promise<CachedRestaurant[] | null> {
   const locationKey = getLocationCacheKey(lat, lng);
   const cacheRef = doc(db, CACHE_CONSTANTS.COLLECTION_NAME, locationKey);
-  const docSnap = await getDoc(cacheRef);
-
-  if (docSnap.exists()) {
-    const data = docSnap.data();
-    const cacheTime = data.cachedAt?.toMillis() || 0;
-
-    const restaurants = data.restaurants as CachedRestaurant[];
-
-    // Check if 'county' is present in the first restaurant
-    if (restaurants.length > 0 && !restaurants[0].county) {
-      console.log("Cached data missing 'county' field. Fetching new data.");
-      return null;
+  
+  try {
+    const cacheDoc = await getDoc(cacheRef);
+    if (cacheDoc.exists()) {
+      const data = cacheDoc.data();
+      const cachedAt = data.cachedAt?.toDate() || new Date(0);
+      
+      // Check if cache is still valid
+      if (Date.now() - cachedAt.getTime() < CACHE_DURATION) {
+        return data.restaurants;
+      }
     }
-
-    if (Date.now() - cacheTime < CACHE_CONSTANTS.DURATION) {
-      console.log(`Cache HIT in Firestore for location key: ${locationKey}`);
-      return restaurants;
-    } else {
-      console.log(`Cache EXPIRED in Firestore for location key: ${locationKey}`);
-    }
-  } else {
-    console.log(`Cache MISS in Firestore for location key: ${locationKey}`);
+    return null;
+  } catch (error) {
+    console.error('Error getting cache:', error);
+    return null;
   }
-  return null;
 }
 
-// Update saveCachedRestaurantsForLocation
 export async function saveCachedRestaurantsForLocation(
   lat: number,
   lng: number,
   restaurants: CachedRestaurant[],
 ): Promise<void> {
   const locationKey = getLocationCacheKey(lat, lng);
-  const cacheRef = doc(db, CACHE_CONSTANTS.COLLECTION_NAME, locationKey);
-
-  console.log(`Saving cache to Firestore for location key: ${locationKey}`);
   
-  await setDoc(cacheRef, {
-    restaurants,
-    cachedAt: new Date(),
-    lastUpdated: new Date(),
-    geohash: locationKey,
+  // Clear any pending save
+  if (saveQueue.has(locationKey)) {
+    clearTimeout(saveQueue.get(locationKey)!);
+  }
+
+  // Debounce save operation
+  return new Promise((resolve, reject) => {
+    saveQueue.set(
+      locationKey,
+      setTimeout(async () => {
+        try {
+          await setDoc(doc(db, CACHE_CONSTANTS.COLLECTION_NAME, locationKey), {
+            restaurants,
+            cachedAt: serverTimestamp(),
+            lastUpdated: serverTimestamp(),
+            geohash: locationKey,
+          });
+          saveQueue.delete(locationKey);
+          resolve();
+        } catch (error) {
+          console.error('Error saving cache:', error);
+          saveQueue.delete(locationKey);
+          reject(error);
+        }
+      }, SAVE_DEBOUNCE)
+    );
   });
 }
 
@@ -1282,47 +1307,65 @@ export async function saveRestaurantData(
     }
 
 
-// Helper function to verify and fix restaurant counts if needed
+// Updated verifyAndFixRestaurantCount with throttling
 export async function verifyAndFixRestaurantCount(
   countyName: string, 
   townName: string,
   forceUpdate: boolean = false
 ): Promise<void> {
+  // Skip verification if too recent unless forced
+  const now = Date.now();
+  if (!forceUpdate && now - lastVerificationTime < VERIFICATION_INTERVAL) {
+    console.log('🔄 Skipping verification - too recent');
+    return;
+  }
+  
   try {
     console.log(`\n🔍 Verifying counts for ${townName}, ${countyName}`);
+    lastVerificationTime = now;
     
     const countyRef = doc(db, 'counties', countyName);
     const townRef = doc(countyRef, 'towns', townName);
 
-    // Get all restaurants from both collections
-    const [globalRestaurants, townRestaurants] = await Promise.all([
+    // Get all restaurants in a single batch
+    const [globalRestaurants, townRestaurants, countyDoc, townDoc] = await Promise.all([
       getDocs(query(
         collection(db, 'restaurants'),
         where('countyName', '==', countyName),
         where('townName', '==', townName)
       )),
-      getDocs(collection(townRef, 'restaurants'))
+      getDocs(collection(townRef, 'restaurants')),
+      getDoc(countyRef),
+      getDoc(townRef)
     ]);
 
-    const globalIds = new Set(globalRestaurants.docs.map(doc => doc.id));
-    const townIds = new Set(townRestaurants.docs.map(doc => doc.id));
+    const globalCount = globalRestaurants.size;
+    const townCount = townRestaurants.size;
+    const currentCountyCount = countyDoc.data()?.restaurantCount || 0;
+    const currentTownCount = townDoc.data()?.restaurantCount || 0;
 
-    // If counts don't match or force update is true, fix them
-    if (forceUpdate || globalIds.size !== townIds.size) {
+    // Only update if counts are different
+    if (forceUpdate || globalCount !== currentCountyCount || townCount !== currentTownCount) {
       const batch = writeBatch(db);
       
-      batch.update(townRef, {
-        restaurantCount: townIds.size,
-        lastUpdated: serverTimestamp()
-      });
+      if (townCount !== currentTownCount) {
+        batch.update(townRef, {
+          restaurantCount: townCount,
+          lastUpdated: serverTimestamp()
+        });
+      }
 
-      batch.update(countyRef, {
-        restaurantCount: globalIds.size,
-        lastUpdated: serverTimestamp()
-      });
+      if (globalCount !== currentCountyCount) {
+        batch.update(countyRef, {
+          restaurantCount: globalCount,
+          lastUpdated: serverTimestamp()
+        });
+      }
 
       await batch.commit();
-      console.log(`✅ Updated counts - Town: ${townIds.size}, County: ${globalIds.size}`);
+      console.log(`✅ Updated counts - Town: ${townCount}, County: ${globalCount}`);
+    } else {
+      console.log('✅ Counts are already correct');
     }
 
   } catch (error) {

@@ -296,9 +296,28 @@ const [center, setCenter] = useState<LatLngLiteral>({
     }
   };
 
+  // Move handleFilter declaration before it's used
+  const handleFilter = useCallback(() => {
+    const filtered = restaurants.filter((restaurant) => {
+      const matchesName = nameFilter === "all" || restaurant.name === nameFilter;
+      const matchesRating =
+        ratingFilter === "all" ||
+        (ratingFilter === "4+" && restaurant.rating >= 4) ||
+        (ratingFilter === "3-4" && restaurant.rating >= 3 && restaurant.rating < 4) ||
+        (ratingFilter === "0-3" && restaurant.rating < 3);
+      const matchesMenuCount =
+        menuCountFilter === "all" ||
+        (menuCountFilter === "0" && restaurant.menuCount === 0) ||
+        (menuCountFilter === "1-3" && restaurant.menuCount >= 1 && restaurant.menuCount <= 3) ||
+        (menuCountFilter === "4+" && restaurant.menuCount >= 4);
 
+      return matchesName && matchesRating && matchesMenuCount;
+    });
 
-  // fetchNearbyRestaurants function 
+    setFilteredRestaurants(filtered.slice(currentPage * 10, (currentPage + 1) * 10));
+  }, [restaurants, nameFilter, ratingFilter, menuCountFilter, currentPage]);
+
+  // Modified fetchNearbyRestaurants function
   const fetchNearbyRestaurants = useCallback(
     async (lat: number, lng: number) => {
       if (!userId || !firebaseToken) {
@@ -308,55 +327,90 @@ const [center, setCenter] = useState<LatLngLiteral>({
   
       try {
         setIsLoading(true);
-        console.log('Fetching restaurants for:', { lat, lng });
+        
+        // Get cached restaurants within 1km radius
+        const cachedResults = await getCachedRestaurantsForLocation(lat, lng);
+        let nearbyResults = cachedResults?.filter(restaurant => 
+          calculateDistance(lat, lng, restaurant.latitude, restaurant.longitude) <= 1000
+        ) || [];
   
-        const response = await fetch(
-          `/api/restaurants?lat=${lat}&lng=${lng}&type=full`,
-          {
-            headers: {
-              Authorization: `Bearer ${firebaseToken}`,
-            },
-          }
+        // Deduplicate cached results
+        nearbyResults = Array.from(
+          new Map(nearbyResults.map(item => [item.id, item])).values()
         );
   
-        if (!response.ok) {
-          throw new Error(`HTTP error! status: ${response.status}`);
-        }
-  
-        const data = await response.json();
-        
-        if (!data.restaurants) {
-          throw new Error('No restaurants data received');
-        }
-  
-        // Merge new restaurants with existing ones, preventing duplicates
-        setRestaurants(prevRestaurants => {
-          const allRestaurants = [...prevRestaurants];
-          
-          data.restaurants.forEach((newRestaurant: Restaurant) => {
-            const existingIndex = allRestaurants.findIndex(r => r.id === newRestaurant.id);
-            if (existingIndex >= 0) {
-              // Update existing restaurant with new data
-              allRestaurants[existingIndex] = {
-                ...allRestaurants[existingIndex],
-                ...newRestaurant
-              };
-            } else {
-              // Add new restaurant
-              allRestaurants.push(newRestaurant);
+        // Only fetch more if we have less than 20 cached results
+        if (nearbyResults.length < 20) {
+          const response = await fetch(
+            `/api/restaurants?lat=${lat}&lng=${lng}&limit=${20 - nearbyResults.length}&type=full`,
+            {
+              headers: {
+                Authorization: `Bearer ${firebaseToken}`,
+                'Content-Type': 'application/json'
+              },
             }
-          });
+          );
   
-          // Sort by distance from current location
-          return allRestaurants.sort((a, b) => {
-            const distA = calculateDistance(lat, lng, a.latitude, a.longitude);
-            const distB = calculateDistance(lat, lng, b.latitude, b.longitude);
-            return distA - distB;
-          });
-        });
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
   
+          const data = await response.json();
+          
+          if (data.restaurants) {
+            // Merge avoiding duplicates and keeping within 1km
+            const newRestaurants = data.restaurants.filter((newRest: Restaurant) => 
+              !nearbyResults.some(existing => existing.id === newRest.id) &&
+              calculateDistance(lat, lng, newRest.latitude, newRest.longitude) <= 1000
+            );
+            
+            // Combine and sort by distance before slicing
+            nearbyResults = [...nearbyResults, ...newRestaurants]
+              .sort((a, b) => {
+                const distA = calculateDistance(lat, lng, a.latitude, a.longitude);
+                const distB = calculateDistance(lat, lng, b.latitude, b.longitude);
+                return distA - distB;
+              })
+              .slice(0, 20); // Ensure we only keep the 20 closest restaurants
+  
+            // Cache the combined results
+            await saveCachedRestaurantsForLocation(lat, lng, nearbyResults);
+          }
+        }
+  
+        // Convert to Restaurant type with proper handling
+        const convertedResults: Restaurant[] = nearbyResults.map(rest => ({
+          id: rest.id,
+          name: rest.name,
+          address: rest.address,
+          latitude: rest.latitude,
+          longitude: rest.longitude,
+          rating: rest.rating,
+          menuCount: rest.menuCount,
+          county: rest.county,
+          townName: rest.townName,
+          source: rest.source,
+          hasGoogleData: rest.hasGoogleData,
+          hasYelpData: rest.hasYelpData,
+          imageUrl: rest.imageUrl,
+          hasMenu: rest.hasMenu ?? false,
+          hasDetailsFetched: false,
+          // Handle optional fields
+          photoUrl: rest.photoUrl ?? undefined,
+          menuImageUrl: rest.menuImageUrl ?? undefined,
+          menuId: rest.menuId ?? undefined,
+          priceLevel: rest.priceLevel ?? undefined,
+          phone: rest.phone ?? undefined,
+          website: rest.website ?? undefined,
+          yelpId: rest.yelpId ?? undefined,
+          yelpRating: rest.yelpRating ?? undefined,
+          openingHours: rest.openingHours ?? undefined
+        }));
+  
+        setRestaurants(convertedResults);
         setCurrentPage(0);
         setIsInitialLoad(false);
+        handleFilter();
   
       } catch (error) {
         console.error('Error fetching restaurants:', error);
@@ -366,53 +420,55 @@ const [center, setCenter] = useState<LatLngLiteral>({
         setIsRefreshing(false);
       }
     },
-    [userId, firebaseToken]
+    [userId, firebaseToken, handleFilter]
   );
 
- // Use the debounced version for map clicks
- const debouncedFetchRestaurants = useDebouncedCallback(
-   fetchNearbyRestaurants,
-   500
- );
+  // Add handleMapLoad function
+  const handleMapLoad = useCallback((map: google.maps.Map) => {
+    mapRef.current = map;
+    if (restaurants.length > 0) {
+      const bounds = new google.maps.LatLngBounds();
+      restaurants.forEach((restaurant) => {
+        bounds.extend({ lat: restaurant.latitude, lng: restaurant.longitude });
+      });
+      map.fitBounds(bounds, {
+        top: 50,
+        right: 50,
+        bottom: 50,
+        left: 50
+      });
+    }
+  }, [restaurants]);
+
+  // Use the debounced version for map clicks
+  const debouncedFetchRestaurants = useDebouncedCallback(
+    fetchNearbyRestaurants,
+    500
+  );
 
   useEffect(() => {
-    if (authLoading || !firebaseToken || !userId) return;
-
-    const initializeLocation = async () => {
-      try {
-        setIsLoading(true);
-        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, {
-            enableHighAccuracy: true,
-            timeout: 5000,
-            maximumAge: 0
-          });
-        });
-
-        const { latitude, longitude } = position.coords;
-        console.log('Initial location:', { latitude, longitude });
-        
-        setCenter({ lat: latitude, lng: longitude });
-        setPinLocation({ lat: latitude, lng: longitude });
-        await fetchNearbyRestaurants(latitude, longitude);
-        setIsInitialized(true);
-      } catch (error) {
-        console.error('Location error:', error);
-        // Only set default location if we haven't initialized yet
-        if (!isInitialized) {
-          const defaultCenter = { lat: 23.5737, lng: 121.0229 }; // Taiwan center
-          setCenter(defaultCenter);
-          setPinLocation(defaultCenter);
-          setError('Could not get your location. Using default location in Taiwan.');
-          await fetchNearbyRestaurants(defaultCenter.lat, defaultCenter.lng);
+    if (!isInitialized && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const { latitude, longitude } = position.coords;
+          setCenter({ lat: latitude, lng: longitude });
+          setPinLocation({ lat: latitude, lng: longitude });
+          fetchNearbyRestaurants(latitude, longitude);
+          setIsInitialized(true);
+        },
+        (error) => {
+          console.error('Geolocation error:', error);
+          // Use default location only if not initialized
+          if (!isInitialized) {
+            setCenter({ lat: 24.687604, lng: 120.871407 });
+            setPinLocation({ lat: 24.687604, lng: 120.871407 });
+            fetchNearbyRestaurants(24.687604, 120.871407);
+            setIsInitialized(true);
+          }
         }
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    initializeLocation();
-  }, [userId, firebaseToken, authLoading, fetchNearbyRestaurants, isInitialized]);
+      );
+    }
+  }, [fetchNearbyRestaurants, isInitialized]);
 
   const handleRefreshLocation = async (showPrompt = false) => {
     setIsRefreshing(true);
@@ -496,98 +552,54 @@ const [center, setCenter] = useState<LatLngLiteral>({
   setSelectedMarker(null);
 }, [fetchNearbyRestaurants]);
 
-const handleFilter = useCallback(() => {
-  const filtered = restaurants.filter((restaurant) => {
-    const matchesName = nameFilter === "all" || restaurant.name === nameFilter;
-    const matchesRating =
-      ratingFilter === "all" ||
-      (ratingFilter === "4+" && restaurant.rating >= 4) ||
-      (ratingFilter === "3-4" && restaurant.rating >= 3 && restaurant.rating < 4) ||
-      (ratingFilter === "0-3" && restaurant.rating < 3);
-    const matchesMenuCount =
-      menuCountFilter === "all" ||
-      (menuCountFilter === "0" && restaurant.menuCount === 0) ||
-      (menuCountFilter === "1-3" && restaurant.menuCount >= 1 && restaurant.menuCount <= 3) ||
-      (menuCountFilter === "4+" && restaurant.menuCount >= 4);
-
-    return matchesName && matchesRating && matchesMenuCount;
-  });
-
-  setFilteredRestaurants(filtered.slice(currentPage * 10, (currentPage + 1) * 10));
-}, [
-  restaurants,
-  nameFilter,
-  ratingFilter,
-  menuCountFilter,
-  currentPage,
-]);
-
 // Add a new handler for marker clicks
-const handleMarkerClick = useCallback(async (restaurant: Restaurant, position: LatLngLiteral) => {
+const handleMarkerClick = useCallback(async (
+  restaurant: Restaurant, 
+  position: LatLngLiteral
+) => {
   try {
-    // First update UI immediately with what we have
     setFocusedRestaurant(restaurant);
     setSelectedMarker(restaurant.id);
-    setCenter({ lat: restaurant.latitude, lng: restaurant.longitude });
+    setCenter(position); // Ensure map centers on clicked marker
     
     if (mapRef.current) {
+      mapRef.current.panTo(position);
       mapRef.current.setZoom(16);
     }
 
-    // Then try to fetch additional details in the background
-    const response = await fetch(
-      `/api/restaurants?lat=${position.lat}&lng=${position.lng}&type=full`,
-      {
-        headers: {
-          Authorization: `Bearer ${firebaseToken}`,
-        },
-      }
-    );
-
-    if (!response.ok) {
-      console.warn('Failed to fetch additional restaurant details');
-      return; // Keep showing basic restaurant info
-    }
-
-    const data = await response.json();
-    
-    // Find the clicked restaurant in the new data
-    const updatedRestaurant = data.restaurants?.find(
-      (r: Restaurant) => r.id === restaurant.id
-    );
-
-    if (updatedRestaurant) {
-      // Update restaurants state with new data
-      setRestaurants(prevRestaurants => {
-        const existingIndex = prevRestaurants.findIndex(r => r.id === restaurant.id);
-        if (existingIndex >= 0) {
-          // Replace existing restaurant with updated data
-          const newRestaurants = [...prevRestaurants];
-          newRestaurants[existingIndex] = {
-            ...prevRestaurants[existingIndex],
-            ...updatedRestaurant
-          };
-          return newRestaurants;
+    // Only fetch additional details if not already fetched
+    if (!restaurant.hasDetailsFetched) {
+      const response = await fetch(
+        `/api/restaurants?lat=${position.lat}&lng=${position.lng}&id=${restaurant.id}&type=details`,
+        {
+          headers: {
+            Authorization: `Bearer ${firebaseToken}`,
+          },
         }
-        // Add new restaurant if not found
-        return [...prevRestaurants, updatedRestaurant];
-      });
+      );
 
-      // Update focused restaurant with new data
-      setFocusedRestaurant(prev => ({
-        ...prev,
-        ...updatedRestaurant
-      }));
+      if (!response.ok) {
+        console.warn('Failed to fetch additional restaurant details');
+        return;
+      }
 
-      // Update filtered results
-      handleFilter();
+      const data = await response.json();
+      if (data.restaurant) {
+        const updatedRestaurant = {
+          ...data.restaurant,
+          hasDetailsFetched: true
+        };
+        
+        setRestaurants(prev => prev.map(r => 
+          r.id === restaurant.id ? updatedRestaurant : r
+        ));
+        setFocusedRestaurant(updatedRestaurant);
+      }
     }
-
   } catch (error) {
     console.error('Error in handleMarkerClick:', error);
-    // Don't clear the focusedRestaurant - keep showing what we have
   }
-}, [firebaseToken, handleFilter]);
+}, [firebaseToken]);
 
  
   const handleRequestMenu = async (
@@ -1103,83 +1115,52 @@ const handleMarkerClick = useCallback(async (restaurant: Restaurant, position: L
           <CardContent>
             {isLoaded ? (
               <>
-                 <GoogleMap
-      mapContainerStyle={mapContainerStyle}
-      center={center}
-      zoom={14}
-      onClick={handleMapClick}
-      onLoad={(map) => {
-        mapRef.current = map;
-        const bounds = new google.maps.LatLngBounds();
-        restaurants.forEach((restaurant) => {
-          bounds.extend({ lat: restaurant.latitude, lng: restaurant.longitude });
-        });
-        map.fitBounds(bounds, {
-          top: 50,
-          right: 50,
-          bottom: 50,
-          left: 50
-        });
-      }}
-      options={mapOptions}
-    >
-      {/* Implement marker clustering for better performance */}
-      <MarkerClusterer>
-        {(clusterer) => (
-          <>
-            {locationEnabled && pinLocation && (
+                <GoogleMap
+  mapContainerStyle={mapContainerStyle}
+  center={center}
+  zoom={14}
+  onClick={handleMapClick}
+  onLoad={handleMapLoad}
+  options={mapOptions}
+>
+  <MarkerClusterer averageCenter enableRetinaIcons>
+    {(clusterer) => (
+      <>
+        {/* Pin location marker */}
+        {pinLocation && (
+          <AdvancedMarker
+            position={pinLocation}
+            title="Selected Location"
+            isSelected={true}
+            map={mapRef.current}
+          />
+        )}
+        
+        {/* Restaurant markers */}
+        {restaurants
+          .slice(0, 20) // Ensure only 20 restaurants are rendered
+          .map((restaurant) => {
+            // Only create the visual marker, not the clustering marker
+            return (
               <AdvancedMarker
-                position={pinLocation}
-                title="Your Location"
-                isSelected={true}
-                map={mapRef.current}
-              />
-            )}
-            
-            {restaurants
-              .filter((restaurant) => {
-                if (!mapRef.current) return false;
-                const bounds = mapRef.current.getBounds();
-                if (!bounds) return true;
-                return bounds.contains({
+                key={`marker-${restaurant.id}`} // Unique key for each marker
+                position={{
                   lat: restaurant.latitude,
                   lng: restaurant.longitude,
-                });
-              })
-              .map((restaurant) => {
-                // Create a standard marker for clustering
-                const marker = new google.maps.Marker({
-                  position: {
-                    lat: restaurant.latitude,
-                    lng: restaurant.longitude,
-                  },
-                  title: restaurant.name,
-                });
-                
-                // Add to clusterer with the required second argument (false to allow redraw)
-                clusterer.addMarker(marker, false);
-                
-                // Return the AdvancedMarker for visual display
-                return (
-                  <AdvancedMarker
-                    key={restaurant.id}
-                    position={{
-                      lat: restaurant.latitude,
-                      lng: restaurant.longitude,
-                    }}
-                    onClick={() => handleMarkerClick(restaurant, {
-                      lat: restaurant.latitude,
-                      lng: restaurant.longitude
-                    })}
-                    isSelected={selectedMarker === restaurant.id}
-                    title={restaurant.name}
-                    map={mapRef.current}
-                  />
-                );
-              })}
-          </>
-        )}
-      </MarkerClusterer>
+                }}
+                onClick={() => handleMarkerClick(restaurant, {
+                  lat: restaurant.latitude,
+                  lng: restaurant.longitude
+                })}
+                isSelected={selectedMarker === restaurant.id}
+                title={restaurant.name}
+                map={mapRef.current}
+              />
+            );
+          })}
+      </>
+    )}
+  </MarkerClusterer>
 </GoogleMap>
 
                 <div className="mt-4 space-y-4">

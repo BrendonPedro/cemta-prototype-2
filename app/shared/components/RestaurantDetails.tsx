@@ -1,9 +1,10 @@
 import { Star, MapPin, Clock, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Restaurant } from "@/app/services/firebaseFirestore";
+import { OpeningHours } from "@/lib/database-builder/types";
 
-// Add the OperatingHours component
-const OperatingHours: React.FC<{ openingHours: any }> = ({ openingHours }) => {
+// Update the OperatingHours component with proper typing
+const OperatingHours: React.FC<{ openingHours: OpeningHours }> = ({ openingHours }) => {
   const today = new Date().getDay();
   const daysMap: { [key: number]: string } = {
     0: 'Sunday',
@@ -18,13 +19,11 @@ const OperatingHours: React.FC<{ openingHours: any }> = ({ openingHours }) => {
   return (
     <div className="space-y-1 bg-gray-50 rounded-lg p-3">
       {/* Open/Closed Status */}
-      {openingHours.openNow !== undefined && (
-        <div className={`text-sm font-medium mb-2 ${
-          openingHours.openNow ? 'text-green-600' : 'text-red-600'
-        }`}>
-          {openingHours.openNow ? '● Open Now' : '○ Closed'}
-        </div>
-      )}
+      <div className={`text-sm font-medium mb-2 ${
+        openingHours.openNow ? 'text-green-600' : 'text-red-600'
+      }`}>
+        {openingHours.openNow ? '● Open Now' : '○ Closed'}
+      </div>
 
       {/* Weekly Schedule */}
       {openingHours.weekdayText && (
