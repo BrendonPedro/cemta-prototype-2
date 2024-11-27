@@ -276,3 +276,11 @@ export interface ProcessingProgress {
     total: number;
   };
 }
+
+export interface SearchMetrics {
+  cachedCount: number;
+  newPlaces: number;
+  apiCalls: number;
+  processingTime: number;
+  totalResults: number;
+}

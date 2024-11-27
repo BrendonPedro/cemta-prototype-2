@@ -1,3 +1,5 @@
+// excludedEstablishments.ts
+
 export const EXCLUDED_ESTABLISHMENTS = [
     'family mart',
     'familymart',

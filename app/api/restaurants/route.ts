@@ -23,12 +23,16 @@ import {
   PlaceType1,
   PlaceType2,
   Language,
-  PlacesNearbyRanking 
+  PlacesNearbyRanking,
+  AddressComponent,
+  PlacesNearbyRequest
 } from "@googlemaps/google-maps-services-js";
 import type { CachedRestaurant } from "@/app/services/firebaseFirestore";
 import type { DecodedIdToken } from "firebase-admin/auth";
 import geohash from 'ngeohash';
 import { CONFIG } from "@/lib/database-builder/config";
+import { calculateDistance } from "@/app/utils/locationUtils";
+import type { SearchMetrics } from '@/lib/database-builder/types';
 
 // ----------------
 // Constants
@@ -39,7 +43,7 @@ const RATE_LIMIT = {
   WINDOW_MS: 60 * 1000  // 1 minute in milliseconds
 };
 
-const { SEARCH, CACHE } = CONFIG;
+const { SEARCH: { PRECISE }, CACHE } = CONFIG;
 
 // ----------------
 // Types & Interfaces
@@ -67,7 +71,7 @@ interface ApiCallMetrics {
 // Validation Helpers
 // ----------------
 
-function isValidEstablishment(place: PlaceData): boolean {
+function isValidEstablishment(place: Partial<PlaceData>): boolean {
   const validTypes = [
     'restaurant', 'food', 'meal_takeaway', 'cafe',
     'meal_delivery', 'bakery', 'bar', 'establishment',
@@ -80,13 +84,39 @@ function isValidEstablishment(place: PlaceData): boolean {
 }
 
 function isCompletePlaceData(place: Partial<PlaceData>): place is PlaceData {
-  return !!(
-    place.place_id &&
-    place.name &&
-    place.geometry?.location &&
-    typeof place.geometry.location.lat === 'number' &&
-    typeof place.geometry.location.lng === 'number'
+  const requiredFields = [
+    'place_id',
+    'name',
+    'geometry',
+    'vicinity'
+  ];
+
+  // Check required fields exist
+  const hasRequiredFields = requiredFields.every(field => 
+    place[field as keyof PlaceData] !== undefined
   );
+
+  if (!hasRequiredFields || !place.geometry?.location) {
+    return false;
+  }
+
+  // Ensure location has valid coordinates
+  const location = place.geometry.location;
+  if (typeof location.lat !== 'number' || typeof location.lng !== 'number') {
+    return false;
+  }
+
+  // Initialize missing arrays if needed
+  if (!Array.isArray(place.address_components)) {
+    (place as PlaceData).address_components = [];
+  }
+
+  if (!Array.isArray(place.types)) {
+    (place as PlaceData).types = [];
+  }
+
+  // Cast and return
+  return true;
 }
 
 // ----------------
@@ -166,22 +196,6 @@ async function checkRateLimit(userId: string): Promise<void> {
   });
 }
 
-// helper to calculate distance
-function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
-  const R = 6371e3; // Earth's radius in meters
-  const φ1 = lat1 * Math.PI/180;
-  const φ2 = lat2 * Math.PI/180;
-  const Δφ = (lat2-lat1) * Math.PI/180;
-  const Δλ = (lon2-lon1) * Math.PI/180;
-
-  const a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-          Math.cos(φ1) * Math.cos(φ2) *
-          Math.sin(Δλ/2) * Math.sin(Δλ/2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-
-  return R * c;
-}
-
 // ----------------
 // Place Processing
 // ----------------
@@ -256,7 +270,8 @@ async function processPlaceDetails(
           'formatted_address',
           'name',
           'rating',
-          'photos'
+          'photos',
+          'utc_offset'
         ]
       }
     });
@@ -352,6 +367,15 @@ async function processPlaceDetails(
 // ----------------
 
 export async function GET(request: Request) {
+  const startTime = Date.now();
+  const metrics: SearchMetrics = {
+    cachedCount: 0,
+    newPlaces: 0,
+    apiCalls: 0,
+    processingTime: 0,
+    totalResults: 0
+  };
+
   try {
     const apiKey = process.env.GOOGLE_MAPS_API_KEY;
     if (!apiKey) {
@@ -390,118 +414,75 @@ export async function GET(request: Request) {
 
     // Initialize Google Maps client
     const googleMapsClient = new Client({});
-    
-    // Check cache first
-    console.log("Checking cache for location:", { lat: params.lat, lng: params.lng });
+    const existingIds = new Set<string>();
+    let combinedResults: CachedRestaurant[] = [];
+
+    // 1. Get cached results
     const cachedRestaurants = await getCachedRestaurantsForLocation(params.lat, params.lng);
-    let shouldFetchNew = true;
-    let combinedRestaurants: CachedRestaurant[] = [];
     
     if (cachedRestaurants?.length) {
-      // Check if we have enough nearby cached restaurants
-      const nearbyRestaurants = cachedRestaurants.filter(restaurant => {
+      cachedRestaurants.forEach(r => existingIds.add(r.id));
+      
+      const nearbyCached = cachedRestaurants.filter(restaurant => {
         const distance = calculateDistance(
-          params.lat, 
-          params.lng, 
+          params.lat, params.lng, 
           restaurant.latitude, 
           restaurant.longitude
         );
-        return distance <= SEARCH.INITIAL_RADIUS;
+        return distance <= CONFIG.SEARCH.PRECISE.RADIUS;
       });
-    
-      if (nearbyRestaurants.length >= SEARCH.MIN_RESULTS) {
-        shouldFetchNew = false;
-        combinedRestaurants = nearbyRestaurants;
-      } else {
-        combinedRestaurants = cachedRestaurants;
-      }
+
+      combinedResults = [...nearbyCached];
+      metrics.cachedCount = nearbyCached.length;
     }
 
-    // Initialize metrics
-    let apiCallMetrics: ApiCallMetrics = {
-      places: 0,
-      newRestaurants: 0,
-      cachedRestaurants: cachedRestaurants?.length || 0
-    };
+    // 2. Always fetch precise location results
+    const { results: newPlaces, apiCalls } = await fetchPreciseLocationResults(
+      params.lat,
+      params.lng,
+      googleMapsClient,
+      apiKey,
+      existingIds
+    );
 
-    // Search logic
-    let allResults: PlaceData[] = [];
-    let radius = SEARCH.INITIAL_RADIUS;
-    
-    if (shouldFetchNew) {
-      console.log("Fetching new restaurants from Places API");
-      
-      while (
-        allResults.length < SEARCH.MIN_RESULTS && 
-        radius <= SEARCH.MAX_RADIUS
-      ) {
-        console.log(`Searching with radius: ${radius}m, Current results: ${allResults.length}`);
-        
-        const placesResponse = await googleMapsClient.placesNearby({
-          params: {
-            location: { lat: params.lat, lng: params.lng },
-            radius: radius,
-            language: Language.zh_TW,
-            key: apiKey,
-            // Use Type assertion to handle mixed PlaceType1 and PlaceType2
-            type: [
-              PlaceType1.restaurant,
-              PlaceType1.bar,
-              PlaceType1.cafe,
-              PlaceType1.bakery,
-              PlaceType1.meal_takeaway,
-              PlaceType1.meal_delivery,
-              'food' // as string since it's in PlaceType2
-            ].join('|') as string,  // Type assertion to satisfy the API typing
-            keyword: [
-              'restaurant', 'cafe', 'food', 
-              'meal_delivery', 'meal_takeaway',
-              'bar', 'night_club', 'bakery',
-              'KFC', '肯德基', 'Nu Pasta', 
-              'restaurant|餐廳|food|drink|cafe|飲料|茶|咖啡',
-              'fast food', 'chain restaurant'
-            ].join('|')
-          },
-          timeout: 10000 
-        });
-        
-        apiCallMetrics.places++;
+    metrics.apiCalls = apiCalls;
+    metrics.newPlaces = newPlaces.length;
 
-        // Filter and validate results
-        const validResults = placesResponse.data.results.filter(isCompletePlaceData);
-        const newResults = validResults.filter(place => {
-          const isDuplicate = combinedRestaurants.some(r => r.id === place.place_id);
-          const normalizedName = place.name.toLowerCase();
-          const isExcluded = EXCLUDED_ESTABLISHMENTS.some(excluded => 
-            normalizedName.includes(excluded.toLowerCase())
-          );
-          
-          return !isDuplicate && !isExcluded && isValidEstablishment(place);
-        });
+    // Process and merge new results
+    if (newPlaces.length > 0) {
+      const processedNewPlaces = await Promise.all(
+        newPlaces.map(place => processPlaceDetails(place, apiKey))
+      );
 
-        allResults = [...allResults, ...newResults];
-        
-        if (allResults.length >= SEARCH.MAX_RESULTS) {
-          break;
-        }
-        
-        radius += SEARCH.RADIUS_INCREMENT;
-        await new Promise(resolve => setTimeout(resolve, 200));
-      }
-
-      // Process and add new restaurants
-      if (allResults.length > 0) {
-        const processedNewRestaurants = await Promise.all(
-          allResults.map(place => processPlaceDetails(place, apiKey))
+      // Merge avoiding nearby duplicates
+      processedNewPlaces.forEach(newPlace => {
+        const hasNearbyDuplicate = combinedResults.some(existing => 
+          calculateDistance(
+            existing.latitude,
+            existing.longitude,
+            newPlace.latitude,
+            newPlace.longitude
+          ) < CONFIG.SEARCH.PRECISE.MERGE_DISTANCE
         );
-        apiCallMetrics.newRestaurants = processedNewRestaurants.length;
-        combinedRestaurants = [...combinedRestaurants, ...processedNewRestaurants];
-        
-        // Save to cache
-        await saveCachedRestaurantsForLocation(params.lat, params.lng, combinedRestaurants);
-        await batchUpdateRestaurants(combinedRestaurants);
-      }
+
+        if (!hasNearbyDuplicate) {
+          combinedResults.push(newPlace);
+        }
+      });
+
+      // Update cache with new results
+      await saveCachedRestaurantsForLocation(params.lat, params.lng, combinedResults);
+      await batchUpdateRestaurants(combinedResults);
     }
+
+    // Sort by distance and apply limit
+    combinedResults = combinedResults
+      .sort((a, b) => {
+        const distA = calculateDistance(params.lat, params.lng, a.latitude, a.longitude);
+        const distB = calculateDistance(params.lat, params.lng, b.latitude, b.longitude);
+        return distA - distB;
+      })
+      .slice(0, params.limit);
 
     // Get location details
     const { county, townName } = await determineLocationDetails(params.lat, params.lng);
@@ -511,19 +492,19 @@ export async function GET(request: Request) {
     const gridKey = getLocationCacheKey(params.lat, params.lng);
    
     return NextResponse.json({
-      restaurants: combinedRestaurants.slice(0, params.limit),
+      restaurants: combinedResults,
       county,
-      cached: !shouldFetchNew,
+      cached: false,
       lastUpdated: { county: now, restaurants: now, images: now },
       metadata: {
-        total: combinedRestaurants.length,
-        returned: Math.min(combinedRestaurants.length, params.limit),
+        total: combinedResults.length,
+        returned: Math.min(combinedResults.length, params.limit),
         gridKey,  // Use the gridKey from getLocationCacheKey
         metrics: {
-          apiCalls: apiCallMetrics.places,
-          newRestaurants: apiCallMetrics.newRestaurants,
-          cachedRestaurants: apiCallMetrics.cachedRestaurants,
-          searchRadius: radius
+          apiCalls: metrics.apiCalls,
+          newRestaurants: metrics.newPlaces,
+          cachedRestaurants: metrics.cachedCount,
+          searchRadius: 0
         }
       }
     });
@@ -565,4 +546,87 @@ export async function GET(request: Request) {
       { status: 500 }
     );
   }
+}
+
+// Add new helper function
+async function fetchPreciseLocationResults(
+  lat: number,
+  lng: number,
+  client: Client,
+  apiKey: string,
+  existingIds: Set<string>
+): Promise<{ results: PlaceData[]; apiCalls: number }> {
+  let allResults: PlaceData[] = [];
+  let pageToken: string | undefined;
+  let apiCalls = 0;
+  const maxRetries = 3;
+  
+  do {
+    try {
+      if (pageToken) {
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+
+      const params = {
+        params: {
+          location: { lat, lng },
+          rankby: PlacesNearbyRanking.distance,
+          keyword: 'restaurant|餐廳|food|cafe',
+          key: apiKey,
+          ...(pageToken ? { pagetoken: pageToken } : {})
+        }
+      };
+
+      const response = await client.placesNearby(params);
+      apiCalls++;
+
+      if (response.data.status === 'OK') {
+        const validResults = response.data.results
+          .filter(place => isValidEstablishment(place))
+          .filter(place => !existingIds.has(place.place_id!))
+          .map(place => {
+            // Transform partial place data into complete PlaceData
+            return {
+              ...place,
+              place_id: place.place_id!,
+              name: place.name!,
+              geometry: {
+                location: {
+                  lat: place.geometry!.location.lat,
+                  lng: place.geometry!.location.lng
+                }
+              },
+              vicinity: place.vicinity || 'No Address Available',
+              address_components: place.address_components || [],
+              types: place.types || [],
+              photos: place.photos || [],
+              rating: place.rating || 0,
+              user_ratings_total: place.user_ratings_total || 0,
+              formatted_address: place.formatted_address || place.vicinity || 'No Address Available',
+            } as PlaceData;
+          });
+
+        allResults.push(...validResults);
+        pageToken = response.data.next_page_token;
+      } else if (response.data.status === 'ZERO_RESULTS') {
+        console.log('No restaurants found in this area');
+        break;
+      } else {
+        console.warn(`Places API returned status: ${response.data.status}`);
+        break;
+      }
+
+      if (apiCalls >= PRECISE.MAX_API_CALLS || 
+          allResults.length >= PRECISE.MAX_RESULTS) {
+        break;
+      }
+
+    } catch (error) {
+      console.error('Error fetching from Places API:', error);
+      if (apiCalls >= maxRetries) break;
+      await new Promise(resolve => setTimeout(resolve, 2000));
+    }
+  } while (pageToken);
+
+  return { results: allResults, apiCalls };
 }

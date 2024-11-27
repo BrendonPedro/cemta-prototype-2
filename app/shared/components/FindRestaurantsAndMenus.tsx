@@ -17,7 +17,7 @@ import { Check, RefreshCw, ChevronDown, Info, MapPin, Star } from "lucide-react"
 import { motion } from "framer-motion";
 import { useAuth } from "@/components/AuthProvider";
 import { useAuth as useClerkAuth } from "@clerk/nextjs";
-import { useJsApiLoader, GoogleMap, Marker } from "@react-google-maps/api";
+import { useJsApiLoader, GoogleMap, Marker, MarkerClusterer } from "@react-google-maps/api";
 import {
   getMenuCountForRestaurant,
   getCachedRestaurantDetails,
@@ -31,6 +31,7 @@ import { useRouter } from 'next/navigation';
 import { Client as GoogleMapsClient } from "@googlemaps/google-maps-services-js";
 import Image from "next/image";
 import { counties, EnhancedCountyData } from "@/lib/data/counties";
+
 
 import {
   Tooltip,
@@ -66,11 +67,10 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertTriangle } from "lucide-react";
 import { AnimatePresence } from "framer-motion";
 import { RestaurantDetails } from "@/app/shared/components/RestaurantDetails";
+import { calculateDistance } from "@/app/utils/locationUtils";
 
-interface LatLngLiteral {
-  lat: number;
-  lng: number;
-}
+
+type LatLngLiteral = { lat: number; lng: number };
 
 interface SelectedRestaurant {
   id: string;
@@ -94,6 +94,7 @@ const mapContainerStyle = {
   height: "400px",
 };
 
+
 const useDebouncedCallback = (callback: Function, delay: number) => {
   const timeoutRef = useRef<number | null>(null);
 
@@ -112,6 +113,7 @@ const useDebouncedCallback = (callback: Function, delay: number) => {
   return debouncedFunction;
 };
 
+
 async function getCountyName(lat: number, lng: number): Promise<string> {
   try {
     const response = await fetch(`/api/maps/geocode?lat=${lat}&lng=${lng}`);
@@ -125,13 +127,107 @@ async function getCountyName(lat: number, lng: number): Promise<string> {
   }
 }
 
+const generateUniqueId = (restaurant: Restaurant, index: number) => 
+  `${restaurant.id}-${index}-${restaurant.latitude}-${restaurant.longitude}`;
+
+
+// Update the deduplicateRestaurants function to accept coordinates
+const deduplicateRestaurants = (
+  restaurants: Restaurant[],
+  currentLat: number,
+  currentLng: number
+): Restaurant[] => {
+  const seen = new Set<string>();
+  return restaurants.filter(restaurant => {
+    const key = `${restaurant.latitude.toFixed(5)},${restaurant.longitude.toFixed(5)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return calculateDistance(currentLat, currentLng, restaurant.latitude, restaurant.longitude) <= 1000;
+  });
+};
+
+// Update the global declarations at the top
+declare global {
+  interface Window {
+    google: typeof google;
+  }
+}
+
+// Simplified constants at the top
+const GOOGLE_MAPS_LIBRARIES: ("marker" | "places")[] = ["marker", "places"];
+const GOOGLE_MAPS_OPTIONS = {
+  id: "google-map-script",
+  googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!,
+  version: "beta",
+  libraries: GOOGLE_MAPS_LIBRARIES,
+  mapIds: [process.env.NEXT_PUBLIC_GOOGLE_MAPS_ID!]
+};
+
+// Add map styling options
+const mapOptions = {
+  mapId: process.env.NEXT_PUBLIC_GOOGLE_MAPS_ID,
+  disableDefaultUI: false,
+  clickableIcons: false,
+  minZoom: 8,
+  maxZoom: 20,
+  mapTypeControl: false,
+  fullscreenControl: false,
+  tilt: 0,
+  heading: 0,
+  gestureHandling: "greedy" as const,
+};
+
+// Update the AdvancedMarker component props interface
+interface AdvancedMarkerProps {
+  position: LatLngLiteral;
+  onClick?: () => void;
+  isSelected?: boolean;
+  title?: string;
+  map: google.maps.Map | null | undefined;
+}
+
+const AdvancedMarker: React.FC<AdvancedMarkerProps> = ({ position, onClick, isSelected, title, map }) => {
+  const markerRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (!window.google || !map) return;
+
+    const markerView = new google.maps.marker.PinElement({
+      background: isSelected ? "#4A90E2" : "#FF0000",
+      borderColor: "#FFFFFF",
+      scale: 1,
+    });
+
+    const marker = new google.maps.marker.AdvancedMarkerElement({
+      map,
+      position,
+      content: markerView.element,
+      title
+    });
+
+    if (onClick) {
+      marker.addListener('gmp-click', onClick);
+    }
+
+    markerRef.current = marker;
+
+    return () => {
+      if (markerRef.current) {
+        google.maps.event.clearInstanceListeners(markerRef.current);
+        markerRef.current.map = null;
+      }
+    };
+  }, [map, position, onClick, isSelected, title]);
+
+  return null;
+};
+
 export default function FindRestaurantsAndMenus() {
+  const mapRef = useRef<google.maps.Map | null>(null);
   const { userId } = useClerkAuth();
   const { firebaseToken, loading: authLoading, error: authError } = useAuth();
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
-  const [filteredRestaurants, setFilteredRestaurants] = useState<Restaurant[]>(
-    []
-  );
+  const [filteredRestaurants, setFilteredRestaurants] = useState<Restaurant[]>([]);
   const [nameFilter, setNameFilter] = useState("all");
   const [menuCountFilter, setMenuCountFilter] = useState("all");
   const [ratingFilter, setRatingFilter] = useState("all");
@@ -157,15 +253,13 @@ const [center, setCenter] = useState<LatLngLiteral>({
   const [selectedRestaurant, setSelectedRestaurant] =
     useState<Restaurant | null>(null);
   const [isLoadingLocation, setIsLoadingLocation] = useState(true);
-  const { isLoaded, loadError } = useJsApiLoader({
-    id: "google-map-script",
-    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!, // Use the libraries constant
-  });
+  const { isLoaded, loadError } = useJsApiLoader(GOOGLE_MAPS_OPTIONS);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [isInitialized, setIsInitialized] = useState(false);
   const [locationEnabled, setLocationEnabled] = useState(false);
   const [permissionStatus, setPermissionStatus] = useState<PermissionState | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [selectedMarker, setSelectedMarker] = useState<string | null>(null);
   
 
    // Location permission check
@@ -203,83 +297,67 @@ const [center, setCenter] = useState<LatLngLiteral>({
   };
 
 
-  // This function fetch menu image from Google Places API
-  const fetchMenuImageFromGoogle = async (placeId: string, apiKey: string) => {
-    try {
-      const client = new GoogleMapsClient({});
-      const response = await client.placeDetails({
-        params: {
-          place_id: placeId,
-          fields: ["photos"],
-          key: apiKey,
-        },
-      });
 
-      if (response.data.result?.photos) {
-        // Filter photos that might be menu images based on tags or descriptions
-        const menuPhotos = response.data.result.photos.filter(
-          (photo: GooglePlacePhoto) =>
-            photo.html_attributions?.some(
-              (attr: string) =>
-                attr.toLowerCase().includes("menu") ||
-                attr.toLowerCase().includes("食谱") ||
-                attr.toLowerCase().includes("菜單")
-            )
-        );
-
-        if (menuPhotos.length > 0) {
-          return menuPhotos[0].photo_reference;
-        }
-      }
-      return null;
-    } catch (error) {
-      console.error("Error fetching menu image from Google:", error);
-      return null;
-    }
-  };
-
+  // fetchNearbyRestaurants function 
   const fetchNearbyRestaurants = useCallback(
     async (lat: number, lng: number) => {
       if (!userId || !firebaseToken) {
         console.log('Missing userId or firebaseToken');
         return;
       }
-
+  
       try {
         setIsLoading(true);
         console.log('Fetching restaurants for:', { lat, lng });
-
+  
         const response = await fetch(
-          `/api/restaurants?lat=${lat}&lng=${lng}&type=full&precision=7&radius=1000`,
+          `/api/restaurants?lat=${lat}&lng=${lng}&type=full`,
           {
             headers: {
               Authorization: `Bearer ${firebaseToken}`,
             },
           }
         );
-
+  
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
-
+  
         const data = await response.json();
-        console.log('Search Results:', {
-          total: data.metadata?.total,
-          cached: data.metadata?.cachedRestaurants,
-          new: data.metadata?.newRestaurants,
-          searchRadius: data.metadata?.searchRadius,
-          gridKey: data.metadata?.gridKey
-        });
-
+        
         if (!data.restaurants) {
           throw new Error('No restaurants data received');
         }
-
-        setRestaurants(data.restaurants);
-        setFilteredRestaurants(data.restaurants);
+  
+        // Merge new restaurants with existing ones, preventing duplicates
+        setRestaurants(prevRestaurants => {
+          const allRestaurants = [...prevRestaurants];
+          
+          data.restaurants.forEach((newRestaurant: Restaurant) => {
+            const existingIndex = allRestaurants.findIndex(r => r.id === newRestaurant.id);
+            if (existingIndex >= 0) {
+              // Update existing restaurant with new data
+              allRestaurants[existingIndex] = {
+                ...allRestaurants[existingIndex],
+                ...newRestaurant
+              };
+            } else {
+              // Add new restaurant
+              allRestaurants.push(newRestaurant);
+            }
+          });
+  
+          // Sort by distance from current location
+          return allRestaurants.sort((a, b) => {
+            const distA = calculateDistance(lat, lng, a.latitude, a.longitude);
+            const distB = calculateDistance(lat, lng, b.latitude, b.longitude);
+            return distA - distB;
+          });
+        });
+  
         setCurrentPage(0);
         setIsInitialLoad(false);
-
+  
       } catch (error) {
         console.error('Error fetching restaurants:', error);
         setError(error instanceof Error ? error.message : 'Failed to fetch restaurants');
@@ -296,106 +374,6 @@ const [center, setCenter] = useState<LatLngLiteral>({
    fetchNearbyRestaurants,
    500
  );
-
-  // Helper function to process and merge results
-const processCombinedResults = async (
-  googleResults: any[],
-  yelpResults: any[],
-  userId: string
-): Promise<CachedRestaurant[]> => {
-  const processedResults = new Map<string, CachedRestaurant>();
-
-  // Add this at the start of the function
-  const response = await fetch("/api/maps");
-  const { apiKey } = await response.json();
-
-  // Helper function to normalize restaurant names for comparison
-  const normalizeString = (str: string) =>
-    str.toLowerCase().replace(/[^a-z0-9]/g, "");
-
-  // Process Google results first as they're usually more reliable for location
-  for (const googleResult of googleResults) {
-    if (!googleResult?.name) continue;
-
-    const normalizedName = normalizeString(googleResult.name);
-    const latitude = googleResult.geometry?.location.lat;
-    const longitude = googleResult.geometry?.location.lng;
-
-    if (!latitude || !longitude) continue;
-
-    const countyName = await getCountyName(latitude, longitude);
-    const menuExists = await checkExistingMenuForRestaurant(googleResult.id);
-
-    processedResults.set(normalizedName, {
-      id: googleResult.id,
-      name: googleResult.name,
-      address: googleResult.vicinity || "Unknown address",
-      latitude,
-      longitude,
-      rating: googleResult.rating || 0,
-      menuCount: menuExists ? 1 : 0,
-      source: "google",
-      hasGoogleData: true,
-      imageUrl: googleResult.photos?.[0]?.photo_reference
-        ? `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${googleResult.photos[0].photo_reference}&key=${apiKey}`
-        : "",
-      hasMenu: menuExists,
-    } as CachedRestaurant);
-  }
-
-  // Enhance with Yelp data
-  for (const yelpResult of yelpResults) {
-    if (!yelpResult?.name) continue;
-
-    const normalizedName = normalizeString(yelpResult.name);
-    const existing = processedResults.get(normalizedName);
-
-    if (existing) {
-      // Enhance existing Google data with Yelp data
-      processedResults.set(normalizedName, {
-        ...existing,
-        yelpId: yelpResult.id,
-        rating: Math.max(existing.rating, yelpResult.rating || 0),
-        imageUrl: existing.imageUrl || yelpResult.image_url || "",
-        hasYelpData: true,
-        photos: yelpResult.photos || [],
-      } as CachedRestaurant);
-    } else {
-      // Add new Yelp-only entry
-      const latitude = yelpResult.coordinates?.latitude;
-      const longitude = yelpResult.coordinates?.longitude;
-
-      if (!latitude || !longitude) continue;
-
-      const menuExists = await checkExistingMenuForRestaurant(yelpResult.id);
-      const { county, townName } = await determineLocationDetails(latitude, longitude);
-
-      processedResults.set(normalizedName, {
-        id: yelpResult.id,
-        name: yelpResult.name,
-        address: yelpResult.location?.address1 || "Unknown address",
-        latitude,
-        longitude,
-        rating: yelpResult.rating || 0,
-        menuCount: menuExists ? 1 : 0,
-        county, // Add this
-        townName,
-        source: "yelp",
-        hasGoogleData: false,
-        hasYelpData: true,
-        yelpId: yelpResult.id,
-        imageUrl: yelpResult.image_url || "",
-        hasMenu: menuExists,
-        photos: yelpResult.photos || [],
-        priceLevel: yelpResult.price || null,
-        phone: yelpResult.display_phone || null,
-        website: yelpResult.url || null
-      } as CachedRestaurant);
-    }
-  }
-
-  return Array.from(processedResults.values());
-};
 
   useEffect(() => {
     if (authLoading || !firebaseToken || !userId) return;
@@ -499,32 +477,118 @@ const processCombinedResults = async (
     }
   };
 
- // Update handleMapClick
- const handleMapClick = (event: google.maps.MapMouseEvent) => {
-  if (!event.latLng) return;
-
-  const lat = event.latLng.lat();
-  const lng = event.latLng.lng();
+ // Update handleMapClick to use the correct event type
+ const handleMapClick = useCallback((event: google.maps.MapMouseEvent) => {
+  const latLng = event.latLng;
+  if (!latLng) return;
   
-  // Log the exact click coordinates
-  console.log('Map clicked at:', { lat, lng });
+  const newLat = latLng.lat();
+  const newLng = latLng.lng();
   
-  setPinLocation({ lat, lng });
-  setCenter({ lat, lng });
+  setCenter({ lat: newLat, lng: newLng });
+  setPinLocation({ lat: newLat, lng: newLng });
+  
+  // Fetch restaurants for the new location
+  fetchNearbyRestaurants(newLat, newLng);
+  
+  // Reset focused restaurant when clicking elsewhere on map
   setFocusedRestaurant(null);
-  setIsLoading(true);
-  
-  // Use the exact coordinates
-  fetchNearbyRestaurants(lat, lng)
-    .catch((error: Error) => {
-      console.error("Error in handleMapClick:", error);
-      setError(error.message || "Failed to fetch restaurants");
-    })
-    .finally(() => {
-      setIsLoading(false);
-      setIsRefreshing(false);
-    });
-};
+  setSelectedMarker(null);
+}, [fetchNearbyRestaurants]);
+
+const handleFilter = useCallback(() => {
+  const filtered = restaurants.filter((restaurant) => {
+    const matchesName = nameFilter === "all" || restaurant.name === nameFilter;
+    const matchesRating =
+      ratingFilter === "all" ||
+      (ratingFilter === "4+" && restaurant.rating >= 4) ||
+      (ratingFilter === "3-4" && restaurant.rating >= 3 && restaurant.rating < 4) ||
+      (ratingFilter === "0-3" && restaurant.rating < 3);
+    const matchesMenuCount =
+      menuCountFilter === "all" ||
+      (menuCountFilter === "0" && restaurant.menuCount === 0) ||
+      (menuCountFilter === "1-3" && restaurant.menuCount >= 1 && restaurant.menuCount <= 3) ||
+      (menuCountFilter === "4+" && restaurant.menuCount >= 4);
+
+    return matchesName && matchesRating && matchesMenuCount;
+  });
+
+  setFilteredRestaurants(filtered.slice(currentPage * 10, (currentPage + 1) * 10));
+}, [
+  restaurants,
+  nameFilter,
+  ratingFilter,
+  menuCountFilter,
+  currentPage,
+]);
+
+// Add a new handler for marker clicks
+const handleMarkerClick = useCallback(async (restaurant: Restaurant, position: LatLngLiteral) => {
+  try {
+    // First update UI immediately with what we have
+    setFocusedRestaurant(restaurant);
+    setSelectedMarker(restaurant.id);
+    setCenter({ lat: restaurant.latitude, lng: restaurant.longitude });
+    
+    if (mapRef.current) {
+      mapRef.current.setZoom(16);
+    }
+
+    // Then try to fetch additional details in the background
+    const response = await fetch(
+      `/api/restaurants?lat=${position.lat}&lng=${position.lng}&type=full`,
+      {
+        headers: {
+          Authorization: `Bearer ${firebaseToken}`,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      console.warn('Failed to fetch additional restaurant details');
+      return; // Keep showing basic restaurant info
+    }
+
+    const data = await response.json();
+    
+    // Find the clicked restaurant in the new data
+    const updatedRestaurant = data.restaurants?.find(
+      (r: Restaurant) => r.id === restaurant.id
+    );
+
+    if (updatedRestaurant) {
+      // Update restaurants state with new data
+      setRestaurants(prevRestaurants => {
+        const existingIndex = prevRestaurants.findIndex(r => r.id === restaurant.id);
+        if (existingIndex >= 0) {
+          // Replace existing restaurant with updated data
+          const newRestaurants = [...prevRestaurants];
+          newRestaurants[existingIndex] = {
+            ...prevRestaurants[existingIndex],
+            ...updatedRestaurant
+          };
+          return newRestaurants;
+        }
+        // Add new restaurant if not found
+        return [...prevRestaurants, updatedRestaurant];
+      });
+
+      // Update focused restaurant with new data
+      setFocusedRestaurant(prev => ({
+        ...prev,
+        ...updatedRestaurant
+      }));
+
+      // Update filtered results
+      handleFilter();
+    }
+
+  } catch (error) {
+    console.error('Error in handleMarkerClick:', error);
+    // Don't clear the focusedRestaurant - keep showing what we have
+  }
+}, [firebaseToken, handleFilter]);
+
  
   const handleRequestMenu = async (
     restaurantId: string,
@@ -643,39 +707,41 @@ const processCombinedResults = async (
     router.push(`/menu-details/${restaurantId}`);
   };
 
-  const handleRestaurantClick = (restaurant: Restaurant) => {
-    setFocusedRestaurant(restaurant); // Focus only on clicked restaurant's marker
+  const handleRestaurantClick = useCallback((restaurant: Restaurant) => {
+    // Center map on restaurant
+    const newCenter = {
+      lat: restaurant.latitude,
+      lng: restaurant.longitude
+    };
+    
+    setCenter(newCenter);
+    setPinLocation(newCenter);
+    setFocusedRestaurant(restaurant);
+    setSelectedMarker(restaurant.id);
+    
+    // Ensure proper zoom level
+    if (mapRef.current) {
+      mapRef.current.setZoom(16);
+    }
+  }, []);
+
+  const handleRestaurantNameClick = (restaurant: Restaurant) => {
+    handleRestaurantClick(restaurant);
+    
+    // Pan to restaurant location
+    const position = {
+      lat: restaurant.latitude,
+      lng: restaurant.longitude
+    };
+    setCenter(position);
+    if (mapRef.current) {
+      mapRef.current.panTo(position);
+    }
   };
 
   const resetFocus = () => {
     setFocusedRestaurant(null); // Reset the focused restaurant to show all markers
   };
-
-const handleFilter = useCallback(() => {
-  const filtered = restaurants.filter((restaurant) => {
-    const matchesName = nameFilter === "all" || restaurant.name === nameFilter;
-    const matchesRating =
-      ratingFilter === "all" ||
-      (ratingFilter === "4+" && restaurant.rating >= 4) ||
-      (ratingFilter === "3-4" && restaurant.rating >= 3 && restaurant.rating < 4) ||
-      (ratingFilter === "0-3" && restaurant.rating < 3);
-    const matchesMenuCount =
-      menuCountFilter === "all" ||
-      (menuCountFilter === "0" && restaurant.menuCount === 0) ||
-      (menuCountFilter === "1-3" && restaurant.menuCount >= 1 && restaurant.menuCount <= 3) ||
-      (menuCountFilter === "4+" && restaurant.menuCount >= 4);
-
-    return matchesName && matchesRating && matchesMenuCount;
-  });
-
-  setFilteredRestaurants(filtered.slice(currentPage * 10, (currentPage + 1) * 10));
-}, [
-  restaurants,
-  nameFilter,
-  ratingFilter,
-  menuCountFilter,
-  currentPage,
-]);
 
   
   // Filter effect
@@ -914,17 +980,22 @@ const handleFilter = useCallback(() => {
               </TableRow>
             </TableHeader>
 
-              <TableBody>
-                {filteredRestaurants.map((restaurant) => (
-                  <TableRow
-                    key={restaurant.id}
-                    className="hover:bg-gray-100 cursor-pointer"
-                    onClick={() => handleRestaurantClick(restaurant)} // Click to focus on a restaurant
-                  >
+            <TableBody>
+  {filteredRestaurants
+    .filter((restaurant, index, self) => 
+      index === self.findIndex((r) => r.id === restaurant.id)
+    )
+    .map((restaurant, index) => (
+      <TableRow
+        key={generateUniqueId(restaurant, index)}
+        className="hover:bg-gray-100 cursor-pointer"
+        onClick={() => handleRestaurantClick(restaurant)}
+      >
                     <TableCell className="w-2/5">
                       <span
                         className="cursor-pointer px-1 py-0.5 rounded transition duration-200
                hover:font-bold hover:text-customTealDark"
+                        onClick={() => handleRestaurantNameClick(restaurant)}
                       >
                         {restaurant.name}
                       </span>
@@ -1032,40 +1103,84 @@ const handleFilter = useCallback(() => {
           <CardContent>
             {isLoaded ? (
               <>
-                <GoogleMap
-                  mapContainerStyle={mapContainerStyle}
-                  center={center}
-                  zoom={14}
-                  onClick={handleMapClick}
-                >
-                  {/* User location marker */}
-                  {locationEnabled && pinLocation && (
-                    <Marker
-                      position={pinLocation}
-                      icon={{
-                        path: google.maps.SymbolPath.CIRCLE,
-                        scale: 8,
-                        fillColor: "#4A90E2",
-                        fillOpacity: 1,
-                        strokeColor: "#FFFFFF",
-                        strokeWeight: 2,
-                      }}
-                      title="Your Location"
-                    />
-                  )}
-                  
-                  {/* Restaurant markers */}
-                  {restaurants.map((restaurant) => (
-                    <Marker
-                      key={restaurant.id}
-                      position={{
-                        lat: restaurant.latitude!,
-                        lng: restaurant.longitude!,
-                      }}
-                      title={restaurant.name}
-                    />
-                  ))}
-                </GoogleMap>
+                 <GoogleMap
+      mapContainerStyle={mapContainerStyle}
+      center={center}
+      zoom={14}
+      onClick={handleMapClick}
+      onLoad={(map) => {
+        mapRef.current = map;
+        const bounds = new google.maps.LatLngBounds();
+        restaurants.forEach((restaurant) => {
+          bounds.extend({ lat: restaurant.latitude, lng: restaurant.longitude });
+        });
+        map.fitBounds(bounds, {
+          top: 50,
+          right: 50,
+          bottom: 50,
+          left: 50
+        });
+      }}
+      options={mapOptions}
+    >
+      {/* Implement marker clustering for better performance */}
+      <MarkerClusterer>
+        {(clusterer) => (
+          <>
+            {locationEnabled && pinLocation && (
+              <AdvancedMarker
+                position={pinLocation}
+                title="Your Location"
+                isSelected={true}
+                map={mapRef.current}
+              />
+            )}
+            
+            {restaurants
+              .filter((restaurant) => {
+                if (!mapRef.current) return false;
+                const bounds = mapRef.current.getBounds();
+                if (!bounds) return true;
+                return bounds.contains({
+                  lat: restaurant.latitude,
+                  lng: restaurant.longitude,
+                });
+              })
+              .map((restaurant) => {
+                // Create a standard marker for clustering
+                const marker = new google.maps.Marker({
+                  position: {
+                    lat: restaurant.latitude,
+                    lng: restaurant.longitude,
+                  },
+                  title: restaurant.name,
+                });
+                
+                // Add to clusterer with the required second argument (false to allow redraw)
+                clusterer.addMarker(marker, false);
+                
+                // Return the AdvancedMarker for visual display
+                return (
+                  <AdvancedMarker
+                    key={restaurant.id}
+                    position={{
+                      lat: restaurant.latitude,
+                      lng: restaurant.longitude,
+                    }}
+                    onClick={() => handleMarkerClick(restaurant, {
+                      lat: restaurant.latitude,
+                      lng: restaurant.longitude
+                    })}
+                    isSelected={selectedMarker === restaurant.id}
+                    title={restaurant.name}
+                    map={mapRef.current}
+                  />
+                );
+              })}
+          </>
+        )}
+      </MarkerClusterer>
+</GoogleMap>
 
                 <div className="mt-4 space-y-4">
   {!focusedRestaurant ? (

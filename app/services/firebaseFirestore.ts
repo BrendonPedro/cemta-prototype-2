@@ -119,6 +119,11 @@ export interface Restaurant {
   menuId?: string;      
   hasMenu?: boolean;    
   openingHours?: OpeningHours | null;
+  priceLevel?: string;
+  phone?: string;
+  website?: string;
+  yelpId?: string;
+  yelpRating?: number;
 }
 
 // (Used in FindRestaurantsAndMenus.tsx and nearby-restaurants/route.ts)

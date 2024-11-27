@@ -9,12 +9,22 @@ export const CONFIG = {
     RETRY_DELAY: 2000,
     DAILY_LIMIT: 200, // Daily API call limit
   },
-  SEARCH: {  // shared search config
-    INITIAL_RADIUS: 25,
-    MAX_RADIUS: 500,
-    RADIUS_INCREMENT: 25,
-    MIN_RESULTS: 5,
-    MAX_RESULTS: 30
+  SEARCH: {
+    INITIAL_RADIUS: 500,      // Added for initial search radius
+    MAX_RADIUS: 2000,         // Maximum radius to search
+    RADIUS_INCREMENT: 250,    // How much to increment radius
+    MIN_RESULTS: 5,          // Minimum results needed
+    MAX_RESULTS: 20,         // Maximum results to return
+    NEARBY_THRESHOLD: 500,   // Distance threshold for "nearby" (meters)
+    MAX_DISTANCE: 2000,      // Maximum distance to consider
+    BATCH_SIZE: 10,           // How many results to process at once
+    PRECISE: {
+      RADIUS: 200,        // Smaller radius for precise location search
+      MAX_RESULTS: 60,    // Maximum results to fetch
+      BATCH_SIZE: 20,     // Results per API call
+      MAX_API_CALLS: 3,   // Maximum API calls
+      MERGE_DISTANCE: 50  // Distance to consider as duplicate
+    }
   },
   PATHS: {
     IMAGES: 'counties/{countyName}/towns/{townName}/restaurants/{restaurantId}/images',
