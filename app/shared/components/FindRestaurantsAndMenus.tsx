@@ -56,7 +56,6 @@ import { getYelpBusinessWithPhotos } from "@/app/services/yelpService";
 import { MenuWarningDialog } from "@/components/ui/menu-warning-dialog";
 import axios from "axios";
 import {
-  Restaurant,
   CachedRestaurant,
  } from "@/app/services/firebaseFirestore";
 import { EnhancedTownData, getTownsByCounty } from "@/lib/data/counties";
@@ -68,6 +67,9 @@ import { AlertTriangle } from "lucide-react";
 import { AnimatePresence } from "framer-motion";
 import { RestaurantDetails } from "@/app/shared/components/RestaurantDetails";
 import { calculateDistance } from "@/app/utils/locationUtils";
+import type { Restaurant } from "@/lib/database-builder/types";
+import { CONFIG } from "@/lib/database-builder/config";
+import { Loader2 } from "lucide-react";
 
 
 type LatLngLiteral = { lat: number; lng: number };
@@ -222,6 +224,15 @@ const AdvancedMarker: React.FC<AdvancedMarkerProps> = ({ position, onClick, isSe
   return null;
 };
 
+const LoadingState = ({ isCacheHit }: { isCacheHit: boolean }) => (
+  <div className="flex items-center justify-center space-x-2">
+    <Loader2 className="w-4 h-4 animate-spin" />
+    <span className="text-sm text-gray-600">
+      {isCacheHit ? 'Loading cached restaurants...' : 'Fetching new restaurants...'}
+    </span>
+  </div>
+);
+
 export default function FindRestaurantsAndMenus() {
   const mapRef = useRef<google.maps.Map | null>(null);
   const { userId } = useClerkAuth();
@@ -260,6 +271,8 @@ const [center, setCenter] = useState<LatLngLiteral>({
   const [permissionStatus, setPermissionStatus] = useState<PermissionState | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [selectedMarker, setSelectedMarker] = useState<string | null>(null);
+  const [isCacheLoading, setIsCacheLoading] = useState(false);
+  const [isApiLoading, setIsApiLoading] = useState(false);
   
 
    // Location permission check
@@ -324,25 +337,32 @@ const [center, setCenter] = useState<LatLngLiteral>({
         console.log('Missing userId or firebaseToken');
         return;
       }
-  
+
       try {
-        setIsLoading(true);
+        setIsApiLoading(true);
+        setIsCacheLoading(true);
         
-        // Get cached restaurants within 1km radius
+        // Get cached restaurants within search radius
         const cachedResults = await getCachedRestaurantsForLocation(lat, lng);
         let nearbyResults = cachedResults?.filter(restaurant => 
-          calculateDistance(lat, lng, restaurant.latitude, restaurant.longitude) <= 1000
+          calculateDistance(lat, lng, restaurant.latitude, restaurant.longitude) <= CONFIG.SEARCH.PRECISE.RADIUS
         ) || [];
-  
-        // Deduplicate cached results
-        nearbyResults = Array.from(
-          new Map(nearbyResults.map(item => [item.id, item])).values()
-        );
-  
-        // Only fetch more if we have less than 20 cached results
-        if (nearbyResults.length < 20) {
+
+        console.log(`Cache ${cachedResults ? 'HIT' : 'MISS'} for location ${lat},${lng}`);
+        console.log(`Found ${nearbyResults.length} cached restaurants within ${CONFIG.SEARCH.PRECISE.RADIUS}m`);
+
+        // Update UI with cached results first
+        if (nearbyResults.length > 0) {
+          setRestaurants(nearbyResults);
+          setFilteredRestaurants(nearbyResults.slice(0, 10));
+          handleFilter();
+        }
+        setIsCacheLoading(false);
+
+        // Only fetch more if we have less than max results
+        if (nearbyResults.length < CONFIG.SEARCH.PRECISE.MAX_RESULTS) {
           const response = await fetch(
-            `/api/restaurants?lat=${lat}&lng=${lng}&limit=${20 - nearbyResults.length}&type=full`,
+            `/api/restaurants?lat=${lat}&lng=${lng}&limit=${CONFIG.SEARCH.PRECISE.MAX_RESULTS - nearbyResults.length}&type=full`,
             {
               headers: {
                 Authorization: `Bearer ${firebaseToken}`,
@@ -350,74 +370,36 @@ const [center, setCenter] = useState<LatLngLiteral>({
               },
             }
           );
-  
+
           if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
           }
-  
+
           const data = await response.json();
+          console.log('API Response:', data);
           
-          if (data.restaurants) {
-            // Merge avoiding duplicates and keeping within 1km
-            const newRestaurants = data.restaurants.filter((newRest: Restaurant) => 
-              !nearbyResults.some(existing => existing.id === newRest.id) &&
-              calculateDistance(lat, lng, newRest.latitude, newRest.longitude) <= 1000
-            );
-            
-            // Combine and sort by distance before slicing
-            nearbyResults = [...nearbyResults, ...newRestaurants]
+          if (data.restaurants?.length) {
+            // Merge and update results
+            nearbyResults = [...nearbyResults, ...data.restaurants]
               .sort((a, b) => {
                 const distA = calculateDistance(lat, lng, a.latitude, a.longitude);
                 const distB = calculateDistance(lat, lng, b.latitude, b.longitude);
                 return distA - distB;
               })
-              .slice(0, 20); // Ensure we only keep the 20 closest restaurants
-  
-            // Cache the combined results
-            await saveCachedRestaurantsForLocation(lat, lng, nearbyResults);
+              .slice(0, CONFIG.SEARCH.PRECISE.MAX_RESULTS);
+
+            setRestaurants(nearbyResults);
+            setFilteredRestaurants(nearbyResults.slice(0, 10));
+            handleFilter();
           }
         }
-  
-        // Convert to Restaurant type with proper handling
-        const convertedResults: Restaurant[] = nearbyResults.map(rest => ({
-          id: rest.id,
-          name: rest.name,
-          address: rest.address,
-          latitude: rest.latitude,
-          longitude: rest.longitude,
-          rating: rest.rating,
-          menuCount: rest.menuCount,
-          county: rest.county,
-          townName: rest.townName,
-          source: rest.source,
-          hasGoogleData: rest.hasGoogleData,
-          hasYelpData: rest.hasYelpData,
-          imageUrl: rest.imageUrl,
-          hasMenu: rest.hasMenu ?? false,
-          hasDetailsFetched: false,
-          // Handle optional fields
-          photoUrl: rest.photoUrl ?? undefined,
-          menuImageUrl: rest.menuImageUrl ?? undefined,
-          menuId: rest.menuId ?? undefined,
-          priceLevel: rest.priceLevel ?? undefined,
-          phone: rest.phone ?? undefined,
-          website: rest.website ?? undefined,
-          yelpId: rest.yelpId ?? undefined,
-          yelpRating: rest.yelpRating ?? undefined,
-          openingHours: rest.openingHours ?? undefined
-        }));
-  
-        setRestaurants(convertedResults);
-        setCurrentPage(0);
-        setIsInitialLoad(false);
-        handleFilter();
-  
       } catch (error) {
         console.error('Error fetching restaurants:', error);
         setError(error instanceof Error ? error.message : 'Failed to fetch restaurants');
       } finally {
+        setIsApiLoading(false);
         setIsLoading(false);
-        setIsRefreshing(false);
+        setIsInitialLoad(false);
       }
     },
     [userId, firebaseToken, handleFilter]
@@ -769,11 +751,29 @@ const handleMarkerClick = useCallback(async (
     setCurrentPage((prev) => Math.max(prev - 1, 0)); // Go to the previous page, but don't go below 0
   };
 
-  if (authLoading || isInitialLoad) {
+  // Update the loading state component
+  const LoadingState = () => (
+    <div className="flex flex-col items-center justify-center space-y-2">
+      {isCacheLoading && (
+        <div className="flex items-center space-x-2">
+          <Loader2 className="w-4 h-4 animate-spin text-gray-500" />
+          <span className="text-sm text-gray-600">Loading cached restaurants...</span>
+        </div>
+      )}
+      {isApiLoading && (
+        <div className="flex items-center space-x-2">
+          <Loader2 className="w-4 h-4 animate-spin text-teal-500" />
+          <span className="text-sm text-gray-600">Fetching new restaurants...</span>
+        </div>
+      )}
+    </div>
+  );
+
+  // Update the main render condition
+  if (authLoading || (isInitialLoad && !error)) {
     return (
-      <div className="flex justify-center items-center h-screen">
-        <div className="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-gray-900"></div>
-        <p className="ml-4 text-3xl font-semibold text-teal-900">Loading...</p>
+      <div className="flex flex-col justify-center items-center h-screen space-y-4">
+        <LoadingState />
       </div>
     );
   }

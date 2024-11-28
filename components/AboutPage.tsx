@@ -1,13 +1,15 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Card, CardContent } from "@/components/ui/card";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MapPin, Search, Camera, ChevronRight, Loader2 } from "lucide-react";
+import { type FC, useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import axios from "axios";
+import { MapPin, Camera, ChevronRight, Loader2 } from "lucide-react";
+
+// UI Components
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Carousel,
   CarouselContent,
@@ -15,37 +17,36 @@ import {
   CarouselNext,
   CarouselPrevious,
 } from "@/components/ui/carousel";
-import axios from "axios";
+
+//Hooks and services
 import { useAuth } from "@/components/AuthProvider";
+import { useGeolocation } from '@/hooks/use-geolocation';
 
-interface Restaurant {
-  id: string;
-  name: string;
-  address: string;
-  rating: number;
-  latitude: number;
-  longitude: number;
-  imageUrl: string;
-  hasMenu: boolean;
-  yelpId?: string | null;
-  hasYelpData?: boolean;
-  source: "google" | "yelp";
-  menuCount: number;
-  county: string;
-}
+// Types
+import type { Restaurant } from "@/lib/database-builder/types";
 
+//Interfaces
 interface RestaurantCardProps {
   restaurant: Restaurant;
-  isFirst?: boolean;
 }
 
+// Constants
+    // For restaurants without their own image
+const FALLBACK_IMAGE = "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=1074&q=80";
+    // On UI - Decode Any Menu in Seconds Image
+const MENU_DEMO_IMAGE = "https://images.unsplash.com/photo-1533777857889-4be7c70b33f7?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1170&q=80";
+
+// Component: Restaurant Card
 const RestaurantCard: React.FC<RestaurantCardProps> = ({
   restaurant,
-  isFirst = false,
 }) => {
-  const imageUrl = restaurant.imageUrl;
-  const fallbackImage =
-    "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=1074&q=80";
+  // Get the appropriate image URL with fallback
+  const imageUrl = restaurant.imageUrl || restaurant.photoUrl || FALLBACK_IMAGE;
+
+  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    console.error("Image load error:", e);
+    e.currentTarget.src = FALLBACK_IMAGE;
+  };
 
   return (
     <Link href={`/restaurants/${restaurant.id}`} passHref>
@@ -57,11 +58,8 @@ const RestaurantCard: React.FC<RestaurantCardProps> = ({
             fill
             sizes="(max-width: 768px) 100vw, (max-width: 1200px) 33vw, 33vw"
             className="object-cover transition-transform duration-300"
-            priority={true} // Add priority to all images for smoother loading
-            onError={(e) => {
-              console.error("Image load error:", e);
-              (e.target as HTMLImageElement).src = fallbackImage;
-            }}
+            priority={true}
+            onError={handleImageError}
           />
         </div>
         <CardContent className="p-6">
@@ -85,6 +83,7 @@ const RestaurantCard: React.FC<RestaurantCardProps> = ({
   );
 };
 
+// Component: Loading Skeleton
 const RestaurantSkeleton = () => (
   <div className="w-full h-full animate-pulse">
     <Card className="w-full h-full overflow-hidden rounded-3xl shadow-xl">
@@ -105,62 +104,134 @@ const RestaurantSkeleton = () => (
   </div>
 );
 
+// Main Component: About Page
 export default function AboutPage() {
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isFetching, setIsFetching] = useState(false);
   const { firebaseToken } = useAuth();
+  
+  const { position, error: locationError, isLoading: locationLoading } = useGeolocation({
+    enableHighAccuracy: true,
+    timeout: 5000,
+    maximumAge: 300000, // 5 minutes cache
+  });
 
   useEffect(() => {
-    const fetchNearbyRestaurants = async () => {
+    async function fetchRestaurants() {
+      if (!position) return;
+
+      // Check cache first
+      const cacheKey = `restaurants-${position.coords.latitude}-${position.coords.longitude}`;
+      const cached = sessionStorage.getItem(cacheKey);
+      
+      if (cached) {
+        setRestaurants(JSON.parse(cached));
+        return;
+      }
+
+      setIsFetching(true);
       try {
-        setLoading(true);
-        const position = await new Promise<GeolocationPosition>(
-          (resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(resolve, reject, {
-              timeout: 5000,
-              maximumAge: 0,
-              enableHighAccuracy: true,
-            });
+        const headers: HeadersInit = {
+          'Content-Type': 'application/json',
+          ...(firebaseToken && { 'Authorization': `Bearer ${firebaseToken}` })
+        };
+
+        const { data } = await axios.get(
+          `/api/restaurants`,
+          {
+            params: {
+              lat: position.coords.latitude,
+              lng: position.coords.longitude,
+              limit: 20,
+              type: 'top_rated'
+            },
+            headers
           }
         );
 
-        const { latitude, longitude } = position.coords;
-        
-        const headers: HeadersInit = {
-          'Content-Type': 'application/json',
-        };
-        
-        if (firebaseToken) {
-          headers['Authorization'] = `Bearer ${firebaseToken}`;
-        }
-
-        const response = await axios.get(
-          `/api/restaurants?lat=${latitude}&lng=${longitude}&limit=20&type=top_rated`,
-          { headers }
-        );
-
-        // Sort restaurants by rating and get top 9
-        const topRestaurants = response.data.restaurants
+        const topRestaurants = data.restaurants
           .sort((a: Restaurant, b: Restaurant) => b.rating - a.rating)
           .slice(0, 9);
 
+        // Cache the results
+        sessionStorage.setItem(cacheKey, JSON.stringify(topRestaurants));
         setRestaurants(topRestaurants);
-      } catch (error) {
-        console.error("Error fetching restaurants:", error);
+      } catch (err) {
+        console.error("Error fetching restaurants:", err);
         setError("Unable to fetch nearby restaurants. Please try again later.");
         setRestaurants([]);
       } finally {
-        setLoading(false);
+        setIsFetching(false);
       }
-    };
+    }
 
-    fetchNearbyRestaurants();
-  }, [firebaseToken]);
+    fetchRestaurants();
+  }, [position, firebaseToken]);
+
+  // Combined loading state
+  const isLoading = locationLoading || isFetching;
+
+  // Render Methods
+  const renderCarousel = () => (
+    <Carousel
+      opts={{
+        align: "start",
+        loop: false,
+        skipSnaps: false,
+        dragFree: false,
+      }}
+      className="w-full relative group"
+    >
+      <CarouselContent>
+        {restaurants.map((restaurant) => (
+          <CarouselItem key={restaurant.id}>
+            <RestaurantCard restaurant={restaurant} />
+          </CarouselItem>
+        ))}
+      </CarouselContent>
+      <CarouselPrevious />
+      <CarouselNext />
+    </Carousel>
+  );
+
+  const renderLoadingState = () => (
+    <div className="w-full max-w-5xl mx-auto">
+      <div className="flex items-center justify-center mb-8">
+        <Loader2 className="w-8 h-8 text-customTeal animate-spin mr-2" />
+        <span className="text-lg text-gray-600">
+          Discovering nearby hotspots...
+        </span>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {[...Array(3)].map((_, i) => (
+          <RestaurantSkeleton key={i} />
+        ))}
+      </div>
+    </div>
+  );
+
+  // Update renderErrorState to handle both location and fetch errors
+  const renderErrorState = () => {
+    const errorMessage = locationError?.message || error || "An unexpected error occurred";
+    
+    return (
+      <div className="text-center text-red-500 p-8 bg-red-50 rounded-lg">
+        <p>{errorMessage}</p>
+        <Button
+          onClick={() => window.location.reload()}
+          className="mt-4"
+        >
+          Try Again
+        </Button>
+      </div>
+    );
+  };
 
   return (
     <div className="min-h-screen">
       <main className="container mx-auto px-6 py-12">
+        {/* Trending Restaurants Section */}
         <section className="mb-20 relative">
           <div className="text-center mb-12">
             <h2 className="inline-block text-4xl font-bold bg-gradient-to-r from-customTeal via-customBlack to-customTeal bg-clip-text text-transparent animate-gradient relative">
@@ -168,56 +239,32 @@ export default function AboutPage() {
             </h2>
           </div>
 
-          {/* Enhanced Carousel Section */}
           <div className="w-full max-w-7xl mx-auto px-4 md:px-20">
-            {loading ? (
+            {isLoading ? (
               <div className="w-full max-w-5xl mx-auto">
                 <div className="flex items-center justify-center mb-8">
                   <Loader2 className="w-8 h-8 text-customTeal animate-spin mr-2" />
                   <span className="text-lg text-gray-600">
-                    Discovering nearby hotspots...
+                    {locationLoading 
+                      ? "Finding your location..." 
+                      : "Discovering nearby hotspots..."}
                   </span>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {[...Array(3)].map((_, i) => (
+                  {Array.from({ length: 3 }).map((_, i) => (
                     <RestaurantSkeleton key={i} />
                   ))}
                 </div>
               </div>
-            ) : error ? (
-              <div className="text-center text-red-500 p-8 bg-red-50 rounded-lg">
-                <p>{error}</p>
-                <Button
-                  onClick={() => window.location.reload()}
-                  className="mt-4"
-                >
-                  Please Try Again by Clicking or Refreshing the Page
-                </Button>
-              </div>
-            ) : (
-              <Carousel
-                opts={{
-                  align: "start", // Important: use start alignment
-                  loop: false,
-                  skipSnaps: false,
-                  dragFree: false,
-                }}
-                className="w-full relative group"
-              >
-                <CarouselContent>
-                  {restaurants.map((restaurant) => (
-                    <CarouselItem key={restaurant.id}>
-                      <RestaurantCard restaurant={restaurant} />
-                    </CarouselItem>
-                  ))}
-                </CarouselContent>
-                <CarouselPrevious />
-                <CarouselNext />
-              </Carousel>
-            )}
+            ) : locationError || error ? (
+              renderErrorState()
+            ) : restaurants.length > 0 ? (
+              renderCarousel()
+            ) : null}
           </div>
         </section>
 
+        {/* Menu Translation Section */}
         <section className="mb-20">
           <h2 className="text-4xl font-bold text-customBlack mb-10 text-center">
             Instant Menu Translation
@@ -240,7 +287,7 @@ export default function AboutPage() {
               </div>
               <div className="flex-1 relative w-[500px] h-[300px]">
                 <Image
-                  src="https://images.unsplash.com/photo-1533777857889-4be7c70b33f7?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1170&q=80"
+                  src={MENU_DEMO_IMAGE}
                   alt="Menu translation demo"
                   fill
                   sizes="(max-width: 768px) 100vw, 500px"
@@ -256,6 +303,7 @@ export default function AboutPage() {
           </Card>
         </section>
 
+        {/* Community Section */}
         <section className="mb-20">
           <h2 className="text-4xl font-bold text-customBlack mb-10 text-center">
             Join Our Foodie Community
@@ -294,6 +342,7 @@ export default function AboutPage() {
           </div>
         </section>
 
+        {/* User Journey Section */}
         <section>
           <h2 className="text-4xl font-bold text-customBlack mb-10 text-center">
             Embark on Your Culinary Journey
@@ -331,7 +380,7 @@ export default function AboutPage() {
                 </p>
                 <Button className="bg-gradient-to-r from-customTeal to-customBlack hover:from-customBlack hover:to-customTeal text-white rounded-full py-4 px-6 transition-all duration-300 transform hover:scale-105">
                   Start Your Foodie Journey
-                </Button>
+                  </Button>
               </TabsContent>
               <TabsContent value="translator" className="mt-8">
                 <h3 className="text-2xl font-semibold mb-4 text-customBlack">
@@ -365,3 +414,62 @@ export default function AboutPage() {
     </div>
   );
 }
+
+/**
+ * Script Summary and Documentation
+ * ------------------------------
+ * 
+ * Purpose:
+ * This is the About Page component of CEMTA.
+ * It serves as an optional landing page or simply the About Page that showcases trending restaurants, menu translation features,
+ * and community engagement opportunities.
+ * 
+ * Key Features:
+ * 1. Location-based restaurant discovery
+ * 2. Menu translation service promotion
+ * 3. Community engagement sections
+ * 4. User role-based journey paths
+ * 
+ * Component Structure:
+ * - Main AboutPage component
+ * - RestaurantCard subcomponent
+ * - RestaurantSkeleton loading component
+ * 
+ * Dependencies:
+ * - UI Components: shadcn/ui (Button, Card, Tabs, etc.)
+ * - Icons: lucide-react
+ * - Authentication: AuthProvider.tsx (uses Clerk and Firebase)
+ * - Data Fetching: axios (for fetching restaurants)
+ * - Routing: Next.js Link and Image components
+ * 
+ * External Integrations:
+ * - Restaurant API (/api/restaurants/route.ts)
+ * - Firebase Authentication (via AuthProvider)
+ * - Geolocation API (via navigator.geolocation.getCurrentPosition - browser API)
+ * 
+ * State Management: (useState)
+ * - restaurants: Array of nearby restaurants 
+ * - error: Error state for API calls
+ * 
+ * Hook States: (useGeolocation)
+ * - position: Current user position
+ * - locationError: Geolocation-specific errors
+ * - isLoading: Loading state for location
+ * 
+ * Related Components:
+ * - MenuAnalyzer (/menuAnalyzer route - client component)
+ * - Restaurant Details (/restaurants/[id] route - client component)
+ * - AuthProvider (authentication context - uses Clerk and Firebase)
+ * 
+ * Style Dependencies:
+ * - Tailwind CSS
+ * - Custom gradients and animations
+ * - Responsive design breakpoints
+ * 
+ * Future Considerations:
+ * - Implement pagination for restaurant list
+ * - Add caching for restaurant data
+ * - Enhance error recovery mechanisms
+ * - Add accessibility improvements
+ * - Implement analytics tracking
+ */

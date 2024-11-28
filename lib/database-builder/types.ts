@@ -50,19 +50,14 @@ export interface RestaurantData {
 }
 
 export interface OpeningHours {
-  openNow: boolean;
-  periods: {
-    open: {
-      day: number;
-      time: string;
-    };
-    close: {
-      day: number;
-      time: string;
-    };
-  }[];
-  weekdayText: string[];
+  openNow?: boolean;
+  periods?: Array<{
+    open: { day: number; time: string };
+    close: { day: number; time: string };
+  }>;
+  weekdayText?: string[];
 }
+
 
 export interface CachedRestaurant {
   id: string;
@@ -287,4 +282,45 @@ export interface SearchMetrics {
   apiCalls: number;
   processingTime: number;
   totalResults: number;
+}
+
+// (Used in FindRestaurantsAndMenus.tsx and AboutPage.tsx)
+export interface Restaurant {
+  // Essential Information
+  id: string;
+  name: string;
+  address: string;
+  rating: number;
+
+  // Location Information
+  latitude: number;
+  longitude: number;
+  county: string;
+  townName: string;
+  
+  // Menu Information
+  menuCount: number;
+  hasMenu?: boolean;
+  menuId?: string;
+  menuImageUrl?: string;
+  
+  // Media & Visual Content
+  imageUrl?: string;
+  photoUrl?: string;
+  
+  // Contact & Business Details
+  priceLevel?: string | null;
+  phone?: string | null;
+  website?: string | null;
+  openingHours?: OpeningHours | null;
+  
+  // Integration Data
+  hasGoogleData?: boolean;
+  hasYelpData?: boolean;
+  yelpId?: string | null;
+  yelpRating?: number | null;
+  
+  // State Management
+  contribution?: boolean;
+  hasDetailsFetched?: boolean;
 }

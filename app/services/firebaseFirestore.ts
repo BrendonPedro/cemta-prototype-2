@@ -24,6 +24,7 @@ import { db } from "@/lib/database-builder/db";
 import { CONFIG } from '@/lib/database-builder/config';
 import type { RestaurantData, OpeningHours } from '@/lib/database-builder/types';
 import { calculateDistance } from '@/app/utils/locationUtils'
+import type { Restaurant } from '@/lib/database-builder/types';
 
 // ======= Basic Types and Shared Interfaces =======
 // (Used across multiple components)
@@ -98,34 +99,6 @@ export interface RestaurantDetails {
   createdAt?: Date;
   updatedAt?: Date;
   openingHours?: OpeningHours | null;
-}
-
-// (Used in FindRestaurantsAndMenus.tsx)
-export interface Restaurant {
-  id: string;
-  name: string;
-  address: string;
-  latitude: number;
-  longitude: number;
-  rating: number;
-  menuCount: number;
-  county: string;
-  townName: string;
-  imageUrl?: string;  
-  hasGoogleData?: boolean;  
-  hasYelpData?: boolean;  
-  photoUrl?: string;  
-  contribution?: boolean;
-  menuImageUrl?: string; 
-  menuId?: string;      
-  hasMenu?: boolean;    
-  openingHours?: OpeningHours | null;
-  priceLevel?: string;
-  phone?: string;
-  website?: string;
-  yelpId?: string;
-  yelpRating?: number;
-  hasDetailsFetched?: boolean;
 }
 
 // (Used in FindRestaurantsAndMenus.tsx and nearby-restaurants/route.ts)
@@ -667,9 +640,14 @@ export async function getCachedRestaurantsForLocation(
       const cachedAt = data.cachedAt?.toDate() || new Date(0);
       
       // Check if cache is still valid
-      if (Date.now() - cachedAt.getTime() < CACHE_DURATION) {
+      if (Date.now() - cachedAt.getTime() < CONFIG.CACHE.DURATION) {
+        console.log(`Cache hit for ${locationKey} - ${data.restaurants.length} restaurants`);
         return data.restaurants;
+      } else {
+        console.log(`Cache expired for ${locationKey}`);
       }
+    } else {
+      console.log(`No cache found for ${locationKey}`);
     }
     return null;
   } catch (error) {

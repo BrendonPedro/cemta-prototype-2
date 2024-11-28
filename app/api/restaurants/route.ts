@@ -106,17 +106,32 @@ function isCompletePlaceData(place: Partial<PlaceData>): place is PlaceData {
     return false;
   }
 
-  // Initialize missing arrays if needed
-  if (!Array.isArray(place.address_components)) {
-    (place as PlaceData).address_components = [];
+  // Initialize missing arrays with default values if undefined
+  const completedPlace = place as PlaceData;
+  
+  if (!Array.isArray(completedPlace.address_components)) {
+    completedPlace.address_components = [];
   }
 
-  if (!Array.isArray(place.types)) {
-    (place as PlaceData).types = [];
+  if (!Array.isArray(completedPlace.types)) {
+    completedPlace.types = [];
   }
 
-  // Cast and return
-  return true;
+  if (!Array.isArray(completedPlace.photos)) {
+    completedPlace.photos = [];
+  }
+
+  // Ensure all required properties are present with correct types
+  return (
+    typeof completedPlace.place_id === 'string' &&
+    typeof completedPlace.name === 'string' &&
+    typeof completedPlace.vicinity === 'string' &&
+    Array.isArray(completedPlace.address_components) &&
+    Array.isArray(completedPlace.types) &&
+    completedPlace.geometry !== undefined &&
+    typeof completedPlace.geometry.location.lat === 'number' &&
+    typeof completedPlace.geometry.location.lng === 'number'
+  );
 }
 
 // ----------------
@@ -492,19 +507,31 @@ export async function GET(request: Request) {
     const gridKey = getLocationCacheKey(params.lat, params.lng);
    
     return NextResponse.json({
-      restaurants: combinedResults,
+      restaurants: combinedResults.map(restaurant => ({
+        ...restaurant,
+        // Ensure these fields are always present
+        menuCount: restaurant.menuCount || 0,
+        hasMenu: !!restaurant.menuCount,
+        hasDetailsFetched: true,
+        // Add default values for potentially undefined fields
+        openingHours: restaurant.openingHours || null,
+        priceLevel: restaurant.priceLevel || null,
+        phone: restaurant.phone || null,
+        website: restaurant.website || null
+      })),
       county,
-      cached: false,
-      lastUpdated: { county: now, restaurants: now, images: now },
       metadata: {
         total: combinedResults.length,
         returned: Math.min(combinedResults.length, params.limit),
-        gridKey,  // Use the gridKey from getLocationCacheKey
+        gridKey,
         metrics: {
           apiCalls: metrics.apiCalls,
           newRestaurants: metrics.newPlaces,
           cachedRestaurants: metrics.cachedCount,
-          searchRadius: 0
+          searchRadius: PRECISE.RADIUS,
+          cacheStatus: metrics.cachedCount > 0 ? 'hit' : 'miss',
+          processingTime: Date.now() - startTime,
+          totalResults: combinedResults.length
         }
       }
     });
@@ -561,6 +588,10 @@ async function fetchPreciseLocationResults(
   let apiCalls = 0;
   const maxRetries = 3;
   
+  console.log('\n=== Restaurant Search Summary ===');
+  console.log(`Starting location: ${lat}, ${lng}`);
+  console.log(`Existing cached restaurants: ${existingIds.size}`);
+  
   do {
     try {
       if (pageToken) {
@@ -578,38 +609,25 @@ async function fetchPreciseLocationResults(
       };
 
       const response = await client.placesNearby(params);
+      // This returns up to 20 results in one API call
       apiCalls++;
 
       if (response.data.status === 'OK') {
         const validResults = response.data.results
           .filter(place => isValidEstablishment(place))
           .filter(place => !existingIds.has(place.place_id!))
-          .map(place => {
-            // Transform partial place data into complete PlaceData
-            return {
-              ...place,
-              place_id: place.place_id!,
-              name: place.name!,
-              geometry: {
-                location: {
-                  lat: place.geometry!.location.lat,
-                  lng: place.geometry!.location.lng
-                }
-              },
-              vicinity: place.vicinity || 'No Address Available',
-              address_components: place.address_components || [],
-              types: place.types || [],
-              photos: place.photos || [],
-              rating: place.rating || 0,
-              user_ratings_total: place.user_ratings_total || 0,
-              formatted_address: place.formatted_address || place.vicinity || 'No Address Available',
-            } as PlaceData;
-          });
+          .filter(isCompletePlaceData);
 
+        console.log(`API Call ${apiCalls}:`);
+        console.log(`- Total results: ${response.data.results.length}`);
+        console.log(`- Valid new restaurants: ${validResults.length}`);
+        
         allResults.push(...validResults);
         pageToken = response.data.next_page_token;
+
+        console.log(`Cumulative total: ${allResults.length} new restaurants`);
       } else if (response.data.status === 'ZERO_RESULTS') {
-        console.log('No restaurants found in this area');
+        console.log('No new restaurants found in this area');
         break;
       } else {
         console.warn(`Places API returned status: ${response.data.status}`);
@@ -618,15 +636,25 @@ async function fetchPreciseLocationResults(
 
       if (apiCalls >= PRECISE.MAX_API_CALLS || 
           allResults.length >= PRECISE.MAX_RESULTS) {
+        console.log(`Reached limit: ${apiCalls} API calls, ${allResults.length} results`);
         break;
       }
 
     } catch (error) {
       console.error('Error fetching from Places API:', error);
-      if (apiCalls >= maxRetries) break;
+      if (apiCalls >= maxRetries) {
+        console.log('Max retries reached, stopping API calls');
+        break;
+      }
       await new Promise(resolve => setTimeout(resolve, 2000));
     }
   } while (pageToken);
+
+  console.log('\nFinal Results:');
+  console.log(`- Total API calls made: ${apiCalls}`);
+  console.log(`- New restaurants found: ${allResults.length}`);
+  console.log(`- Total restaurants (including cached): ${existingIds.size + allResults.length}`);
+  console.log('===========================\n');
 
   return { results: allResults, apiCalls };
 }

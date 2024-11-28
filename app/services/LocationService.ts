@@ -530,6 +530,13 @@ export async function getNearbyRestaurants(
     
     for (const restaurant of restaurantsNeedingYelpData as CachedRestaurant[]) {
       try {
+        // Check if Yelp API key exists before making the call
+        if (!process.env.NEXT_PUBLIC_YELP_API_KEY) {
+          console.warn('Skipping Yelp data fetch - API key not configured');
+          restaurant.hasYelpData = false;
+          continue; // Skip to next restaurant
+        }
+
         metrics.yelpCalls++;
         const yelpData = await getYelpBusinessWithPhotos(
           restaurant.name,
@@ -551,13 +558,11 @@ export async function getNearbyRestaurants(
           }
         }
       } catch (error) {
+        // Handle error gracefully without throwing
         console.warn(`Failed to fetch Yelp data for ${restaurant.name}:`, error);
-        console.error('Error details:', {
-          message: error instanceof Error ? error.message : String(error),
-          location: 'getNearbyRestaurants',
-          params: { lat, lng, apiCallCount: apiCallCount.count }
-        });
-        throw error;
+        restaurant.hasYelpData = false;
+        // Continue with next restaurant instead of throwing
+        continue;
       }
     }
 
