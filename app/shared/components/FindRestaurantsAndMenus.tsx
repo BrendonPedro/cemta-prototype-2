@@ -31,6 +31,7 @@ import { useRouter } from 'next/navigation';
 import { Client as GoogleMapsClient } from "@googlemaps/google-maps-services-js";
 import Image from "next/image";
 import { counties, EnhancedCountyData } from "@/lib/data/counties";
+import { clientConfig } from '@/config/googleMapsConfig';
 
 
 import {
@@ -264,7 +265,7 @@ const [center, setCenter] = useState<LatLngLiteral>({
   const [selectedRestaurant, setSelectedRestaurant] =
     useState<Restaurant | null>(null);
   const [isLoadingLocation, setIsLoadingLocation] = useState(true);
-  const { isLoaded, loadError } = useJsApiLoader(GOOGLE_MAPS_OPTIONS);
+  const { isLoaded, loadError } = useJsApiLoader(clientConfig);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
   const [isInitialized, setIsInitialized] = useState(false);
   const [locationEnabled, setLocationEnabled] = useState(false);

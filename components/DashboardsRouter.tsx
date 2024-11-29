@@ -1,98 +1,58 @@
-// components/dashboard-router.tsx
+/**
+ * @file DashboardRouter.tsx
+ * @description Router component that handles role-based dashboard navigation and authentication states
+ */
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@clerk/nextjs";
-import useClerkFirebaseAuth from "@/hooks/useClerkFirebaseAuth";
-import { getFirestore, doc, getDoc } from "firebase/firestore";
+import { useAuth } from "@/components/AuthProvider";
+import { ROLE_ROUTES, AuthContextType } from '@/interfaces/auth';
 import Link from "next/link";
 
+/**
+ * Main dashboard routing component that handles authentication states
+ * and redirects users to appropriate dashboards based on their roles
+ */
 const DashboardsRouter: React.FC = () => {
   const router = useRouter();
-  const { isLoaded, userId } = useAuth();
-  const {
-    firebaseUser,
-    userRole: clerkUserRole,
-    roleRequest: clerkRoleRequest,
-  } = useClerkFirebaseAuth();
-  const [userRole, setUserRole] = useState<string | null>(null);
-  const [roleRequest, setRoleRequest] = useState<{
-    requestedRole: string | null;
-    status: "pending" | "approved" | "rejected" | null;
-  } | null>(null);
+  const { loading, userRole, roleRequest, userId } = useAuth();
 
+  // Handle automatic routing based on user role and authentication state
   useEffect(() => {
-    const routeUser = async () => {
-      if (isLoaded && userId && firebaseUser) {
-        // If we have the role from useClerkFirebaseAuth, use it
-        if (clerkUserRole) {
-          setUserRole(clerkUserRole);
-        } else {
-          // Fallback to fetching from Firestore
-          const db = getFirestore();
-          const userRef = doc(db, "users", firebaseUser.uid);
-          const userSnap = await getDoc(userRef);
-
-          if (userSnap.exists()) {
-            const userData = userSnap.data();
-            setUserRole(userData.user_info?.role || "user");
-          } else {
-            setUserRole("user");
-          }
-        }
-
-        // Set role request from useClerkFirebaseAuth
-        setRoleRequest(clerkRoleRequest);
-      } else if (isLoaded && !userId) {
-        setUserRole(null);
-        setRoleRequest(null);
+    if (!loading && userId && userRole && !roleRequest?.status) {
+      const route = ROLE_ROUTES[userRole];
+      if (route) {
+        router.push(route);
       }
-    };
-
-    routeUser();
-  }, [isLoaded, userId, firebaseUser, clerkUserRole, clerkRoleRequest]);
-
-  if (!isLoaded) {
-    return <LoadingSpinner />;
-  }
-
-  if (!userId) {
-    return <SignUpOptions />;
-  }
-
-  if (roleRequest && roleRequest.status === "pending") {
-    return <PendingApprovalMessage />;
-  }
-
-  if (userRole) {
-    switch (userRole) {
-      case "admin":
-        router.push("/dashboards/admin");
-        break;
-      case "partner":
-        router.push("/dashboards/restaurant-partner");
-        break;
-      case "validator":
-        router.push("/dashboards/validator");
-        break;
-      default:
-        router.push("/dashboards/user/find-restaurants");
-        break;
     }
-    return <RedirectingMessage />;
-  }
+  }, [loading, userId, userRole, roleRequest, router]);
 
-  return <LoadingSpinner />;
+  // Early returns pattern for different states
+  if (loading) return <LoadingSpinner />;
+  if (!userId) return <SignUpOptions />;
+  if (roleRequest?.status === "pending") {
+    return <PendingApprovalMessage roleRequest={roleRequest} />;
+  }
+  
+  return <RedirectingMessage />;
 };
 
+/**
+ * Loading spinner component displayed during authentication checks
+ * and data loading states
+ */
 const LoadingSpinner: React.FC = () => (
   <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-teal-50 to-white">
     <div className="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-teal-500"></div>
   </div>
 );
 
+/**
+ * Sign-up options component displayed for unauthenticated users
+ * Provides links to different role-based registration flows
+ */
 const SignUpOptions: React.FC = () => (
   <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-teal-50 to-white py-12 px-4 sm:px-6 lg:px-8">
     <div className="max-w-md w-full space-y-8">
@@ -102,41 +62,85 @@ const SignUpOptions: React.FC = () => (
         </h2>
       </div>
       <div className="mt-8 space-y-6">
-        <Link
-          href="/sign-up?role=user"
-          className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-teal-600 hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500"
-        >
-          Sign Up as User
-        </Link>
-        <Link
-          href="/sign-up?role=partner"
-          className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-teal-600 hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500"
-        >
-          Sign Up as Restaurant Partner
-        </Link>
-        <Link
-          href="/sign-up?role=validator"
-          className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-teal-600 hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500"
-        >
-          Sign Up as Validator
-        </Link>
+        {[
+          { role: "user", label: "Sign Up as User" },
+          { role: "partner", label: "Sign Up as Restaurant Partner" },
+          { role: "validator", label: "Sign Up as Validator" },
+        ].map(({ role, label }) => (
+          <Link
+            key={role}
+            href={`/sign-up?role=${role}`}
+            className="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-teal-600 hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-teal-500"
+          >
+            {label}
+          </Link>
+        ))}
       </div>
     </div>
   </div>
 );
 
-const PendingApprovalMessage: React.FC = () => (
+//Props interface for the PendingApprovalMessage component
+interface PendingApprovalMessageProps {
+  roleRequest: NonNullable<AuthContextType["roleRequest"]>;
+}
+
+//Component displayed when a user's role request is pending approval
+const PendingApprovalMessage: React.FC<PendingApprovalMessageProps> = ({ roleRequest }) => (
   <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-teal-50 to-white">
-    <div className="text-2xl font-semibold text-teal-600">
-      Your role change request is pending approval. Please check back later.
+    <div className="text-center space-y-4">
+      <div className="text-2xl font-semibold text-teal-600">
+        Your {roleRequest.requestedRole} role request is pending approval
+      </div>
+      <div className="text-gray-600">
+        Please check back later or contact support for status updates
+      </div>
     </div>
   </div>
 );
 
+// Component displayed during dashboard redirections
 const RedirectingMessage: React.FC = () => (
   <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-teal-50 to-white">
-    <div className="text-2xl font-semibold text-teal-600">Redirecting...</div>
+    <div className="text-2xl font-semibold text-teal-600">
+      Redirecting to your dashboard...
+    </div>
   </div>
 );
 
 export default DashboardsRouter;
+
+/**
+ * Component Documentation
+ * 
+ * The DashboardRouter is a critical component that manages role-based routing 
+ * and authentication states in the application.
+ * 
+ * Key Features:
+ * - Automatic role-based routing
+ * - Authentication state handling
+ * - Role request status management
+ * - User registration flow
+ * 
+ * States Handled:
+ * 1. Loading: Shows spinner during authentication checks
+ * 2. Unauthenticated: Displays sign-up options
+ * 3. Pending Role Request: Shows approval waiting message
+ * 4. Authenticated: Redirects to role-specific dashboard
+ * 
+ * Integration Points:
+ * - AuthProvider context
+ * - Next.js router
+ * - Role-based routing configuration
+ * 
+ * Required Setup:
+ * - AuthProvider must be available in the component tree
+ * - ROLE_ROUTES configuration in auth interfaces
+ * - Proper role-based dashboard routes
+ * 
+ * Usage:
+ * ```tsx
+ * // Place in app layout or high-level component
+ * <DashboardRouter />
+ * ```
+ */

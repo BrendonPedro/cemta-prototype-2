@@ -1,4 +1,7 @@
-// app/layout.tsx
+/**
+ * @file app/layout.tsx
+ * @description Root layout component that wraps the entire application
+ */
 
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
@@ -21,7 +24,11 @@ export default function RootLayout({
   return (
     <ClerkProvider>
       <html lang="en">
-        <body className={`${inter.className} font-sans`}>
+        <body 
+          className={`${inter.className} font-sans`}
+          data-new-gr-c-s-check-loaded="14.1090.0"
+          data-gr-ext-installed=""
+        >
           <AuthProvider>{children}</AuthProvider>
         </body>
       </html>

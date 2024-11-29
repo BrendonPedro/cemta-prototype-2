@@ -9,6 +9,7 @@ import {
   SignUpButton,
   SignedIn,
   SignedOut,
+  useUser,
 } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
@@ -25,6 +26,7 @@ const firebaseApp = !getApps().length
 const db = getFirestore(firebaseApp);
 
 export default function Home() {
+  const { isLoaded: clerkLoaded } = useUser();
   const { firebaseToken, userRole, loading } = useAuth();
   const [username, setUsername] = useState<string | null>(null);
 
@@ -47,7 +49,8 @@ export default function Home() {
 
     fetchUserData();
   }, [firebaseToken]);
-  if (loading) {
+
+  if (!clerkLoaded || loading) {
     return (
       <div className="flex items-center justify-center h-full">
         <Loader className="h-8 w-8 text-customTeal animate-spin" />
@@ -71,14 +74,19 @@ export default function Home() {
           <Loader className="h-8 w-8 text-customTeal animate-spin" />
         </ClerkLoading>
         <ClerkLoaded>
+          <DynamicWelcomeMessage 
+            username={username} 
+            isSignedIn={!!firebaseToken}
+            className="mb-4" 
+          />
           <SignedOut>
             <SignUpButton mode="modal">
-              <Button size="lg" variant="nextButton" className="w-auto">
+              <Button size="lg" variant="nextButton" className="w-auto mt-4">
                 Get Started
               </Button>
             </SignUpButton>
             <SignInButton mode="modal">
-              <Button size="lg" variant="nextButton2" className="w-auto">
+              <Button size="lg" variant="nextButton2" className="w-auto mt-2">
                 I already have an account
               </Button>
             </SignInButton>
@@ -106,12 +114,6 @@ export default function Home() {
           </SignedIn>
         </ClerkLoaded>
       </div>
-
-      {username && (
-        <div className="mt-8 text-center">
-          <DynamicWelcomeMessage username={username} />
-        </div>
-      )}
     </div>
   );
 }

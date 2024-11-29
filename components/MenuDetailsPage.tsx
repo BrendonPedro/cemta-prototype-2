@@ -29,6 +29,7 @@ import Combobox from "@/components/ui/Combobox"; // Use Combobox instead of Auto
 import { Input } from "@/components/ui/input"; // Import Input component
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { clientConfig } from '@/config/googleMapsConfig';
 
 interface MenuData {
   menuData: {
@@ -96,6 +97,7 @@ const MenuDetailsPage: React.FC<MenuDetailsPageProps> = ({ id }) => {
   const [signedImageUrl, setSignedImageUrl] = useState<string | null>(null);
   const [imageError, setImageError] = useState(false);
   const [isDetailsCollapsed, setIsDetailsCollapsed] = useState(false);
+  const { isLoaded } = useJsApiLoader(clientConfig);
 
   // Define fetchSignedUrl function
   const fetchSignedUrl = useCallback(
@@ -134,11 +136,6 @@ const MenuDetailsPage: React.FC<MenuDetailsPageProps> = ({ id }) => {
       fetchSignedUrl(menuData.imageUrl);
     }
   }, [menuData, fetchSignedUrl]);
-
-  const { isLoaded } = useJsApiLoader({
-    id: "google-map-script",
-    googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!,
-  });
 
   const fetchMenuData = useCallback(
     async (menuId: string) => {
