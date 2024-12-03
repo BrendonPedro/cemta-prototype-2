@@ -9,7 +9,7 @@ interface YelpCache {
   timestamp: number;
 }
 
-const CACHE_DURATION = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
+const CACHE_DURATION = 365 * 24 * 60 * 60 * 1000; // 365 days in milliseconds
 
 async function getCachedYelpBusiness(
   name: string, 

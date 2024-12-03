@@ -6,6 +6,7 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { Menu, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import UserPreferences from "@/components/UserPreferences";
 
 export const SlideOutMenu: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
@@ -45,6 +46,12 @@ export const SlideOutMenu: React.FC = () => {
                 className="block text-gray-600 hover:text-teal-600"
               >
                 Settings
+              </Link>
+              <Link
+                href="/preferences"
+                className="block text-gray-600 hover:text-teal-600"
+              >
+                Preferences
               </Link>
               <Link
                 href="/help"

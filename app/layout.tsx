@@ -8,6 +8,7 @@ import { Inter } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import { AuthProvider } from "@/components/AuthProvider";
 import "./globals.css";
+import { Toaster } from "@/components/ui/toast"
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -30,6 +31,7 @@ export default function RootLayout({
           data-gr-ext-installed=""
         >
           <AuthProvider>{children}</AuthProvider>
+          <Toaster />
         </body>
       </html>
     </ClerkProvider>

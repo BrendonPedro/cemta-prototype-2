@@ -25,6 +25,7 @@ import { CONFIG } from '@/lib/database-builder/config';
 import type { RestaurantData, OpeningHours } from '@/lib/database-builder/types';
 import { calculateDistance } from '@/app/utils/locationUtils'
 import type { Restaurant } from '@/lib/database-builder/types';
+import { UserPreferences } from "@/interfaces/users/user-preferences";
 
 // ======= Basic Types and Shared Interfaces =======
 // (Used across multiple components)
@@ -770,6 +771,42 @@ export async function updateRoleRequest(userId: string, approved: boolean) {
         },
       });
     }
+  }
+}
+
+export async function saveUserPreferences(
+  userId: string,
+  preferences: UserPreferences
+): Promise<void> {
+  try {
+    const userRef = doc(db, "users", userId);
+    await updateDoc(userRef, {
+      'preferences': {
+        ...preferences,
+        updatedAt: serverTimestamp()
+      }
+    });
+  } catch (error) {
+    console.error("Error saving user preferences:", error);
+    throw new Error("Failed to save preferences");
+  }
+}
+
+export async function getUserPreferences(
+  userId: string
+): Promise<UserPreferences | null> {
+  try {
+    const userRef = doc(db, "users", userId);
+    const userDoc = await getDoc(userRef);
+
+    if (userDoc.exists()) {
+      const userData = userDoc.data();
+      return userData.preferences || null;
+    }
+    return null;
+  } catch (error) {
+    console.error("Error fetching user preferences:", error);
+    throw new Error("Failed to fetch preferences");
   }
 }
 

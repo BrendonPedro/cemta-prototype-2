@@ -25,6 +25,7 @@ const ButtonsPage = () => {
       <Button variant="default2">Default2</Button>
       <Button variant="destructive2">Destructive2</Button>
       <Button variant="outline2">Outline2</Button>
+      <Button variant="ghostOutline">ghostOutline</Button>
       <Button variant="secondary2">Secondary2</Button>
       <Button variant="ghost2">Ghost2</Button>
       <Button variant="link2">Link2</Button>
