@@ -9,8 +9,8 @@ import {
   getVertexAiResultsByRestaurant,
   getCachedImageUrl,
   saveImageUrlCache,
-} from "@/app/services/firebaseFirestore"; // Keep client-side safe imports
-import { saveVertexAiResults } from "@/app/services/firebaseFirestore.server"; // Import server-side function
+} from "@/app/services/firebaseFirestore";
+import { saveVertexAiResults } from "@/app/services/firebaseFirestore.server";
 import { jsonrepair } from "jsonrepair";
 import vision from "@google-cloud/vision";
 import pLimit from "p-limit";
@@ -19,6 +19,8 @@ import {
   storage,
   originalMenuBucket,
   processedMenuBucket,
+  assertStorage,
+  assertBucket
 } from "@/config/googleCloudConfig";
 
 // Queue system
@@ -66,7 +68,7 @@ interface RequestBody {
   restaurantId: string;
   forceReprocess?: boolean;
   menuId?: string;
-  yelpId?: string; 
+  yelpId?: string;
 }
 
 interface SaveData {
@@ -77,7 +79,7 @@ interface SaveData {
   menuName: string;
   imageUrl: string;
   restaurantName: string;
-  yelpId?: string; 
+  yelpId?: string;
 }
 
 // Helper function for error handling
@@ -90,6 +92,7 @@ function getErrorDetails(error: unknown): string {
   }
   return String(error);
 }
+
 // Initialize Vision API client
 const visionClient = new vision.ImageAnnotatorClient();
 
@@ -98,6 +101,41 @@ const limit = pLimit(4);
 
 // Declare apiCallCount at the module level
 let apiCallCount = 0;
+
+// Utility functions for image download
+async function downloadImageFromGCS(imageUrl: string): Promise<Buffer> {
+  assertStorage(storage);
+  
+  let bucketName: string;
+  let fileName: string;
+
+  if (imageUrl.startsWith("gs://")) {
+    // Handle gs:// URLs
+    bucketName = imageUrl.split("/")[2];
+    fileName = imageUrl.split("/").slice(3).join("/");
+  } else if (imageUrl.startsWith("https://storage.googleapis.com")) {
+    // Handle storage.googleapis.com URLs
+    const parsedUrl = new URL(imageUrl);
+    bucketName = parsedUrl.pathname.split("/")[1];
+    fileName = decodeURIComponent(parsedUrl.pathname.split("/").slice(2).join("/"));
+  } else {
+    throw new Error("Invalid GCS URL format");
+  }
+
+  const bucket = storage.bucket(bucketName);
+  assertBucket(bucket);
+  
+  const file = bucket.file(fileName);
+  const [buffer] = await file.download();
+  return buffer;
+}
+
+async function downloadImageFromUrl(url: string): Promise<Buffer> {
+  const response = await axios.get(url, {
+    responseType: "arraybuffer",
+  });
+  return Buffer.from(response.data);
+}
 
 // Helper functions
 async function splitImageIntoChunks(
@@ -108,8 +146,9 @@ async function splitImageIntoChunks(
   const metadata = await image.metadata();
   const { width, height } = metadata;
 
-  if (!width || !height)
+  if (!width || !height) {
     throw new Error("Unable to retrieve image dimensions.");
+  }
 
   const chunkHeight = Math.ceil(height / chunks);
   const chunkBuffers: Buffer[] = [];
@@ -251,7 +290,7 @@ async function processImageChunksWithRetry(
 
   while (attempt < maxRetries) {
     try {
-      apiCallCount++; // Increment this every time you make an API call
+      apiCallCount++;
       return await processImageChunks(
         imageChunkBuffers,
         generativeModel,
@@ -303,8 +342,7 @@ function mergeCategories(categories: any[]): any[] {
 export async function POST(req: NextRequest) {
   try {
     const reqBody: RequestBody = await req.json();
-    const { imageUrl, userId, menuName, menuId, restaurantId, forceReprocess } =
-      reqBody;
+    const { imageUrl, userId, menuName, menuId, restaurantId, forceReprocess } = reqBody;
 
     if (!imageUrl || !userId || !menuName || !menuId) {
       return NextResponse.json(
@@ -338,6 +376,7 @@ export async function POST(req: NextRequest) {
     return new Promise((resolve) => {
       addToQueue(async () => {
         try {
+          // Initialize Google Auth
           const auth = new GoogleAuth({
             keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
             scopes: ["https://www.googleapis.com/auth/cloud-platform"],
@@ -345,65 +384,39 @@ export async function POST(req: NextRequest) {
           const client = await auth.getClient();
           await client.getAccessToken();
 
-          // Download image from original bucket or URL
+          // Download and process image
           let imageBuffer: Buffer;
           try {
-            if (imageUrl.startsWith("gs://")) {
-              // Handle gs:// URLs
-              const bucketName = imageUrl.split("/")[2];
-              const fileName = imageUrl.split("/").slice(3).join("/");
-              const bucket = storage.bucket(bucketName);
-              const file = bucket.file(fileName);
-              [imageBuffer] = await file.download();
-            } else if (imageUrl.startsWith("https://storage.googleapis.com")) {
-              // Handle storage.googleapis.com URLs
-              const parsedUrl = new URL(imageUrl);
-              const bucketName = parsedUrl.pathname.split("/")[1];
-              const fileName = decodeURIComponent(
-                parsedUrl.pathname.split("/").slice(2).join("/"),
-              );
-              const bucket = storage.bucket(bucketName);
-              const file = bucket.file(fileName);
-              [imageBuffer] = await file.download();
+            if (imageUrl.startsWith("gs://") || imageUrl.startsWith("https://storage.googleapis.com")) {
+              imageBuffer = await downloadImageFromGCS(imageUrl);
             } else {
-              // Handle other URLs via axios
-              const imageResponse = await axios.get(imageUrl, {
-                responseType: "arraybuffer",
-              });
-              imageBuffer = Buffer.from(imageResponse.data);
+              imageBuffer = await downloadImageFromUrl(imageUrl);
             }
-          } catch (downloadError: unknown) {
-            console.error("Error downloading image:", downloadError);
-            if (downloadError instanceof Error) {
-              throw new Error(
-                `Failed to download image: ${downloadError.message}`,
-              );
-            } else {
-              throw new Error("Failed to download image: Unknown error");
-            }
-          }
 
-          const optimizedImageBuffer = await sharp(imageBuffer)
-            .resize({ width: 2560 })
-            .toFormat("png")
-            .png({ quality: 80 })
-            .toBuffer();
+            // Optimize image
+            const optimizedImageBuffer = await sharp(imageBuffer)
+              .resize({ width: 2560 })
+              .toFormat("png")
+              .png({ quality: 80 })
+              .toBuffer();
 
-          // Upload optimized image to processed bucket
-          const processedFileName = `${userId}/${menuName}_processed.png`;
-          const processedFile = processedMenuBucket.file(processedFileName);
-          await processedFile.save(optimizedImageBuffer, {
-            metadata: { contentType: "image/png" },
-          });
-          const processedImageUrl = `gs://${processedMenuBucket.name}/${processedFileName}`;
+            // Save processed image
+            assertBucket(processedMenuBucket);
+            const processedFileName = `${userId}/${menuName}_processed.png`;
+            const processedFile = processedMenuBucket.file(processedFileName);
+            await processedFile.save(optimizedImageBuffer, {
+              metadata: { contentType: "image/png" },
+            });
+            const processedImageUrl = `gs://${processedMenuBucket.name}/${processedFileName}`;
 
-          const vertexAI = new VertexAI({ project: projectId, location });
-          const generativeModel = vertexAI.getGenerativeModel({
-            model: modelId,
-          });
+            // Initialize Vertex AI
+            const vertexAI = new VertexAI({ project: projectId, location });
+            const generativeModel = vertexAI.getGenerativeModel({
+              model: modelId,
+            });
 
-          // Prepare the base prompt
-          const basePrompt = `You are an AI assistant that extracts data from menu images and outputs JSON. Analyze the menu image provided and output only the JSON representation of the menu in the specified format, without any explanations, code snippets, or additional text. Ensure you capture all details, including prices, descriptions, and categories.
+            // Base prompt
+            const basePrompt = `You are an AI assistant that extracts data from menu images and outputs JSON. Analyze the menu image provided and output only the JSON representation of the menu in the specified format, without any explanations, code snippets, or additional text. Ensure you capture all details, including prices, descriptions, and categories.
 
 JSON Format:
 {
@@ -468,166 +481,163 @@ Instructions:
 Now, analyze the following image and output the JSON accordingly, capturing as much detail as possible.
 `;
 
-          // Reset apiCallCount for each request
-          apiCallCount = 0;
+            apiCallCount = 0;
 
-          let combinedMenuData: any = {
-            restaurant_info: {
-              name: { original: "", english: "" },
-              address: { original: "", english: "" },
-              operating_hours: "",
-              phone_number: "",
-              website: "",
-              social_media: "",
-              description: { original: "", english: "" },
-              additional_notes: "",
-            },
-            categories: [],
-            other_info: "",
-          };
-
-          const totalChunks = 3;
-          const chunkBuffers = await splitImageIntoChunks(
-            optimizedImageBuffer,
-            totalChunks,
-          );
-
-          const chunkPromises = chunkBuffers.map((chunkBuffer) =>
-            limit(() =>
-              processImageChunksWithRetry(
-                [chunkBuffer],
-                generativeModel,
-                basePrompt,
-              ),
-            ),
-          );
-
-          console.log(`Processing ${chunkBuffers.length} chunks...`);
-
-          const chunkMenuDataArray = await Promise.all(chunkPromises);
-
-          console.log(
-            `Processed ${chunkMenuDataArray.length} chunks successfully.`,
-          );
-
-          for (const chunkMenuData of chunkMenuDataArray) {
-            combinedMenuData.restaurant_info = {
-              ...combinedMenuData.restaurant_info,
-              ...chunkMenuData.restaurant_info,
+            let combinedMenuData: any = {
+              restaurant_info: {
+                name: { original: "", english: "" },
+                address: { original: "", english: "" },
+                operating_hours: "",
+                phone_number: "",
+                website: "",
+                social_media: "",
+                description: { original: "", english: "" },
+                additional_notes: "",
+              },
+              categories: [],
+              other_info: "",
             };
-            combinedMenuData.categories.push(
-              ...(chunkMenuData.categories || []),
+
+            const totalChunks = 3;
+            const chunkBuffers = await splitImageIntoChunks(
+              optimizedImageBuffer,
+              totalChunks,
             );
-            combinedMenuData.other_info +=
-              " " + (chunkMenuData.other_info || "");
-          }
 
-          combinedMenuData.categories = mergeCategories(
-            combinedMenuData.categories,
-          );
+            const chunkPromises = chunkBuffers.map((chunkBuffer) =>
+              limit(() =>
+                processImageChunksWithRetry(
+                  [chunkBuffer],
+                  generativeModel,
+                  basePrompt,
+                ),
+              ),
+            );
 
-          const restaurantName: string =
-            combinedMenuData.restaurant_info?.name?.original ||
-            menuName ||
-            "Unknown Restaurant";
+            console.log(`Processing ${chunkBuffers.length} chunks...`);
+
+            const chunkMenuDataArray = await Promise.all(chunkPromises);
+
+            console.log(
+              `Processed ${chunkMenuDataArray.length} chunks successfully.`,
+            );
+
+            for (const chunkMenuData of chunkMenuDataArray) {
+              combinedMenuData.restaurant_info = {
+                ...combinedMenuData.restaurant_info,
+                ...chunkMenuData.restaurant_info,
+              };
+              combinedMenuData.categories.push(
+                ...(chunkMenuData.categories || []),
+              );
+              combinedMenuData.other_info +=
+                " " + (chunkMenuData.other_info || "");
+            }
+
+            combinedMenuData.categories = mergeCategories(
+              combinedMenuData.categories,
+            );
+
+            const restaurantName: string =
+              combinedMenuData.restaurant_info?.name?.original ||
+              menuName ||
+              "Unknown Restaurant";
 
             console.log("Processing menuId:", menuId);
-let processingId;
-try {
-  const cleanedMenuData = {
-    ...combinedMenuData,
-    restaurant_info: {
-      ...combinedMenuData.restaurant_info,
-      name: {
-        original: restaurantName || menuName || "Unknown Restaurant",
-        english: combinedMenuData.restaurant_info?.name?.english || ""
-      }
-    }
-  };
 
-  // Update saveData to use undefined instead of null
-  const saveData: SaveData = {
-    userId,
-    menuData: cleanedMenuData,
-    menuId,
-    restaurantId,
-    menuName,
-    imageUrl,
-    restaurantName: restaurantName || menuName || "Unknown Restaurant",
-    // Don't include yelpId if it's not provided
-  };
+            try {
+              const cleanedMenuData = {
+                ...combinedMenuData,
+                restaurant_info: {
+                  ...combinedMenuData.restaurant_info,
+                  name: {
+                    original: restaurantName || menuName || "Unknown Restaurant",
+                    english: combinedMenuData.restaurant_info?.name?.english || ""
+                  }
+                }
+              };
 
-  console.log("Saving menu data:", {
-    menuId,
-    restaurantId,
-    menuName,
-    restaurantName,
-    yelpId: saveData.yelpId
-  });
+              const saveData: SaveData = {
+                userId,
+                menuData: cleanedMenuData,
+                menuId,
+                restaurantId,
+                menuName,
+                imageUrl,
+                restaurantName: restaurantName || menuName || "Unknown Restaurant",
+              };
 
-  processingId = await saveVertexAiResults(
-    saveData.userId,
-    saveData.menuData,
-    saveData.menuId,
-    saveData.restaurantId,
-    saveData.menuName,
-    saveData.imageUrl,
-    saveData.restaurantName,
-    saveData.yelpId // This will be undefined if not set
-  );
+              console.log("Saving menu data:", {
+                menuId,
+                restaurantId,
+                menuName,
+                restaurantName,
+                yelpId: saveData.yelpId
+              });
 
-  await saveImageUrlCache(userId, menuName, processedImageUrl);
-  console.log("Successfully saved menu data with ID:", processingId);
+              const processingId = await saveVertexAiResults(
+                saveData.userId,
+                saveData.menuData,
+                saveData.menuId,
+                saveData.restaurantId,
+                saveData.menuName,
+                saveData.imageUrl,
+                saveData.restaurantName,
+                saveData.yelpId
+              );
 
-} catch (error) {
-  const errorMessage = getErrorDetails(error);
-  console.error("Error saving results:", errorMessage);
-  
-  resolve(
-    NextResponse.json(
-      { 
-        error: "Failed to save menu data",
-        details: errorMessage,
-        menuId,
-        restaurantId,
-        context: "Menu data save operation failed"
-      },
-      { status: 500 }
-    )
-  );
-  return;
-}
+              await saveImageUrlCache(userId, menuName, processedImageUrl);
+              console.log("Successfully saved menu data with ID:", processingId);
 
-          console.log(
-            "Combined menu data:",
-            JSON.stringify(combinedMenuData, null, 2),
-          );
-          console.log(
-            `Processed menu with ${apiCallCount} API call(s) to Vertex AI.`,
-          );
+              resolve(
+                NextResponse.json(
+                  {
+                    menuData: combinedMenuData,
+                    processingId: menuId,
+                    apiCallCount,
+                    cached: false,
+                    timestamp: new Date().toISOString(),
+                    restaurantName,
+                    restaurantId
+                  },
+                  { status: 200 }
+                )
+              );
+            } catch (error) {
+              const errorMessage = getErrorDetails(error);
+              console.error("Error saving results:", errorMessage);
+              
+              resolve(
+                NextResponse.json(
+                  { 
+                    error: "Failed to save menu data",
+                    details: errorMessage,
+                    menuId,
+                    restaurantId,
+                    context: "Menu data save operation failed"
+                  },
+                  { status: 500 }
+                )
+              );
+            }
 
+          } catch (error: any) {
+            console.error("Error in Vertex AI processing:", error);
+            let errorMessage = "An error occurred during processing";
+            if (error.response) {
+              errorMessage += `: ${error.response.status} ${error.response.statusText}`;
+              console.error("Error response data:", error.response.data);
+            }
+            resolve(NextResponse.json({ error: errorMessage }, { status: 500 }));
+          }
+        } catch (error: any) {
+          console.error("Error in queue processing:", error);
           resolve(
             NextResponse.json(
-              {
-                menuData: combinedMenuData,
-                processingId: menuId,
-                apiCallCount,
-                cached: false,
-                timestamp: new Date().toISOString(),
-                restaurantName,
-                restaurantId
-              },
-              { status: 200 }
+              { error: "An error occurred during queue processing" },
+              { status: 500 }
             )
           );
-        } catch (error: any) {
-          console.error("Error in Vertex AI processing:", error);
-          let errorMessage = "An error occurred during processing";
-          if (error.response) {
-            errorMessage += `: ${error.response.status} ${error.response.statusText}`;
-            console.error("Error response data:", error.response.data);
-          }
-          resolve(NextResponse.json({ error: errorMessage }, { status: 500 }));
         }
       });
     });
@@ -635,7 +645,7 @@ try {
     console.error("Error in API route:", error);
     return NextResponse.json(
       { error: "An error occurred in the API route" },
-      { status: 500 },
+      { status: 500 }
     );
   }
 }

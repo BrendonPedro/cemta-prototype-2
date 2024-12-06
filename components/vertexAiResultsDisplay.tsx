@@ -55,6 +55,57 @@ interface VertexAiResultsDisplayProps {
   menuName: string;
 }
 
+function normalizeMenuData(data: any): MenuData {
+  // Transform categories from object to array if needed
+  const categories = Array.isArray(data.categories) 
+    ? data.categories 
+    : Object.values(data.categories || {}).map((category: any) => ({
+        name: category.name || { original: '', english: '', pinyin: '' },
+        items: Array.isArray(category.items) 
+          ? category.items 
+          : Object.values(category.items || {}).map((item: any) => ({
+              name: item.name,
+              description: item.description || { original: '', english: '' },
+              prices: typeof item.prices === 'object' 
+                ? Object.entries(item.prices).reduce((acc, [key, value]) => ({
+                    ...acc,
+                    [key]: value?.toString() || ''
+                  }), {})
+                : {},
+              popular: !!item.popular,
+              chef_recommended: !!item.chef_recommended,
+              spice_level: item.spice_level?.toString() || '',
+              allergy_alert: item.allergy_alert || '',
+              upgrades: Array.isArray(item.upgrades) ? item.upgrades : [],
+              notes: item.notes || ''
+            }))
+      }));
+
+       // Normalize restaurant info
+  const restaurantInfo = {
+    name: typeof data.restaurant_info?.name === 'string' 
+      ? { original: data.restaurant_info.name, english: '' }
+      : data.restaurant_info?.name || { original: '', english: '' },
+    address: typeof data.restaurant_info?.address === 'string'
+      ? { original: data.restaurant_info.address, english: '' }
+      : data.restaurant_info?.address || { original: '', english: '' },
+    operating_hours: data.restaurant_info?.operating_hours || '',
+    phone_number: data.restaurant_info?.phone_number || '',
+    website: data.restaurant_info?.website || '',
+    social_media: data.restaurant_info?.social_media || '',
+    description: typeof data.restaurant_info?.description === 'string'
+      ? { original: data.restaurant_info.description, english: '' }
+      : data.restaurant_info?.description || { original: '', english: '' },
+    additional_notes: data.restaurant_info?.additional_notes || ''
+  };
+
+  return {
+    restaurant_info: restaurantInfo,
+    categories: categories,
+    other_info: data.other_info || ''
+  };
+}
+
 const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
   userId,
   latestProcessingId,
@@ -95,8 +146,9 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
     const fetchResults = async () => {
       if (existingMenuInfo) {
         // Handle existing menu data
-        setMenuData(existingMenuInfo.menuData);
-        setEditedMenuData(existingMenuInfo.menuData);
+        const normalizedData = normalizeMenuData(existingMenuInfo.menuData);
+        setMenuData(normalizedData);
+        setEditedMenuData(normalizedData);
         setSelectedHistoryId(existingMenuInfo.id);
         setLastUpdated(existingMenuInfo.timestamp);
         setAlert({
@@ -120,8 +172,9 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
           console.log("Fetched results:", results);
 
           if (results && results.menuData) {
-            setMenuData(results.menuData);
-            setEditedMenuData(results.menuData);
+            const normalizedData = normalizeMenuData(results.menuData);
+            setMenuData(normalizedData);
+            setEditedMenuData(normalizedData);
             setSelectedHistoryId(latestProcessingId);
             setLastUpdated(results.timestamp || new Date().toISOString());
 
@@ -586,6 +639,6 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
     );
   }
 
-  return <MenuDataDisplay menuData={menuData} menuName={menuName} />;
+  return <MenuDataDisplay menuData={menuData ? normalizeMenuData(menuData) : null} menuName={menuName} />;
 };
 export default VertexAiResultsDisplay;
