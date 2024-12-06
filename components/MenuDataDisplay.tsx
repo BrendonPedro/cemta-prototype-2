@@ -20,20 +20,23 @@ import {
 } from "@/components/ui/collapsible";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { ChevronDown, ChevronUp, Star, ChefHat, AlertTriangle } from "lucide-react";
-
+import { ChevronDown, ChevronUp, AlertTriangle } from "lucide-react";
 
 // Type definitions
+interface MenuName {
+  original: string;
+  pinyin?: string;
+  english?: string;
+}
+
+interface MenuDescription {
+  original?: string;
+  english?: string;
+}
+
 interface MenuItem {
-  name: {
-    original: string;
-    pinyin?: string;
-    english?: string;
-  };
-  description?: {
-    original?: string;
-    english?: string;
-  } | null;
+  name: MenuName;
+  description?: MenuDescription | null;
   price?: {
     amount: number;
     currency: string;
@@ -50,11 +53,7 @@ interface MenuItem {
 }
 
 interface Category {
-  name: {
-    original: string;
-    pinyin?: string;
-    english?: string;
-  };
+  name: MenuName;
   items: MenuItem[] | { [key: string]: MenuItem };
 }
 
@@ -80,24 +79,25 @@ interface MenuDataDisplayProps {
   menuName: string;
 }
 
+// Type guard for English property
 function hasEnglishProperty(value: any): value is { original: string; english?: string } {
   return typeof value === 'object' && value !== null && 'english' in value;
 }
 
 export function MenuDataDisplay({ menuData, menuName }: MenuDataDisplayProps) {
   const [showFullMenu, setShowFullMenu] = useState(false);
-  const [isRestaurantInfoOpen, setIsRestaurantInfoOpen] = useState(true); // Default open
+  const [isRestaurantInfoOpen, setIsRestaurantInfoOpen] = useState(true);
 
-   // Early return with styled message
-   if (!menuData) {
+  // Early return if no data
+  if (!menuData) {
     return (
       <Card className="w-full mt-6">
         <CardHeader>
-          <CardTitle className="text-2xl font-bold">{menuName}</CardTitle>
+          <CardTitle className="text-xl font-bold">{menuName}</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-col items-center justify-center p-8 text-muted-foreground">
-            <p className="text-lg">No menu data available.</p>
+          <div className="flex flex-col items-center justify-center p-6 text-muted-foreground">
+            <p>No menu data available.</p>
           </div>
         </CardContent>
       </Card>
@@ -109,16 +109,16 @@ export function MenuDataDisplay({ menuData, menuName }: MenuDataDisplayProps) {
     const cats = Array.isArray(menuData.categories)
       ? menuData.categories
       : Object.values(menuData.categories || {});
-  
+
     return cats.map(category => ({
       ...category,
       items: Array.isArray(category.items)
         ? category.items
-        : Object.values(category.items || {}).filter((item): item is MenuItem => 
-            item !== null && typeof item === 'object')
+        : Object.values(category.items || {})
     }));
   }, [menuData]);
 
+  // Component helper functions
   const renderPrice = (item: MenuItem) => {
     if (item.price) {
       return (
@@ -133,77 +133,118 @@ export function MenuDataDisplay({ menuData, menuName }: MenuDataDisplayProps) {
           {Object.entries(item.prices)
             .filter(([_, value]) => value && value !== "")
             .map(([key, value]) => (
-              <div key={key} className="flex justify-between text-sm">
+              <div key={key} className="text-sm flex justify-between">
                 <span className="text-muted-foreground capitalize">{key}:</span>
-                <span className="font-medium text-green-600 dark:text-green-400">${value}</span>
+                <span className="font-medium text-green-600">${value}</span>
               </div>
             ))}
         </div>
       );
     }
-    return <span className="text-muted-foreground">Price not available</span>;
+    return null;
   };
 
-  const renderAttributes = (item: MenuItem) => (
-    <div className="flex flex-wrap gap-2">
-      {item.popular && (
-        <Badge variant="secondary" className="flex items-center gap-1">
-          <Star className="h-3 w-3" /> Popular
-        </Badge>
-      )}
-      {item.chef_recommended && (
-        <Badge variant="secondary" className="flex items-center gap-1">
-          <ChefHat className="h-3 w-3" /> Chef's Choice
-        </Badge>
-      )}
-      {item.spice_level && (
-        <Badge variant="destructive" className="flex items-center gap-1">
-          {"🌶️".repeat(Number(item.spice_level))}
-        </Badge>
-      )}
-      {item.allergy_alert && (
-        <Badge variant="destructive" className="flex items-center gap-1">
-          <AlertTriangle className="h-3 w-3" /> {item.allergy_alert}
-        </Badge>
-      )}
-    </div>
-  );
+  const renderFeatures = (item: MenuItem) => {
+    const features = [];
 
+    if (item.popular) {
+      features.push(
+        <Badge key="popular" variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200">
+          ⭐ Popular
+        </Badge>
+      );
+    }
+
+    if (item.chef_recommended) {
+      features.push(
+        <Badge key="chef" variant="outline" className="bg-blue-50 text-blue-700 border-blue-200">
+          👨‍🍳 Chef's Choice
+        </Badge>
+      );
+    }
+
+    if (item.spice_level && parseInt(item.spice_level) > 0) {
+      features.push(
+        <Badge key="spice" variant="outline" className="bg-red-50 text-red-700 border-red-200">
+          {"🌶️".repeat(parseInt(item.spice_level))}
+        </Badge>
+      );
+    }
+
+    return features.length > 0 ? (
+      <div className="flex flex-wrap gap-1.5">{features}</div>
+    ) : null;
+  };
+
+  const renderDetails = (item: MenuItem) => {
+    return (
+      <div className="space-y-2">
+        {item.description && (
+          <div className="space-y-1">
+            <div className="text-sm">{item.description.original}</div>
+            {item.description.english && (
+              <div className="text-sm text-muted-foreground">
+                {item.description.english}
+              </div>
+            )}
+          </div>
+        )}
+        
+        {item.allergy_alert && (
+          <div className="flex items-center gap-1.5 text-sm text-yellow-600">
+            <AlertTriangle className="h-4 w-4" />
+            {item.allergy_alert}
+          </div>
+        )}
+
+        {item.notes && (
+          <div className="text-sm text-muted-foreground border-t pt-2">
+            {item.notes}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Restaurant info component
   const renderRestaurantInfo = (info: RestaurantInfo) => (
     <Collapsible
       open={isRestaurantInfoOpen}
       onOpenChange={setIsRestaurantInfoOpen}
       className="w-full bg-white dark:bg-gray-800 rounded-lg shadow-sm"
     >
-      <CollapsibleTrigger className="flex items-center justify-between w-full p-4 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors rounded-t-lg">
-        <h3 className="text-lg font-semibold flex items-center gap-2">
-          <span>Restaurant Information</span>
-          {info.name && typeof info.name === 'object' && (
-            <Badge variant="outline">{info.name.english}</Badge>
+      <CollapsibleTrigger className="flex items-center justify-between w-full p-4 hover:bg-gray-50/50 dark:hover:bg-gray-800/50 transition-colors rounded-t-lg">
+        <div className="flex items-center gap-2">
+          <h3 className="text-lg font-semibold">Restaurant Information</h3>
+          {hasEnglishProperty(info.name) && (
+            <Badge variant="outline" className="text-sm font-normal">
+              {info.name.english}
+            </Badge>
           )}
-        </h3>
-        {isRestaurantInfoOpen ? <ChevronUp /> : <ChevronDown />}
+        </div>
+        {isRestaurantInfoOpen ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
       </CollapsibleTrigger>
-      <CollapsibleContent className="p-4 space-y-3 border-t">
-        <div className="grid md:grid-cols-2 gap-4">
+
+      <CollapsibleContent className="p-4 border-t border-gray-100 dark:border-gray-800">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {Object.entries(info)
-            .filter(([_, value]) => value)
+            .filter(([key, value]) => value && key !== 'validation_status')
             .map(([key, value]) => (
               <div key={key} className="space-y-1">
-                <dt className="text-sm font-medium text-gray-500 dark:text-gray-400 capitalize">
+                <dt className="text-sm font-medium text-muted-foreground capitalize">
                   {key.replace(/_/g, " ")}
                 </dt>
-                <dd className="text-sm text-gray-900 dark:text-gray-100">
-                  {typeof value === "object" && value !== null
-                    ? (
-                      <div>
-                        <div className="font-medium">{value.original}</div>
-                        {value.english && (
-                          <div className="text-muted-foreground">{value.english}</div>
-                        )}
-                      </div>
-                    )
-                    : value || "N/A"}
+                <dd className="text-sm">
+                  {typeof value === "object" && value !== null ? (
+                    <div className="space-y-0.5">
+                      <div className="font-medium">{value.original}</div>
+                      {value.english && (
+                        <div className="text-muted-foreground">{value.english}</div>
+                      )}
+                    </div>
+                  ) : (
+                    value || "N/A"
+                  )}
                 </dd>
               </div>
             ))}
@@ -212,7 +253,7 @@ export function MenuDataDisplay({ menuData, menuName }: MenuDataDisplayProps) {
     </Collapsible>
   );
 
-
+  // Menu item component
   const renderMenuItem = (
     item: MenuItem,
     categoryIndex: number,
@@ -221,29 +262,27 @@ export function MenuDataDisplay({ menuData, menuName }: MenuDataDisplayProps) {
   ) => (
     <TableRow 
       key={`${categoryIndex}-${itemIndex}`}
-      className="group hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+      className="group hover:bg-gray-50/50 dark:hover:bg-gray-800/50 transition-colors"
     >
+      {/* Category column (only in full menu view) */}
       {showFullMenu && categoryName && (
-        <TableCell className="font-medium border-r">{categoryName}</TableCell>
+        <TableCell className="font-medium border-r border-gray-100 dark:border-gray-800">
+          {categoryName}
+        </TableCell>
       )}
-      
+
+      {/* Name column */}
       <TableCell className="min-w-[200px]">
         <div className="space-y-1">
-          <div className="flex items-center space-x-2">
+          <div className="flex items-start gap-2">
             <span className="font-medium">{item.name.original}</span>
-            {item.popular && (
-              <Badge variant="secondary" className="h-5">
-                Popular
-              </Badge>
-            )}
+            {renderFeatures(item)}
           </div>
-          
           {item.name.english && (
             <div className="text-sm text-muted-foreground">
               {item.name.english}
             </div>
           )}
-          
           {item.name.pinyin && (
             <div className="text-xs text-muted-foreground italic">
               {item.name.pinyin}
@@ -251,113 +290,52 @@ export function MenuDataDisplay({ menuData, menuName }: MenuDataDisplayProps) {
           )}
         </div>
       </TableCell>
-  
+
+      {/* Price column */}
       <TableCell className="whitespace-nowrap">
-        {item.price ? (
-          <div className="font-medium text-green-600 dark:text-green-400">
-            ${item.price.amount} {item.price.currency}
-          </div>
-        ) : item.prices ? (
-          <div className="space-y-1">
-            {Object.entries(item.prices)
-              .filter(([_, value]) => value && value !== "")
-              .map(([key, value]) => (
-                <div key={key} className="flex items-center justify-between gap-2">
-                  <span className="text-xs text-muted-foreground capitalize">
-                    {key}:
-                  </span>
-                  <span className="font-medium text-green-600 dark:text-green-400">
-                    ${value}
-                  </span>
-                </div>
-              ))}
-          </div>
-        ) : (
-          <span className="text-sm text-muted-foreground">N/A</span>
-        )}
+        {renderPrice(item)}
       </TableCell>
-  
-      <TableCell>
-        <div className="flex flex-wrap gap-1">
-          {item.chef_recommended && (
-            <Badge variant="outline" className="bg-amber-50 border-amber-200">
-              👨‍🍳 Chef's Choice
-            </Badge>
-          )}
-          {item.spice_level && parseInt(item.spice_level) > 0 && (
-            <Badge variant="outline" className="font-normal">
-              {"🌶️".repeat(parseInt(item.spice_level))}
-            </Badge>
-          )}
-          {item.allergy_alert && (
-            <Badge variant="destructive" className="bg-yellow-50 text-yellow-800 border-yellow-200">
-              ⚠️ {item.allergy_alert}
-            </Badge>
-          )}
-        </div>
+
+      {/* Details column */}
+      <TableCell className="max-w-[400px]">
+        {renderDetails(item)}
       </TableCell>
-  
-      <TableCell className="max-w-[300px]">
-        {item.description && (
-          <div className="space-y-1">
-            {item.description.original && (
-              <div className="text-sm">{item.description.original}</div>
-            )}
-            {item.description.english && (
-              <div className="text-sm text-muted-foreground">
-                {item.description.english}
-              </div>
-            )}
-          </div>
-        )}
-      </TableCell>
-  
+
+      {/* Upgrades column */}
       <TableCell className="min-w-[150px]">
-        {item.upgrades && item.upgrades.length > 0 ? (
-          <div className="space-y-1">
-            {item.upgrades.map((upgrade, idx) => (
-              <div
-                key={idx}
-                className="flex items-center justify-between text-sm"
-              >
-                <span className="text-muted-foreground">{upgrade.name}</span>
-                <span className="font-medium text-green-600 dark:text-green-400">
-                  +${upgrade.price}
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <span className="text-sm text-muted-foreground">—</span>
-        )}
-      </TableCell>
-  
-      {showFullMenu && (
-        <TableCell className="max-w-[200px]">
-          {item.notes ? (
-            <span className="text-sm">{item.notes}</span>
-          ) : (
-            <span className="text-sm text-muted-foreground">—</span>
-          )}
-        </TableCell>
-      )}
+  {item.upgrades && item.upgrades.length > 0 ? (
+    <div className="space-y-1">
+      <div className="text-xs font-medium text-muted-foreground mb-1">
+        Available Upgrades:
+      </div>
+      {item.upgrades.map((upgrade, idx) => (
+        <div key={idx} className="flex justify-between text-sm">
+          <span className="text-muted-foreground">{upgrade.name}</span>
+          <span className="font-medium text-green-600">+${upgrade.price}</span>
+        </div>
+      ))}
+    </div>
+  ) : (
+    <span className="text-sm text-muted-foreground">—</span>
+  )}
+</TableCell>
     </TableRow>
   );
-  
 
-  const hasCategories = normalizedCategories.length > 0;
-  const firstCategoryName = hasCategories ? normalizedCategories[0]?.name?.original : "";
-
+  // Main component return
   return (
     <Card className="w-full mt-6">
       <CardHeader>
         <div className="flex items-center justify-between">
-          <div>
+          <div className="space-y-2">
             <CardTitle className="text-2xl font-bold flex items-center gap-2">
               {menuName}
-              {menuData.restaurant_info?.name && hasEnglishProperty(menuData.restaurant_info.name) && (
-                <Badge variant="outline">{menuData.restaurant_info.name.english}</Badge>
-              )}
+              {menuData.restaurant_info?.name && 
+                hasEnglishProperty(menuData.restaurant_info.name) && (
+                  <Badge variant="outline" className="ml-2">
+                    {menuData.restaurant_info.name.english}
+                  </Badge>
+                )}
             </CardTitle>
             {menuData.restaurant_info?.description && 
               hasEnglishProperty(menuData.restaurant_info.description) && (
@@ -368,73 +346,72 @@ export function MenuDataDisplay({ menuData, menuName }: MenuDataDisplayProps) {
           </div>
         </div>
       </CardHeader>
+
       <CardContent>
         <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="showFullMenu"
-                checked={showFullMenu}
-                onCheckedChange={(checked) => setShowFullMenu(!!checked)}
-                className="border-2"
-              />
-              <label htmlFor="showFullMenu" className="text-sm font-medium">
-                Show full menu (including categories)
-              </label>
-            </div>
+          {/* View toggle */}
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id="showFullMenu"
+              checked={showFullMenu}
+              onCheckedChange={(checked) => setShowFullMenu(!!checked)}
+            />
+            <label htmlFor="showFullMenu" className="text-sm font-medium">
+              Show full menu (including categories)
+            </label>
           </div>
 
+          {/* Restaurant info */}
           {menuData.restaurant_info && renderRestaurantInfo(menuData.restaurant_info)}
 
+          {/* Menu content */}
           <div className="rounded-lg border border-gray-200 dark:border-gray-800">
-            {hasCategories ? (
+            {normalizedCategories.length > 0 ? (
               showFullMenu ? (
-                <ScrollArea className="w-full border rounded-md">
-                <div className="overflow-x-auto">
-                  <Table>
-                  <TableHeader>
-                    <TableRow className="bg-gray-50 dark:bg-gray-800">
-                      {showFullMenu && (
-                        <TableHead className="font-semibold hidden md:table-cell w-[150px]">Category</TableHead>
-                      )}
-                      <TableHead className="font-semibold min-w-[200px] lg:min-w-[250px]">Name</TableHead>
-                      <TableHead className="font-semibold whitespace-nowrap min-w-[100px]">Price</TableHead>
-                      <TableHead className="font-semibold hidden sm:table-cell min-w-[120px]">Features</TableHead>
-                      <TableHead className="font-semibold hidden md:table-cell">Description</TableHead>
-                      <TableHead className="font-semibold hidden lg:table-cell min-w-[150px]">Upgrades</TableHead>
-                      <TableHead className="font-semibold hidden xl:table-cell">Notes</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                    <TableBody>
-                      {normalizedCategories.flatMap((category, categoryIndex) =>
-                        category.items.map((item, itemIndex) =>
-                          renderMenuItem(
-                            item,
-                            categoryIndex,
-                            itemIndex,
-                            `${category.name.original} ${
-                              category.name.english ? `(${category.name.english})` : ""
-                            }`
+                // Full menu view
+                <ScrollArea className="w-full">
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="bg-gray-50/50 dark:bg-gray-800/50">
+                          <TableHead className="w-[180px] font-medium">Category</TableHead>
+                          <TableHead className="min-w-[250px] font-medium">Item</TableHead>
+                          <TableHead className="w-[120px] font-medium">Price</TableHead>
+                          <TableHead className="min-w-[200px] font-medium">Details</TableHead>
+                          <TableHead className="w-[150px] font-medium">Upgrades</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {normalizedCategories.flatMap((category, categoryIndex) =>
+                          category.items.map((item, itemIndex) =>
+                            renderMenuItem(
+                              item,
+                              categoryIndex,
+                              itemIndex,
+                              `${category.name.original} ${
+                                category.name.english ? `(${category.name.english})` : ""
+                              }`
+                            )
                           )
-                        )
-                      )}
-                    </TableBody>
-                  </Table>
-                </div>
+                        )}
+                      </TableBody>
+                    </Table>
+                  </div>
                 </ScrollArea>
               ) : (
-                <Tabs defaultValue={firstCategoryName} className="w-full">
+                // Categorized view
+                <Tabs defaultValue={normalizedCategories[0]?.name.original} className="w-full">
                   <TabsList className="flex flex-wrap gap-2 p-4 border-b">
                     {normalizedCategories.map((category) => (
                       <TabsTrigger
                         key={category.name.original}
                         value={category.name.original}
-                        className="px-4 py-2 rounded-md data-[state=active]:bg-slate-200 data-[state=active]:text-slate-900"
+                        className="px-4 py-2 rounded-md"
                       >
                         <div className="text-center">
                           <div className="font-medium">{category.name.original}</div>
                           {category.name.english && (
-                            <div className="text-xs opacity-70">
+                            <div className="text-xs text-muted-foreground">
                               {category.name.english}
                             </div>
                           )}
@@ -442,39 +419,36 @@ export function MenuDataDisplay({ menuData, menuName }: MenuDataDisplayProps) {
                       </TabsTrigger>
                     ))}
                   </TabsList>
-                  
-                  <div className="p-4">
-                    {normalizedCategories.map((category) => (
-                      <TabsContent
-                        key={category.name.original}
-                        value={category.name.original}
-                      >
-                        <div className="overflow-x-auto">
-                          <Table>
-                            <TableHeader>
-                              <TableRow className="bg-gray-50 dark:bg-gray-800">
-                                <TableHead className="font-semibold min-w-[200px]">Name</TableHead>
-                                <TableHead className="font-semibold">Price</TableHead>
-                                <TableHead className="font-semibold">Features</TableHead>
-                                <TableHead className="font-semibold">Description</TableHead>
-                                <TableHead className="font-semibold">Upgrades</TableHead>
-                                <TableHead className="font-semibold">Notes</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {category.items.map((item, itemIndex) =>
-                                renderMenuItem(
-                                  item,
-                                  normalizedCategories.indexOf(category),
-                                  itemIndex
-                                )
-                              )}
-                            </TableBody>
-                          </Table>
-                        </div>
-                      </TabsContent>
-                    ))}
-                  </div>
+
+                  {normalizedCategories.map((category) => (
+                    <TabsContent
+                      key={category.name.original}
+                      value={category.name.original}
+                      className="p-4"
+                    >
+                      <ScrollArea className="w-full">
+                        <Table>
+                          <TableHeader>
+                            <TableRow className="bg-gray-50/50 dark:bg-gray-800/50">
+                              <TableHead className="min-w-[250px] font-medium">Item</TableHead>
+                              <TableHead className="w-[120px] font-medium">Price</TableHead>
+                              <TableHead className="min-w-[200px] font-medium">Details</TableHead>
+                              <TableHead className="w-[150px] font-medium">Upgrades</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {category.items.map((item, itemIndex) =>
+                              renderMenuItem(
+                                item,
+                                normalizedCategories.indexOf(category),
+                                itemIndex
+                              )
+                            )}
+                          </TableBody>
+                        </Table>
+                      </ScrollArea>
+                    </TabsContent>
+                  ))}
                 </Tabs>
               )
             ) : (
@@ -484,10 +458,13 @@ export function MenuDataDisplay({ menuData, menuName }: MenuDataDisplayProps) {
             )}
           </div>
 
+          {/* Additional information */}
           {menuData.other_info && (
-            <Card className="mt-6">
+            <Card>
               <CardHeader>
-                <CardTitle className="text-lg font-semibold">Additional Information</CardTitle>
+                <CardTitle className="text-lg font-semibold">
+                  Additional Information
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <p className="whitespace-pre-line text-sm text-muted-foreground">
