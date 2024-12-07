@@ -15,6 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { GoogleMap, useJsApiLoader, Marker } from "@react-google-maps/api";
 import ErrorBoundary from "@/components/ErrorBoundary";
+import { getImageProps } from "@/app/utils/imageHandling";
 
 // Types and Interfaces
 interface Location {
@@ -110,20 +111,6 @@ interface YelpSearchResponse {
 }
 
 type YelpApiResponse = YelpSearchResponse | YelpErrorResponse;
-
-const getImageProps = (imageUrl: string | undefined, restaurantName: string) => {
-  const url = imageUrl || "/placeholder-restaurant.jpg";
-  
-  return {
-    src: url,
-    alt: `${restaurantName} restaurant photo`,
-    fill: true,
-    sizes: "(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw",
-    className: "object-cover transition-all duration-300 group-hover:scale-105",
-    unoptimized: url.includes('yelp'),
-    priority: false
-  };
-};
 
 // Component for loading skeleton
 const RestaurantSkeleton: React.FC = () => (
@@ -437,14 +424,17 @@ function RestaurantsPage() {
         className="group"
       >
         <Card className="overflow-hidden hover:shadow-lg transition-shadow duration-300 cursor-pointer">
-          <div className="relative h-48 overflow-hidden">
-            <Image
-              {...getImageProps(restaurant.imageUrl, restaurant.restaurantName)}
-              onError={(e) => {
-                const target = e.target as HTMLImageElement;
-                target.src = "/placeholder-restaurant.jpg";
-              }}
-            />
+        <div className="relative h-48">
+  <Image
+    {...getImageProps(restaurant.imageUrl, restaurant.restaurantName, 'card')}
+    fill
+    onError={(e) => {
+      const img = e.target as HTMLImageElement;
+      img.src = '/placeholder-restaurant.jpg';
+    }}
+    unoptimized={restaurant.imageUrl?.includes('yelp')}
+  />
+
             {restaurant.hasYelpData && (
               <div className="absolute top-2 right-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
                 Yelp

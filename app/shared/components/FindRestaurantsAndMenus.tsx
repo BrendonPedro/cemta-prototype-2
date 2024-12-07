@@ -32,6 +32,7 @@ import { Client as GoogleMapsClient } from "@googlemaps/google-maps-services-js"
 import Image from "next/image";
 import { counties, EnhancedCountyData } from "@/lib/data/counties";
 import { clientConfig } from '@/config/googleMapsConfig';
+import { getImageProps } from '@/app/utils/imageHandling';
 
 
 import {
@@ -1173,21 +1174,19 @@ const handleMarkerClick = useCallback(async (
     <>
       {/* Restaurant Image */}
       <div className="relative h-48 w-full rounded-lg overflow-hidden">
-        <Image
-          src={
-            focusedRestaurant.imageUrl || 
-            focusedRestaurant.photoUrl || 
-            '/placeholder-restaurant.jpg'
-          }
-          alt={focusedRestaurant.name}
-          fill
-          className="object-cover transition-transform duration-300 hover:scale-105"
-          sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-          onError={(e) => {
-            const img = e.target as HTMLImageElement;
-            img.src = '/placeholder-restaurant.jpg';
-          }}
-        />
+  <Image
+    {...getImageProps(
+      focusedRestaurant.imageUrl || focusedRestaurant.photoUrl,
+      focusedRestaurant.name,
+      'detail'
+    )}
+    fill
+    onError={(e) => {
+      const img = e.target as HTMLImageElement;
+      img.src = '/placeholder-restaurant.jpg';
+    }}
+    unoptimized={focusedRestaurant.imageUrl?.includes('yelp')}
+  />
         {/* Image source badge */}
         {(focusedRestaurant.imageUrl || focusedRestaurant.photoUrl) && (
           <div className="absolute bottom-2 right-2 bg-black/60 text-white px-2 py-1 rounded text-xs">
