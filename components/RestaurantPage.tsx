@@ -130,6 +130,34 @@ const convertLocation = (location: YelpLocation): Location => {
   };
 };
 
+const convertLocationFormat = (location: { latitude: number; longitude: number; } | Location | undefined): Location => {
+  if (!location) {
+    // Return default location if undefined
+    return {
+      lat: 0,
+      lng: 0
+    };
+  }
+
+  if ('lat' in location && 'lng' in location) {
+    return location;
+  }
+
+  if ('latitude' in location && 'longitude' in location) {
+    return {
+      lat: location.latitude,
+      lng: location.longitude
+    };
+  }
+
+  // Fallback default
+  return {
+    lat: 0,
+    lng: 0
+  };
+};
+
+
 // ======= Restaurant Content Component =======
 const RestaurantContent: React.FC<RestaurantContentProps> = ({
   details,
@@ -334,7 +362,6 @@ const RestaurantPage: React.FC<RestaurantPageProps> = ({ restaurantId }) => {
 
     async function fetchRestaurantData() {
       try {
-        // First, get cached restaurant details
         const details = await getCachedRestaurantDetails(restaurantId);
         if (!details) {
           if (mounted) {
@@ -346,78 +373,86 @@ const RestaurantPage: React.FC<RestaurantPageProps> = ({ restaurantId }) => {
           }
           return;
         }
-
+    
         // Add main restaurant image to photos set if it exists
         if (details.imageUrl) {
           allPhotos.add(details.imageUrl);
         }
-
+    
         // Parallel fetch of menus
         const menusData = await getMenusByRestaurantId(restaurantId);
-
-        // Add menu images to photos set
         menusData.forEach((menu) => {
           if (menu.imageUrl) {
             allPhotos.add(menu.imageUrl);
           }
         });
-
-            // Only fetch from Yelp if we have location data
-            let yelpData = null;
-            const yelpLocation = details.location as unknown as YelpLocation;
-            if (yelpLocation && !details.yelpId) {
-              yelpData = await getYelpBusinessWithPhotos(
-                details.name,
-                yelpLocation.latitude,
-                yelpLocation.longitude
-              );
-
-
-         // Add Yelp photos to the set
-      if (yelpData?.photos) {
-        yelpData.photos.forEach((url) => allPhotos.add(url));
-      }
-    }
-
-    // Create photos array from all sources
-    const photoArray: Photo[] = Array.from(allPhotos).map((url) => ({
-      url,
-      source: url.includes("yelp") ? "yelp" : "google",
-    }));
-
-    // Combine all data
-    const restaurantData: Restaurant = {
-      id: details.id,
-      name: details.name,
-      address: details.address,
-      rating: details.rating,
-      location: convertLocation(yelpLocation), // Convert location format
-      county: details.county || '',
-      townName: '', // Default value
-      menuCount: details.menuCount || 0,
-      
-      // Optional fields with proper null handling
-      phone: details.phone || null,
-      website: details.website || null,
-      priceLevel: formatPriceLevel(details.priceLevel),
-      openingHours: yelpData ? convertYelpHours(yelpData.hours) : null,
-      photos: photoArray.map(photo => photo.url),
-      
-      // Required boolean flags
-      hasMenu: Boolean(details.menuCount),
-      hasGoogleData: false,
-      hasYelpData: Boolean(yelpData),
-      contribution: false,
-      hasDetailsFetched: true
-    };
-
-        // Update Yelp data
+    
+        // Only fetch from Yelp if we have valid location data
+        let yelpData = null;
+        const restaurantLocation = convertLocationFormat(details.location);
+        const hasValidLocation = restaurantLocation.lat !== 0 && restaurantLocation.lng !== 0;
+    
+        if (hasValidLocation && !details.yelpId) {
+          try {
+            yelpData = await getYelpBusinessWithPhotos(
+              details.name,
+              restaurantLocation.lat,
+              restaurantLocation.lng
+            );
+    
+            if (yelpData?.photos) {
+              yelpData.photos.forEach((url) => allPhotos.add(url));
+            }
+          } catch (error) {
+            console.error('Error fetching Yelp data:', error);
+          }
+        }
+    
+        // Create photos array from all sources
+        const photoArray: Photo[] = Array.from(allPhotos).map((url) => ({
+          url,
+          source: url.includes("yelp") ? "yelp" : "google",
+        }));
+    
+        // Combine all data
+        const restaurantData: Restaurant = {
+          id: details.id,
+          name: details.name,
+          address: details.address,
+          rating: details.rating,
+          location: restaurantLocation,
+          county: details.county || '',
+          // Use optional chaining for townName and provide default
+          townName: (details as any).townName || details.county || '',
+          menuCount: details.menuCount || 0,
+          
+          // Optional fields with proper null handling
+          phone: details.phone || null,
+          website: details.website || null,
+          priceLevel: formatPriceLevel(details.priceLevel),
+          openingHours: yelpData ? convertYelpHours(yelpData.hours) : null,
+          photos: Array.from(allPhotos),
+          
+          // Required boolean flags
+          hasMenu: Boolean(details.menuCount),
+          hasGoogleData: false,
+          hasYelpData: Boolean(yelpData),
+          contribution: false,
+          hasDetailsFetched: true,
+          
+          // Additional fields from RestaurantDocument
+          imageUrl: details.imageUrl,
+          yelpId: details.yelpId || null,
+          yelpRating: details.yelpRating || null
+        };
+    
+        // Update Yelp data if available
         if (yelpData) {
-          restaurantData.phone = yelpData.display_phone || null;
-          restaurantData.website = yelpData.url || null;
+          restaurantData.phone = yelpData.display_phone || restaurantData.phone;
+          restaurantData.website = yelpData.url || restaurantData.website;
           restaurantData.priceLevel = formatPriceLevel(yelpData.price_level);
         }
-
+    
         if (mounted) {
           setState({
             details: restaurantData,
