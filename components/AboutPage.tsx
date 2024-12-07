@@ -22,19 +22,13 @@ import {
 import { useAuth } from "@/components/AuthProvider";
 import { useGeolocation } from '@/hooks/use-geolocation';
 
-// Types
-import type { Restaurant } from "@/lib/database-builder/types";
+// Types & Interfaces
+import { Restaurant } from "@/interfaces/restaurant/types";
+import { RestaurantCardProps } from "@/interfaces/restaurant/types";
 
-//Interfaces
-interface RestaurantCardProps {
-  restaurant: Restaurant;
-}
 
 // Constants
-    // For restaurants without their own image
-const FALLBACK_IMAGE = "https://images.unsplash.com/photo-1514933651103-005eec06c04b?auto=format&fit=crop&w=1074&q=80";
-    // On UI - Decode Any Menu in Seconds Image
-const MENU_DEMO_IMAGE = "https://images.unsplash.com/photo-1533777857889-4be7c70b33f7?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=1170&q=80";
+import { FALLBACK_IMAGE, MENU_DEMO_IMAGE } from "@/app/constants/fallbackImages";
 
 // Component: Restaurant Card
 const RestaurantCard: React.FC<RestaurantCardProps> = ({

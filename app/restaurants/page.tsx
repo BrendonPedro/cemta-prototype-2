@@ -16,16 +16,103 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { GoogleMap, useJsApiLoader, Marker } from "@react-google-maps/api";
 import ErrorBoundary from "@/components/ErrorBoundary";
 
-interface Restaurant extends EnhancedSearchResult {
+// Types and Interfaces
+interface Location {
+  lat: number;
+  lng: number;
+}
+
+interface Restaurant extends Omit<EnhancedSearchResult, 'location'> {
   id: string;
   latitude?: number;
   longitude?: number;
+  location: string;
+  restaurantName: string;
+  county: string;
+  imageUrl?: string;
+  rating?: number;
 }
 
-const mapContainerStyle = {
-  width: "100%",
-  height: "400px",
+interface MapConfig {
+  containerStyle: {
+    width: string;
+    height: string;
+  };
+  defaultCenter: Location;
+  defaultZoom: number;
+}
+
+interface NearbyRestaurantResponse {
+  id: string;
+  name: string;
+  address: string;
+  imageUrl?: string;
+  rating?: number;
+  county?: string;
+  latitude: number;
+  longitude: number;
+}
+
+// Map Configuration
+const MAP_CONFIG: MapConfig = {
+  containerStyle: {
+    width: "100%",
+    height: "400px",
+  },
+  defaultCenter: {
+    lat: 24.5601,
+    lng: 120.8215, // Default to Miaoli coordinates
+  },
+  defaultZoom: 14,
 };
+
+interface MapState {
+  isLoaded: boolean;
+  error: string | null;
+}
+
+// Updated interfaces at the top of your restaurants/page.tsx
+interface YelpErrorResponse {
+  error: {
+    code: string;
+    description: string;
+  };
+}
+
+interface YelpBusinessResponse {
+  id: string;
+  name: string;
+  image_url?: string;
+  rating?: number;
+  coordinates?: {
+    latitude: number;
+    longitude: number;
+  };
+  location?: {
+    address1?: string;
+    city?: string;
+    state?: string;
+  };
+}
+
+interface YelpSearchResponse {
+  businesses: YelpBusinessResponse[];
+  total: number;
+}
+
+type YelpApiResponse = YelpSearchResponse | YelpErrorResponse;
+
+// Component for loading skeleton
+const RestaurantSkeleton: React.FC = () => (
+  <Card className="p-4 w-full">
+    <div className="flex flex-col space-y-4">
+      <Skeleton className="h-48 w-full rounded-lg" />
+      <Skeleton className="h-6 w-3/4" />
+      <Skeleton className="h-4 w-1/2" />
+      <Skeleton className="h-4 w-1/4" />
+    </div>
+  </Card>
+);
 
 function RestaurantsPage() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -34,50 +121,77 @@ function RestaurantsPage() {
   const [error, setError] = useState<string | null>(null);
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(searchTerm);
   const [showMap, setShowMap] = useState(false);
-  const [center, setCenter] = useState({
-    lat: 24.5601,
-    lng: 120.8215, // Default to Miaoli coordinates
+  const [center, setCenter] = useState<Location>(MAP_CONFIG.defaultCenter);
+  const [mapsApiKey, setMapsApiKey] = useState<string>("");
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [mapState, setMapState] = useState<MapState>({
+    isLoaded: false,
+    error: null
   });
-    const [mapsApiKey, setMapsApiKey] = useState<string>("");
-    const [isLoaded, setIsLoaded] = useState(false);
-    const [loadError, setLoadError] = useState<string | null>(null);
-    
 
+   // Method to handle geocoding
+  const handleGeocoding = async (address: string) => {
+    try {
+      const response = await fetch(`/api/maps/geocode?address=${encodeURIComponent(address)}`);
+      if (!response.ok) throw new Error('Geocoding failed');
+      return await response.json();
+    } catch (error) {
+      console.error('Geocoding error:', error);
+      return null;
+    }
+  };
+
+    // Method to handle place details
+    const handlePlaceDetails = async (placeId: string) => {
+      try {
+        const response = await fetch(`/api/maps/place-details?placeId=${placeId}`);
+        if (!response.ok) throw new Error('Failed to fetch place details');
+        return await response.json();
+      } catch (error) {
+        console.error('Place details error:', error);
+        return null;
+      }
+    };
+
+  // Map initialization effect
   useEffect(() => {
     async function initializeMap() {
       try {
+        // Fetch API key from route
         const response = await fetch("/api/maps");
         const data = await response.json();
 
-        if (data.apiKey) {
-          setMapsApiKey(data.apiKey);
-
-          // Initialize loader only once with the API key
-          const { load } = require("@googlemaps/js-api-loader");
-          const loader = new load({
-            apiKey: data.apiKey,
-            version: "weekly",
-            libraries: ["places"],
-          });
-
-          try {
-            await loader.load();
-            setIsLoaded(true);
-          } catch (error) {
-            console.error("Error loading Google Maps:", error);
-            setLoadError("Failed to load Google Maps");
-          }
+        if (!data.apiKey) {
+          throw new Error('Failed to load Maps API key');
         }
+
+        const { Loader } = await import("@googlemaps/js-api-loader");
+        const loader = new Loader({
+          apiKey: data.apiKey,
+          version: "weekly",
+          libraries: ["places"],
+          mapIds: [data.mapId] // Add the map ID
+        });
+
+        await loader.load();
+        setMapState({
+          isLoaded: true,
+          error: null
+        });
       } catch (error) {
-        console.error("Error fetching Maps API key:", error);
-        setLoadError("Failed to load map functionality");
+        console.error("Error loading map:", error);
+        setMapState({
+          isLoaded: false,
+          error: 'Failed to load map functionality'
+        });
       }
     }
 
     initializeMap();
-  }, []); // Empty dependency array - only run once on mount
+  }, []);
 
-  // Debounce search term
+  // Search term debouncing effect
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedSearchTerm(searchTerm);
@@ -86,7 +200,7 @@ function RestaurantsPage() {
     return () => clearTimeout(timer);
   }, [searchTerm]);
 
-  // Fetch restaurants when debounced search term changes
+  // Restaurant fetching effect
   useEffect(() => {
     async function fetchRestaurants() {
       if (!debouncedSearchTerm) {
@@ -99,7 +213,7 @@ function RestaurantsPage() {
 
       try {
         const results = await searchRestaurants(debouncedSearchTerm);
-        setRestaurants(results);
+        setRestaurants(results as Restaurant[]);
       } catch (err) {
         setError("Failed to fetch restaurants");
         console.error(err);
@@ -111,53 +225,78 @@ function RestaurantsPage() {
     fetchRestaurants();
   }, [debouncedSearchTerm]);
 
-  // Handle map click to search for restaurants
+  // Map click handler
   const handleMapClick = async (event: google.maps.MouseEvent) => {
     if (!event.latLng) return;
-
+  
     const lat = event.latLng.lat();
     const lng = event.latLng.lng();
-
+  
     try {
       setLoading(true);
+      setError(null);
+      
       const response = await fetch(
-        `/api/nearby-restaurants?lat=${lat}&lng=${lng}&limit=20`
+        `/api/yelp/search?latitude=${lat}&longitude=${lng}&limit=20`
       );
-
-      if (!response.ok) throw new Error("Failed to fetch nearby restaurants");
-
-      const data = await response.json();
-
-      // Combine the newly fetched restaurants with existing ones
+  
+      const data = await response.json() as YelpApiResponse;
+  
+      if (!response.ok) {
+        // Check if it's an error response
+        if ('error' in data) {
+          throw new Error(data.error.description || 'Failed to fetch nearby restaurants');
+        }
+        throw new Error('Failed to fetch nearby restaurants');
+      }
+  
+      // Type guard for successful response
+      if (!('businesses' in data) || !Array.isArray(data.businesses)) {
+        throw new Error('Invalid response format from server');
+      }
+  
       setRestaurants((prev) => {
-        const newRestaurants = data.restaurants.map((r: any) => ({
+        const newRestaurants = data.businesses.map((r: YelpBusinessResponse) => ({
           id: r.id,
           restaurantName: r.name,
-          location: r.address,
-          imageUrl: r.imageUrl,
-          rating: r.rating,
-          county: r.county,
-          latitude: r.latitude,
-          longitude: r.longitude,
+          location: r.location?.address1 || 'Address unavailable',
+          imageUrl: r.image_url || '/placeholder-restaurant.jpg',
+          rating: r.rating || 0,
+          county: r.location?.city || r.location?.state || 'Location unavailable',
+          latitude: r.coordinates?.latitude,
+          longitude: r.coordinates?.longitude,
+          hasMenu: false,
+          menuCount: 0,
+          hasGoogleData: false,
+          hasYelpData: true
         }));
-
-        // Combine and remove duplicates
-        const combined = [...prev, ...newRestaurants];
-        const unique = Array.from(
+  
+        // Filter out restaurants without valid coordinates
+        const validRestaurants = newRestaurants.filter(
+          r => typeof r.latitude === 'number' && typeof r.longitude === 'number'
+        );
+  
+        const combined = [...prev, ...validRestaurants];
+        
+        // Remove duplicates based on ID
+        return Array.from(
           new Map(combined.map((item) => [item.id, item])).values()
         );
-
-        return unique;
       });
-
+  
       setCenter({ lat, lng });
     } catch (error) {
       console.error("Error fetching nearby restaurants:", error);
-      setError("Failed to fetch nearby restaurants. Please try again.");
+      setError(
+        error instanceof Error 
+          ? error.message 
+          : "Failed to fetch nearby restaurants. Please try again."
+      );
     } finally {
       setLoading(false);
     }
   };
+
 
   const RestaurantSkeleton = () => (
     <Card className="p-4 w-full">
@@ -214,52 +353,42 @@ function RestaurantsPage() {
 
       {/* Map Section */}
       {showMap && (
-        <div className="mb-8">
-          <Card className="p-4">
-            {isLoaded && window.google ? (
-              <GoogleMap
-                mapContainerStyle={mapContainerStyle}
-                center={center}
-                zoom={14}
-                onClick={handleMapClick}
-                options={{
-                  disableDefaultUI: false,
-                  clickableIcons: false,
-                  mapTypeControl: false,
-                  zoomControl: true,
-                }}
-              >
-                {restaurants
-                  .filter((r) => r.latitude && r.longitude)
-                  .map((restaurant) => (
-                    <Marker
-                      key={restaurant.id}
-                      position={{
-                        lat: restaurant.latitude!,
-                        lng: restaurant.longitude!,
-                      }}
-                      title={restaurant.restaurantName}
-                    />
-                  ))}
-              </GoogleMap>
-            ) : loadError ? (
-              <div className="flex justify-center items-center h-[400px] bg-gray-100">
-                <p className="text-red-500">{loadError}</p>
+      <div className="mb-8">
+        <Card className="p-4">
+          {mapState.isLoaded && window.google ? (
+            <GoogleMap
+              mapContainerStyle={MAP_CONFIG.containerStyle}
+              center={center}
+              zoom={MAP_CONFIG.defaultZoom}
+              onClick={handleMapClick}
+              options={{
+                disableDefaultUI: false,
+                clickableIcons: false,
+                mapTypeControl: false,
+                zoomControl: true,
+                mapId: process.env.NEXT_PUBLIC_GOOGLE_MAPS_ID // Add map ID here
+              }}
+            >
+              {/* ... Markers ... */}
+            </GoogleMap>
+          ) : mapState.error ? (
+            <div className="flex justify-center items-center h-[400px] bg-gray-100">
+              <p className="text-red-500">{mapState.error}</p>
+            </div>
+          ) : (
+            <div className="flex justify-center items-center h-[400px] bg-gray-100">
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-customTeal mx-auto mb-4"></div>
+                <p className="text-gray-600">Loading map...</p>
               </div>
-            ) : (
-              <div className="flex justify-center items-center h-[400px] bg-gray-100">
-                <div className="text-center">
-                  <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-customTeal mx-auto mb-4"></div>
-                  <p className="text-gray-600">Loading map...</p>
-                </div>
-              </div>
-            )}
-            <p className="text-sm text-gray-500 mt-2 text-center">
-              Click anywhere on the map to find restaurants in that area
-            </p>
-          </Card>
-        </div>
-      )}
+            </div>
+          )}
+          <p className="text-sm text-gray-500 mt-2 text-center">
+            Click anywhere on the map to find restaurants in that area
+          </p>
+        </Card>
+      </div>
+    )}
 
       {/* Results Section */}
       {error && <div className="text-red-500 text-center mb-8">{error}</div>}

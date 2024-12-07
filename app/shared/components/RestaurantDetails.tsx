@@ -85,7 +85,12 @@ export const RestaurantDetails: React.FC<RestaurantDetailsProps> = ({
         {restaurant.rating > 0 && (
           <div className="flex items-center gap-1">
             <Star className="h-4 w-4 fill-yellow-400 stroke-yellow-400" />
-            <span className="text-gray-700">{restaurant.rating.toFixed(1)}</span>
+            <span className="text-gray-700">
+              {restaurant.rating.toFixed(1)}
+              {restaurant.priceLevel && (  // This is showing as a number instead of $ symbols
+                <span className="ml-1">{restaurant.priceLevel}</span>
+              )}
+            </span>
           </div>
         )}
       </div>

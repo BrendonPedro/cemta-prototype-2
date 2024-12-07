@@ -79,16 +79,25 @@ interface MenuDataDisplayProps {
   menuName: string;
 }
 
-// Type guard for English property
+/**
+ * Type guard to check if a value has an English translation property
+ * @param value - The value to check
+ * @returns boolean indicating if the value has an english property
+ */
 function hasEnglishProperty(value: any): value is { original: string; english?: string } {
   return typeof value === 'object' && value !== null && 'english' in value;
 }
 
+/**
+ * MenuDataDisplay Component
+ * Displays restaurant menu data in both categorized and full menu views
+ */
 export function MenuDataDisplay({ menuData, menuName }: MenuDataDisplayProps) {
+  // State management
   const [showFullMenu, setShowFullMenu] = useState(false);
   const [isRestaurantInfoOpen, setIsRestaurantInfoOpen] = useState(true);
 
-  // Early return if no data
+  // Early return for missing data
   if (!menuData) {
     return (
       <Card className="w-full mt-6">
@@ -104,7 +113,7 @@ export function MenuDataDisplay({ menuData, menuName }: MenuDataDisplayProps) {
     );
   }
 
-  // Normalize categories and items
+  // Memoized category normalization to prevent unnecessary recalculations
   const normalizedCategories = useMemo(() => {
     const cats = Array.isArray(menuData.categories)
       ? menuData.categories
@@ -118,7 +127,9 @@ export function MenuDataDisplay({ menuData, menuName }: MenuDataDisplayProps) {
     }));
   }, [menuData]);
 
-  // Component helper functions
+  /**
+   * Helper Components
+   */
   const renderPrice = (item: MenuItem) => {
     if (item.price) {
       return (
@@ -206,7 +217,9 @@ export function MenuDataDisplay({ menuData, menuName }: MenuDataDisplayProps) {
     );
   };
 
-  // Restaurant info component
+  /**
+   * Restaurant Information Section
+   */
   const renderRestaurantInfo = (info: RestaurantInfo) => (
     <Collapsible
       open={isRestaurantInfoOpen}
@@ -253,7 +266,9 @@ export function MenuDataDisplay({ menuData, menuName }: MenuDataDisplayProps) {
     </Collapsible>
   );
 
-  // Menu item component
+  /**
+   * Menu Item Row Component
+   */
   const renderMenuItem = (
     item: MenuItem,
     categoryIndex: number,
@@ -322,7 +337,6 @@ export function MenuDataDisplay({ menuData, menuName }: MenuDataDisplayProps) {
     </TableRow>
   );
 
-  // Main component return
   return (
     <Card className="w-full mt-6">
       <CardHeader>
@@ -480,3 +494,40 @@ export function MenuDataDisplay({ menuData, menuName }: MenuDataDisplayProps) {
 }
 
 export default MenuDataDisplay;
+
+/**
+ * Component Summary:
+ * 
+ * Purpose:
+ * - Displays restaurant menu data in an interactive and organized format
+ * - Supports both categorized and full menu views
+ * - Handles multilingual content (original text, English translations, pinyin)
+ * 
+ * Key Features:
+ * - Toggle between full menu and categorized views
+ * - Collapsible restaurant information section
+ * - Support for item features (popular, chef recommended, spice level)
+ * - Price display with multiple pricing options
+ * - Upgrade options display
+ * - Responsive design with horizontal scrolling for wide content
+ * 
+ * Dependencies:
+ * - Uses shadcn/ui components for UI elements
+ * - Requires Lucide icons
+ * - Expects specific data structure from parent component
+ * 
+ * Related Components:
+ * - Card, Table, Tabs, and other UI components from @/components/ui/*
+ * - Should be used within a parent component that provides MenuData
+ * 
+ * Optimization Notes:
+ * - Uses useMemo for category normalization
+ * - Implements early return for null data
+ * - Modular rendering functions for better maintainability
+ * 
+ * Suggested Improvements:
+ * - Consider moving types to a separate types.ts file
+ * - Add error boundaries for better error handling
+ * - Implement virtualization for large menus
+ * - Add loading states for async data
+ */

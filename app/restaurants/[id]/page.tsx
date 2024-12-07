@@ -5,13 +5,18 @@ import RestaurantPage from "@/components/RestaurantPage";
 import { Skeleton } from "@/components/ui/skeleton";
 import { notFound } from "next/navigation";
 
+// Types and Interfaces
 interface PageProps {
   params: {
     id: string;
   };
 }
 
-// Enhanced loading skeleton
+interface ErrorDisplayProps {
+  error: Error;
+}
+
+// Enhanced loading skeleton component
 function LoadingFallback() {
   return (
     <div className="container mx-auto px-6 py-12">
@@ -70,7 +75,7 @@ function LoadingFallback() {
 }
 
 // Error boundary component
-function ErrorDisplay({ error }: { error: Error }) {
+function ErrorDisplay({ error }: ErrorDisplayProps) {
   return (
     <div className="container mx-auto px-6 py-12">
       <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
@@ -83,6 +88,7 @@ function ErrorDisplay({ error }: { error: Error }) {
   );
 }
 
+// Main page component
 export default function RestaurantPageWrapper({ params }: PageProps) {
   if (!params.id) {
     return notFound();
@@ -95,8 +101,7 @@ export default function RestaurantPageWrapper({ params }: PageProps) {
   );
 }
 
-
-// Add metadata generation
+// Metadata generation
 export async function generateMetadata({ params }: PageProps) {
   try {
     return {

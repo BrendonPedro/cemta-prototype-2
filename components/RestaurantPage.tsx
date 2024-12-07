@@ -6,15 +6,9 @@ import React, { useState, useEffect } from "react";
 import {
   getCachedRestaurantDetails,
   getMenusByRestaurantId,
-  type RestaurantDetails,
-  type MenuSummary,
-  type Photo,
-  type BusinessHours,
-  type YelpBusiness,
 } from "@/app/services/firebaseFirestore";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import {
   MapPin,
   Phone,
@@ -34,7 +28,15 @@ import {
 } from "@/components/ui/carousel";
 import { getYelpBusinessWithPhotos } from "@/app/services/yelpService";
 import Link from "next/link";
-
+import {
+  type Restaurant,
+  type OpeningHours,
+  type PriceLevel,
+  type Photo,
+  type MenuSummary,
+  type YelpBusiness,
+  type Location
+} from "@/interfaces/restaurant/types";
 
 // ======= Helper Functions (outside all components) =======
 const formatDay = (day: number): string => {
@@ -51,39 +53,83 @@ const formatTime = (time: string): string => {
   return `${formattedHours}:${minutes} ${period}`;
 };
 
-const formatYelpHours = (yelpHours: YelpBusiness["hours"]): BusinessHours[] => {
-  if (!yelpHours?.[0]?.open) return [];
-  return yelpHours[0].open.map(h => ({
-    day: formatDay(h.day),
-    start: formatTime(h.start),
-    end: formatTime(h.end),
+const formatYelpHours = (yelpHours: YelpBusiness["hours"]): OpeningHours | null => {
+  if (!yelpHours?.[0]?.open) return null;
+
+  const periods = yelpHours[0].open.map(h => ({
+    open: { day: h.day, time: h.start },
+    close: { day: h.day, time: h.end }
   }));
+
+  const weekdayText = periods.map(period => {
+    const day = formatDay(period.open.day);
+    return `${day}: ${formatTime(period.open.time)} - ${formatTime(period.close.time)}`;
+  });
+
+  return {
+    openNow: false,
+    periods,
+    weekdayText
+  };
 };
 
+const formatPriceLevel = (level: string | undefined | null): PriceLevel | null => {
+  if (!level) return null;
+  if (level.includes('$')) return level as PriceLevel;
+  return '$'.repeat(Number(level)) as PriceLevel;
+};
 
+const convertYelpHours = (yelpHours: YelpBusiness["hours"]): OpeningHours | null => {
+  if (!yelpHours?.[0]?.open) return null;
+
+  return {
+    openNow: false,
+    periods: yelpHours[0].open.map(h => ({
+      open: { day: h.day, time: h.start },
+      close: { day: h.day, time: h.end }
+    })),
+    weekdayText: yelpHours[0].open.map(h => 
+      `${formatDay(h.day)}: ${formatTime(h.start)} - ${formatTime(h.end)}`
+    )
+  };
+};
 
 // ======= Types =======
 interface RestaurantPageProps {
   restaurantId: string;
 }
 
+interface RestaurantPageState {
+  details: Restaurant | null;
+  menus: MenuSummary[];
+  photos: Photo[];
+  loading: boolean;
+  error: string | null;
+  activeTab: string;
+  allPhotos: Set<string>;
+}
+
 interface RestaurantContentProps {
-  details: RestaurantDetails;
+  details: Restaurant;
   photos: Photo[];
   menus: MenuSummary[];
   activeTab: string;
   onTabChange: (value: string) => void;
 }
 
-interface RestaurantPageState {
-  details: RestaurantDetails | null;
-  menus: MenuSummary[];
-  photos: Photo[];
-  loading: boolean;
-  error: string | null;
-  activeTab: string;
-  allPhotos: Set<string>; // New state for tracking all unique photos
+interface YelpLocation {
+  latitude: number;
+  longitude: number;
 }
+
+// Add a helper function to convert between location formats
+const convertLocation = (location: YelpLocation): Location => {
+  return {
+    lat: location.latitude,
+    lng: location.longitude
+  };
+};
+
 // ======= Restaurant Content Component =======
 const RestaurantContent: React.FC<RestaurantContentProps> = ({
   details,
@@ -101,7 +147,7 @@ const RestaurantContent: React.FC<RestaurantContentProps> = ({
           <Star className="h-5 w-5 text-yellow-400" />
           <span className="ml-2">{details.rating.toFixed(1)}</span>
           {details.priceLevel && (
-            <span className="ml-4">{details.priceLevel}</span>
+            <span className="ml-4">{formatPriceLevel(details.priceLevel)}</span>
           )}
         </div>
       </div>
@@ -133,18 +179,23 @@ const RestaurantContent: React.FC<RestaurantContentProps> = ({
           </div>
         )}
 
-        {details.hours && (
-          <div className="flex items-start space-x-3">
-            <Clock className="h-5 w-5 text-gray-400 mt-1" />
-            <div className="text-gray-600">
-              {details.hours.map((hour: BusinessHours, index: number) => (
-                <div key={index}>
-                  {hour.day}: {hour.start} - {hour.end}
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+{details.openingHours && (
+  <div className="flex items-start space-x-3">
+    <Clock className="h-5 w-5 text-gray-400 mt-1" />
+    <div className="text-gray-600">
+      {details.openingHours.weekdayText?.map((hours: string, index: number) => (
+        <div key={index}>
+          {hours}
+        </div>
+      ))}
+      <div className={`text-sm font-medium ${
+        details.openingHours.openNow ? 'text-green-600' : 'text-red-600'
+      }`}>
+        {details.openingHours.openNow ? '● Open Now' : '○ Closed'}
+      </div>
+    </div>
+  </div>
+)}
       </div>
     </div>
   );
@@ -221,7 +272,7 @@ const renderMenusSection = () => (
 );
 
   // Main Render
-  return (
+   return (
     <div className="container mx-auto px-6 py-12">
       <div className="flex flex-col lg:flex-row gap-8">
         {renderPhotoCarousel()}
@@ -311,38 +362,61 @@ const RestaurantPage: React.FC<RestaurantPageProps> = ({ restaurantId }) => {
           }
         });
 
-        // Only fetch from Yelp if we have location data and yelpId isn't present
-        let yelpData = null;
-        if (details.location && !details.yelpId) {
-          yelpData = await getYelpBusinessWithPhotos(
-            details.name,
-            details.location.latitude,
-            details.location.longitude
-          );
+            // Only fetch from Yelp if we have location data
+            let yelpData = null;
+            const yelpLocation = details.location as unknown as YelpLocation;
+            if (yelpLocation && !details.yelpId) {
+              yelpData = await getYelpBusinessWithPhotos(
+                details.name,
+                yelpLocation.latitude,
+                yelpLocation.longitude
+              );
 
-          // Add Yelp photos to the set
-          if (yelpData?.photos) {
-            yelpData.photos.forEach((url) => allPhotos.add(url));
-          }
+
+         // Add Yelp photos to the set
+      if (yelpData?.photos) {
+        yelpData.photos.forEach((url) => allPhotos.add(url));
+      }
+    }
+
+    // Create photos array from all sources
+    const photoArray: Photo[] = Array.from(allPhotos).map((url) => ({
+      url,
+      source: url.includes("yelp") ? "yelp" : "google",
+    }));
+
+    // Combine all data
+    const restaurantData: Restaurant = {
+      id: details.id,
+      name: details.name,
+      address: details.address,
+      rating: details.rating,
+      location: convertLocation(yelpLocation), // Convert location format
+      county: details.county || '',
+      townName: '', // Default value
+      menuCount: details.menuCount || 0,
+      
+      // Optional fields with proper null handling
+      phone: details.phone || null,
+      website: details.website || null,
+      priceLevel: formatPriceLevel(details.priceLevel),
+      openingHours: yelpData ? convertYelpHours(yelpData.hours) : null,
+      photos: photoArray.map(photo => photo.url),
+      
+      // Required boolean flags
+      hasMenu: Boolean(details.menuCount),
+      hasGoogleData: false,
+      hasYelpData: Boolean(yelpData),
+      contribution: false,
+      hasDetailsFetched: true
+    };
+
+        // Update Yelp data
+        if (yelpData) {
+          restaurantData.phone = yelpData.display_phone || null;
+          restaurantData.website = yelpData.url || null;
+          restaurantData.priceLevel = formatPriceLevel(yelpData.price_level);
         }
-
-        // Create photos array from all sources
-        const photoArray: Photo[] = Array.from(allPhotos).map((url) => ({
-          url,
-          source: url.includes("yelp")
-            ? ("yelp" as const)
-            : ("google" as const),
-        }));
-
-        // Combine all data
-        const restaurantData: RestaurantDetails = {
-          ...details,
-          phone: yelpData?.display_phone || details.phone,
-          website: yelpData?.url || details.website,
-          priceLevel: yelpData?.price_level || details.priceLevel,
-          hours: details.hours || formatYelpHours(yelpData?.hours),
-          photos: photoArray,
-        };
 
         if (mounted) {
           setState({
