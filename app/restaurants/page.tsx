@@ -129,6 +129,16 @@ function RestaurantsPage() {
     isLoaded: false,
     error: null
   });
+  const getImageUrl = (url: string | undefined): string => {
+    if (!url) return "/placeholder-restaurant.jpg";
+    try {
+      // Validate URL
+      new URL(url);
+      return url;
+    } catch {
+      return "/placeholder-restaurant.jpg";
+    }
+  };
 
    // Method to handle geocoding
   const handleGeocoding = async (address: string) => {
@@ -400,14 +410,15 @@ function RestaurantsPage() {
           restaurants.map((restaurant) => (
             <Link href={`/restaurants/${restaurant.id}`} key={restaurant.id}>
               <Card className="overflow-hidden hover:shadow-lg transition-shadow duration-300 cursor-pointer">
-                <div className="relative h-48">
-                  <Image
-                    src={restaurant.imageUrl || "/placeholder-restaurant.jpg"}
-                    alt={restaurant.restaurantName}
-                    fill
-                    className="object-cover"
-                  />
-                </div>
+              <div className="relative h-48">
+      <Image
+        src={getImageUrl(restaurant.imageUrl)}
+        alt={restaurant.restaurantName}
+        fill
+        className="object-cover"
+        unoptimized={restaurant.imageUrl?.includes('yelp')} // Skip optimization for Yelp images
+      />
+    </div>
                 <div className="p-6">
                   <h3 className="text-xl font-semibold mb-2">
                     {restaurant.restaurantName}

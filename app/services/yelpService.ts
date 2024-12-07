@@ -16,17 +16,30 @@ async function getCachedYelpBusiness(
   latitude: number, 
   longitude: number
 ): Promise<YelpBusiness | null> {
-  const cacheKey = `yelp_${name}_${latitude.toFixed(3)}_${longitude.toFixed(3)}`;
-  const cacheRef = doc(db, "yelpCache", cacheKey);
-  const cacheDoc = await getDoc(cacheRef);
-
-  if (cacheDoc.exists()) {
-    const cache = cacheDoc.data() as YelpCache;
-    if (Date.now() - cache.timestamp < CACHE_DURATION) {
-      return cache.data;
+  try {
+    const lat = Number(latitude);
+    const lng = Number(longitude);
+    
+    if (isNaN(lat) || isNaN(lng)) {
+      console.error('Invalid coordinates provided to getCachedYelpBusiness');
+      return null;
     }
+    
+    const cacheKey = `yelp_${name}_${lat.toFixed(3)}_${lng.toFixed(3)}`;
+    const cacheRef = doc(db, "yelpCache", cacheKey);
+    const cacheDoc = await getDoc(cacheRef);
+
+    if (cacheDoc.exists()) {
+      const cache = cacheDoc.data() as YelpCache;
+      if (Date.now() - cache.timestamp < CACHE_DURATION) {
+        return cache.data;
+      }
+    }
+    return null;
+  } catch (error) {
+    console.error('Error in getCachedYelpBusiness:', error);
+    return null;
   }
-  return null;
 }
 
 async function cacheYelpBusiness(
@@ -45,29 +58,40 @@ async function cacheYelpBusiness(
 
 export async function getYelpBusinessWithPhotos(
   name: string,
-  latitude: number,
-  longitude: number
+  latitude: number | undefined,
+  longitude: number | undefined
 ): Promise<YelpBusiness | null> {
-  // Check cache first
-  const cachedData = await getCachedYelpBusiness(name, latitude, longitude);
-  if (cachedData) {
-    return cachedData;
-  }
+  try {
+    // Validate inputs
+    if (!name || typeof latitude === 'undefined' || typeof longitude === 'undefined') {
+      console.error('Missing required parameters for getYelpBusinessWithPhotos');
+      return null;
+    }
 
-  // If not in cache, fetch from API
-  const business = await fetchYelpBusinessDirectly(name, latitude, longitude);
-  if (business?.id) {
-    const details = await fetchYelpBusinessDetailsDirectly(business.id);
-    const combinedData = {
-      ...business,
-      ...details
-    } as YelpBusiness;
-    
-    // Cache the result
-    await cacheYelpBusiness(name, latitude, longitude, combinedData);
-    return combinedData;
+    // Check cache first
+    const cachedData = await getCachedYelpBusiness(name, latitude, longitude);
+    if (cachedData) {
+      return cachedData;
+    }
+
+    // If not in cache, fetch from API
+    const business = await fetchYelpBusinessDirectly(name, latitude, longitude);
+    if (business?.id) {
+      const details = await fetchYelpBusinessDetailsDirectly(business.id);
+      const combinedData = {
+        ...business,
+        ...details
+      } as YelpBusiness;
+      
+      // Cache the result
+      await cacheYelpBusiness(name, latitude, longitude, combinedData);
+      return combinedData;
+    }
+    return null;
+  } catch (error) {
+    console.error('Error in getYelpBusinessWithPhotos:', error);
+    return null;
   }
-  return null;
 }
 
 export async function fetchYelpBusinessDirectly(
