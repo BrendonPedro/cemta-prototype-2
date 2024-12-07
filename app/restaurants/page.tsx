@@ -178,22 +178,34 @@ function RestaurantsPage() {
   useEffect(() => {
     async function initializeMap() {
       try {
-        // Fetch API key from route
+        // First check if Google Maps is already loaded
+        if (window.google?.maps) {
+          console.log('Google Maps already loaded, skipping initialization');
+          setMapState({
+            isLoaded: true,
+            error: null
+          });
+          return;
+        }
+  
+        // If not loaded, fetch API key and initialize
         const response = await fetch("/api/maps");
         const data = await response.json();
-
+  
         if (!data.apiKey) {
           throw new Error('Failed to load Maps API key');
         }
-
+  
         const { Loader } = await import("@googlemaps/js-api-loader");
         const loader = new Loader({
           apiKey: data.apiKey,
           version: "weekly",
           libraries: ["places"],
-          mapIds: [data.mapId] // Add the map ID
+          mapIds: [data.mapId],
+          // Add a unique ID to prevent conflicts
+          id: 'cemta-google-maps'
         });
-
+  
         await loader.load();
         setMapState({
           isLoaded: true,
@@ -207,9 +219,9 @@ function RestaurantsPage() {
         });
       }
     }
-
+  
     initializeMap();
-  }, []);
+  }, []); // Empty dependency array means this only runs once on mount
 
   // Search term debouncing effect
   useEffect(() => {

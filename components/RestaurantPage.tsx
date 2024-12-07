@@ -37,6 +37,7 @@ import {
   type YelpBusiness,
   type Location
 } from "@/interfaces/restaurant/types";
+import { getImageProps } from "@/app/utils/imageHandling";
 
 // ======= Helper Functions (outside all components) =======
 const formatDay = (day: number): string => {
@@ -236,12 +237,14 @@ const RestaurantContent: React.FC<RestaurantContentProps> = ({
             <CarouselItem key={index}>
               <div className="relative aspect-video w-full">
                 <Image
-                  src={photo.url || "/placeholder-restaurant.jpg"}
-                  alt={`${details.name} - Photo ${index + 1}`}
+                  {...getImageProps(
+                    photo.url || "/placeholder-restaurant.jpg",
+                    `${details.name} - Photo ${index + 1}`,
+                    'carousel'
+                  )}
                   fill
-                  sizes="(max-width: 768px) 100vw, (max-width: 1200px) 66vw, 50vw"
                   className="rounded-lg object-cover"
-                  priority={index === 0}
+                  unoptimized={photo.url?.includes('yelp')}
                 />
                 <div className="absolute bottom-2 right-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
                   {photo.source}
@@ -256,18 +259,19 @@ const RestaurantContent: React.FC<RestaurantContentProps> = ({
     </div>
   );
   
-  // Update renderPhotosSection
   const renderPhotosSection = () => (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
       {photos.map((photo, index) => (
         <div key={index} className="relative aspect-square">
           <Image
-            src={photo.url}
-            alt={`${details.name} - Photo ${index + 1}`}
+            {...getImageProps(
+              photo.url,
+              `${details.name} - Photo ${index + 1}`,
+              'detail'
+            )}
             fill
-            sizes="(max-width: 768px) 50vw, (max-width: 1200px) 33vw, 25vw"
             className="rounded-lg object-cover"
-            priority={index < 4}
+            unoptimized={photo.url?.includes('yelp')}
           />
           <div className="absolute bottom-2 right-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
             {photo.source}
@@ -277,7 +281,6 @@ const RestaurantContent: React.FC<RestaurantContentProps> = ({
     </div>
   );
   
-  // Update renderMenusSection
   const renderMenusSection = () => (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
       {menus.map((menu) => (
@@ -287,10 +290,12 @@ const RestaurantContent: React.FC<RestaurantContentProps> = ({
               <h3 className="text-xl font-semibold mb-4">{menu.menuName}</h3>
               <div className="relative aspect-[4/3] w-full">
                 <Image
-                  src={menu.imageUrl || "/placeholder-restaurant.jpg"}
-                  alt={menu.menuName}
+                  {...getImageProps(
+                    menu.imageUrl || "/placeholder-restaurant.jpg",
+                    menu.menuName,
+                    'menu'
+                  )}
                   fill
-                  sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
                   className="rounded-lg object-cover"
                 />
               </div>
