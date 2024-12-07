@@ -1,4 +1,5 @@
 // app/services/yelpService.ts
+
 import { db } from "@/config/firebaseConfig";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import axios from 'axios';
@@ -56,13 +57,13 @@ async function cacheYelpBusiness(
   });
 }
 
+// For client-side calls
 export async function getYelpBusinessWithPhotos(
   name: string,
   latitude: number | undefined,
   longitude: number | undefined
 ): Promise<YelpBusiness | null> {
   try {
-    // Validate inputs
     if (!name || typeof latitude === 'undefined' || typeof longitude === 'undefined') {
       console.error('Missing required parameters for getYelpBusinessWithPhotos');
       return null;
@@ -74,19 +75,22 @@ export async function getYelpBusinessWithPhotos(
       return cachedData;
     }
 
-    // If not in cache, fetch from API
-    const business = await fetchYelpBusinessDirectly(name, latitude, longitude);
-    if (business?.id) {
-      const details = await fetchYelpBusinessDetailsDirectly(business.id);
-      const combinedData = {
-        ...business,
-        ...details
-      } as YelpBusiness;
-      
-      // Cache the result
-      await cacheYelpBusiness(name, latitude, longitude, combinedData);
-      return combinedData;
+    // If not in cache, fetch from our API route
+    const response = await fetch(
+      `/api/yelp?name=${encodeURIComponent(name)}&latitude=${latitude}&longitude=${longitude}`
+    );
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch from Yelp API route');
     }
+
+    const business = await response.json();
+    
+    if (business) {
+      await cacheYelpBusiness(name, latitude, longitude, business);
+      return business;
+    }
+
     return null;
   } catch (error) {
     console.error('Error in getYelpBusinessWithPhotos:', error);
@@ -94,31 +98,30 @@ export async function getYelpBusinessWithPhotos(
   }
 }
 
+// For server-side direct API calls
 export async function fetchYelpBusinessDirectly(
   name: string,
   latitude: number,
   longitude: number
 ): Promise<YelpBusiness | null> {
   try {
-    const apiKey = process.env.YELP_API_KEY;
-    if (!apiKey) {
-      console.error("Yelp API key is missing");
+    if (!process.env.YELP_API_KEY) {
+      console.error("Server-side Yelp API key is missing");
       return null;
     }
 
-    // Normalize and encode the search term
+    // Normalize search term
     const normalizedName = name
       .trim()
       .toLowerCase()
-      .replace(/[^\w\s\u4e00-\u9fff]/g, '') // Keep only word chars, spaces, and Chinese characters
-      .slice(0, 64); // Limit length to avoid extremely long queries
+      .replace(/[^\w\s\u4e00-\u9fff]/g, '')
+      .slice(0, 64);
 
-    // Search for the business
     const response = await axios.get<{ businesses: YelpBusiness[] }>(
       "https://api.yelp.com/v3/businesses/search",
       {
         headers: {
-          Authorization: `Bearer ${apiKey}`,
+          Authorization: `Bearer ${process.env.YELP_API_KEY}`,
           Accept: "application/json",
         },
         params: {
@@ -129,14 +132,12 @@ export async function fetchYelpBusinessDirectly(
           categories: "restaurants,food",
           limit: 3,
           sort_by: "distance",
-          locale: 'zh_TW', // Add locale parameter for better handling of Chinese
+          locale: 'zh_TW',
         },
       }
     );
 
-    // Additional validation of response
     if (!response.data?.businesses?.length) {
-      console.log(`No Yelp results found for: ${normalizedName}`);
       return null;
     }
 
@@ -144,25 +145,12 @@ export async function fetchYelpBusinessDirectly(
     const bestMatch = response.data.businesses.find(business => {
       const businessName = business.name.toLowerCase();
       const searchName = normalizedName.toLowerCase();
-      return (
-        businessName.includes(searchName) ||
-        searchName.includes(businessName)
-      );
+      return businessName.includes(searchName) || searchName.includes(businessName);
     }) || response.data.businesses[0];
 
     return bestMatch;
-
   } catch (error) {
-    if (axios.isAxiosError(error)) {
-      console.error("Error fetching Yelp business directly:", {
-        status: error.response?.status,
-        data: error.response?.data,
-        name: name,
-        coordinates: { latitude, longitude }
-      });
-    } else {
-      console.error("Unknown error fetching Yelp business:", error);
-    }
+    console.error('Error fetching Yelp business directly:', error);
     return null;
   }
 }
@@ -171,9 +159,8 @@ export async function fetchYelpBusinessDetailsDirectly(
   yelpId: string
 ): Promise<YelpBusiness | null> {
   try {
-    const apiKey = process.env.YELP_API_KEY;
-    if (!apiKey) {
-      console.error("Yelp API key is missing");
+    if (!process.env.YELP_API_KEY) {
+      console.error("Server-side Yelp API key is missing");
       return null;
     }
 
@@ -181,7 +168,7 @@ export async function fetchYelpBusinessDetailsDirectly(
       `https://api.yelp.com/v3/businesses/${encodeURIComponent(yelpId)}`,
       {
         headers: {
-          Authorization: `Bearer ${apiKey}`,
+          Authorization: `Bearer ${process.env.YELP_API_KEY}`,
           Accept: "application/json",
         },
       }
@@ -189,9 +176,7 @@ export async function fetchYelpBusinessDetailsDirectly(
 
     return response.data || null;
   } catch (error) {
-    console.error("Error fetching Yelp business details directly:", error);
+    console.error('Error fetching Yelp business details:', error);
     return null;
   }
 }
-
-

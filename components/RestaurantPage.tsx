@@ -255,7 +255,8 @@ const RestaurantContent: React.FC<RestaurantContentProps> = ({
       </Carousel>
     </div>
   );
-
+  
+  // Update renderPhotosSection
   const renderPhotosSection = () => (
     <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
       {photos.map((photo, index) => (
@@ -275,29 +276,30 @@ const RestaurantContent: React.FC<RestaurantContentProps> = ({
       ))}
     </div>
   );
-
-const renderMenusSection = () => (
-  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-    {menus.map((menu) => (
-      <Link href={`/menu-details/${menu.id}`} key={menu.id}>
-        <Card className="overflow-hidden hover:shadow-lg transition-shadow">
-          <CardContent className="p-6">
-            <h3 className="text-xl font-semibold mb-4">{menu.menuName}</h3>
-            <div className="relative aspect-[4/3] w-full">
-              <Image
-                src={menu.imageUrl || "/placeholder-restaurant.jpg"}
-                alt={menu.menuName}
-                fill
-                sizes="(max-width: 768px) 100vw, 50vw"
-                className="rounded-lg object-cover"
-              />
-            </div>
-          </CardContent>
-        </Card>
-      </Link>
-    ))}
-  </div>
-);
+  
+  // Update renderMenusSection
+  const renderMenusSection = () => (
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+      {menus.map((menu) => (
+        <Link href={`/menu-details/${menu.id}`} key={menu.id}>
+          <Card className="overflow-hidden hover:shadow-lg transition-shadow">
+            <CardContent className="p-6">
+              <h3 className="text-xl font-semibold mb-4">{menu.menuName}</h3>
+              <div className="relative aspect-[4/3] w-full">
+                <Image
+                  src={menu.imageUrl || "/placeholder-restaurant.jpg"}
+                  alt={menu.menuName}
+                  fill
+                  sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                  className="rounded-lg object-cover"
+                />
+              </div>
+            </CardContent>
+          </Card>
+        </Link>
+      ))}
+    </div>
+  );
 
   // Main Render
    return (

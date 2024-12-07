@@ -31,6 +31,15 @@ interface Restaurant extends Omit<EnhancedSearchResult, 'location'> {
   county: string;
   imageUrl?: string;
   rating?: number;
+  hasMenu: boolean;
+  menuCount: number;
+  hasGoogleData: boolean;
+  hasYelpData: boolean;
+  // Optional fields
+  yelpId?: string;
+  yelpRating?: number;
+  contribution?: boolean;
+  hasDetailsFetched?: boolean;
 }
 
 interface MapConfig {
@@ -101,6 +110,20 @@ interface YelpSearchResponse {
 }
 
 type YelpApiResponse = YelpSearchResponse | YelpErrorResponse;
+
+const getImageProps = (imageUrl: string | undefined, restaurantName: string) => {
+  const url = imageUrl || "/placeholder-restaurant.jpg";
+  
+  return {
+    src: url,
+    alt: `${restaurantName} restaurant photo`,
+    fill: true,
+    sizes: "(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw",
+    className: "object-cover transition-all duration-300 group-hover:scale-105",
+    unoptimized: url.includes('yelp'),
+    priority: false
+  };
+};
 
 // Component for loading skeleton
 const RestaurantSkeleton: React.FC = () => (
@@ -404,52 +427,63 @@ function RestaurantsPage() {
       {error && <div className="text-red-500 text-center mb-8">{error}</div>}
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {loading ? (
-          [...Array(6)].map((_, i) => <RestaurantSkeleton key={i} />)
-        ) : restaurants.length > 0 ? (
-          restaurants.map((restaurant) => (
-            <Link href={`/restaurants/${restaurant.id}`} key={restaurant.id}>
-              <Card className="overflow-hidden hover:shadow-lg transition-shadow duration-300 cursor-pointer">
-              <div className="relative h-48">
-      <Image
-        src={getImageUrl(restaurant.imageUrl)}
-        alt={restaurant.restaurantName}
-        fill
-        className="object-cover"
-        unoptimized={restaurant.imageUrl?.includes('yelp')} // Skip optimization for Yelp images
-      />
+  {loading ? (
+    [...Array(6)].map((_, i) => <RestaurantSkeleton key={i} />)
+  ) : restaurants.length > 0 ? (
+    restaurants.map((restaurant) => (
+      <Link 
+        href={`/restaurants/${restaurant.id}`} 
+        key={restaurant.id}
+        className="group"
+      >
+        <Card className="overflow-hidden hover:shadow-lg transition-shadow duration-300 cursor-pointer">
+          <div className="relative h-48 overflow-hidden">
+            <Image
+              {...getImageProps(restaurant.imageUrl, restaurant.restaurantName)}
+              onError={(e) => {
+                const target = e.target as HTMLImageElement;
+                target.src = "/placeholder-restaurant.jpg";
+              }}
+            />
+            {restaurant.hasYelpData && (
+              <div className="absolute top-2 right-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
+                Yelp
+              </div>
+            )}
+          </div>
+          <div className="p-6">
+            <h3 className="text-xl font-semibold mb-2 line-clamp-1">
+              {restaurant.restaurantName}
+            </h3>
+            <div className="flex items-center text-gray-600 mb-2">
+              <MapPin className="h-4 w-4 mr-2 flex-shrink-0" />
+              <span className="line-clamp-1">
+                {restaurant.county || restaurant.location}
+              </span>
+            </div>
+            {restaurant.rating && restaurant.rating > 0 && (
+              <div className="flex items-center">
+                <Star className="h-4 w-4 text-yellow-400 mr-1 flex-shrink-0" />
+                <span>{restaurant.rating.toFixed(1)}</span>
+              </div>
+            )}
+          </div>
+        </Card>
+      </Link>
+    ))
+  ) : searchTerm ? (
+    <div className="col-span-full text-center text-gray-500">
+      No restaurants found matching &quot;{searchTerm}&quot;
+      <br />
+      Try searching on the map to find more restaurants!
     </div>
-                <div className="p-6">
-                  <h3 className="text-xl font-semibold mb-2">
-                    {restaurant.restaurantName}
-                  </h3>
-                  <div className="flex items-center text-gray-600 mb-2">
-                    <MapPin className="h-4 w-4 mr-2" />
-                    <span>{restaurant.county || restaurant.location}</span>
-                  </div>
-                  {restaurant.rating && restaurant.rating > 0 && (
-                    <div className="flex items-center">
-                      <Star className="h-4 w-4 text-yellow-400 mr-1" />
-                      <span>{restaurant.rating.toFixed(1)}</span>
-                    </div>
-                  )}
-                </div>
-              </Card>
-            </Link>
-          ))
-        ) : searchTerm ? (
-          <div className="col-span-full text-center text-gray-500">
-            No restaurants found matching &quot;{searchTerm}&quot;
-            <br />
-            Try searching on the map to find more restaurants!
-          </div>
-        ) : (
-          <div className="col-span-full text-center text-gray-500">
-            Start typing to search for restaurants or use the map to discover
-            places nearby
-          </div>
-        )}
-      </div>
+  ) : (
+    <div className="col-span-full text-center text-gray-500">
+      Start typing to search for restaurants or use the map to discover
+      places nearby
+    </div>
+  )}
+</div>
     </div>
   );
 }
