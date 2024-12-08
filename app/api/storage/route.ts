@@ -28,15 +28,23 @@ function getBucket(
   type: StorageMetadata["type"],
   source: StorageMetadata["source"]
 ) {
-  switch (type) {
-    case "menu":
-      return source === "yelp" ? yelpMenuBucket : originalMenuBucket;
-    case "processed":
-      return processedMenuBucket;
-    case "restaurant":
-    default:
-      return restaurantImagesBucket;
+  const bucket = (() => {
+    switch (type) {
+      case "menu":
+        return source === "yelp" ? yelpMenuBucket : originalMenuBucket;
+      case "processed":
+        return processedMenuBucket;
+      case "restaurant":
+      default:
+        return restaurantImagesBucket;
+    }
+  })();
+
+  if (!bucket) {
+    throw new Error(`Bucket not initialized for type: ${type} and source: ${source}`);
   }
+
+  return bucket;
 }
 
 async function getImageFromUrl(imageUrl: string): Promise<Buffer> {

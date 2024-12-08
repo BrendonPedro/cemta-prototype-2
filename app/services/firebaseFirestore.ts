@@ -17,14 +17,23 @@ import {
   writeBatch,
   serverTimestamp,
   increment,
-  collectionGroup 
+  collectionGroup,
+  PartialWithFieldValue, 
+  SetOptions,
+  DocumentReference,
+  WriteBatch,
 } from "firebase/firestore";
 import geohash from 'ngeohash';
 import { db } from "@/lib/database-builder/db";
 import { CONFIG } from '@/lib/database-builder/config';
-import type { Restaurant, CachedRestaurant, OpeningHours, MenuSummary, Photo } from '@/interfaces/restaurant/types';
+import type { Restaurant, CachedRestaurant, OpeningHours, MenuSummary, Photo, SaveRestaurantResult, SaveRestaurantOptions } from '@/interfaces/restaurant/types';
 import { calculateDistance } from '@/app/utils/locationUtils'
 import type { UserPreferences } from "@/interfaces/users/user-preferences";
+import type { PlaceData } from "@googlemaps/google-maps-services-js";
+
+// For the county/town creation part:
+type RestaurantDocData = WithFieldValue<DocumentData>;
+type BatchOptions = { merge?: boolean };
 
 // ======= Basic Types and Shared Interfaces =======
 // (Used across multiple components)
@@ -230,6 +239,20 @@ export interface EnhancedSearchResult extends SearchResult {
   hasYelpData?: boolean;
 }
 
+export interface WithFieldValue<T> {
+  [x: string]: any;
+}
+
+export interface DocumentWrite {
+  type: 'set' | 'update' | 'delete';
+  data?: DocumentData;
+  options?: SetOptions;
+}
+
+export interface FirestoreData extends DocumentData {
+  [field: string]: any;
+}
+
 // ======= Type Aliases =======
 // (Used for backward compatibility)
 export type Menu = MenuDetails;
@@ -258,14 +281,18 @@ export async function batchUpdateRestaurants(
     chunk.forEach(restaurant => {
       const ref = doc(db, 'restaurants', restaurant.id);
       batch.set(ref, {
+        // Use flat structure matching your Restaurant interface
         name: restaurant.name,
         address: restaurant.address,
         rating: restaurant.rating,
-        location: {
-          latitude: restaurant.latitude,
-          longitude: restaurant.longitude,
-        },
+        latitude: restaurant.latitude,
+        longitude: restaurant.longitude,
         county: restaurant.county,
+        townName: restaurant.townName,
+        menuCount: restaurant.menuCount || 0,
+        hasMenu: !!restaurant.menuCount,
+        hasDetailsFetched: true,
+        lastUpdated: new Date().toISOString()
       }, { merge: true });
     });
 
@@ -508,40 +535,9 @@ export async function getVertexAiHistory(userId: string) {
 }
 
 // Function to set restaurant details in Firestore
-export async function setRestaurantDetails(
-  placeId: string,
-  rating: number,
-  address: string,
-) {
-  const restaurantRef = doc(db, RESTAURANT_DETAILS_COLLECTION, placeId);
-  await setDoc(restaurantRef, {
-    rating,
-    address,
-    cachedAt: new Date(), // Timestamp when data was cached
-  });
-}
+
 
 // Save restaurant details (rating and address) in Firestore
-export async function saveRestaurantDetails(
-  restaurantId: string,
-  restaurant: Omit<Partial<Restaurant>, 'id'>,
-  imageUrl?: string
-): Promise<void> {
-  const restaurantRef = doc(db, "restaurants", restaurantId);
-
-  // Add default values for required fields
-  const dataWithDefaults: Partial<Restaurant> = {
-    photos: [],
-    menuCount: 0,
-    lastUpdated: new Date().toISOString(),
-    hasGoogleData: false,
-    hasYelpData: false,
-    ...restaurant,
-    ...(imageUrl && { imageUrl })
-  };
-
-  await setDoc(restaurantRef, dataWithDefaults, { merge: true });
-}
 
 
 // Get cached restaurant details from Firestore
@@ -613,37 +609,54 @@ export async function getCachedRestaurantsForLocation(
 export async function saveCachedRestaurantsForLocation(
   lat: number,
   lng: number,
-  restaurants: CachedRestaurant[],
+  newRestaurants: CachedRestaurant[],
 ): Promise<void> {
   const locationKey = getLocationCacheKey(lat, lng);
+  const cacheRef = doc(db, CACHE_CONSTANTS.COLLECTION_NAME, locationKey);
   
-  // Clear any pending save
-  if (saveQueue.has(locationKey)) {
-    clearTimeout(saveQueue.get(locationKey)!);
-  }
+  try {
+    // Get existing cache
+    const cacheDoc = await getDoc(cacheRef);
+    let existingRestaurants: CachedRestaurant[] = [];
+    
+    if (cacheDoc.exists()) {
+      existingRestaurants = cacheDoc.data().restaurants || [];
+    }
 
-  // Debounce save operation
-  return new Promise((resolve, reject) => {
-    saveQueue.set(
-      locationKey,
-      setTimeout(async () => {
-        try {
-          await setDoc(doc(db, CACHE_CONSTANTS.COLLECTION_NAME, locationKey), {
-            restaurants,
-            cachedAt: serverTimestamp(),
-            lastUpdated: serverTimestamp(),
-            geohash: locationKey,
-          });
-          saveQueue.delete(locationKey);
-          resolve();
-        } catch (error) {
-          console.error('Error saving cache:', error);
-          saveQueue.delete(locationKey);
-          reject(error);
-        }
-      }, SAVE_DEBOUNCE)
-    );
-  });
+    // Merge existing and new restaurants, avoiding duplicates
+    const seenIds = new Set<string>();
+    const mergedRestaurants = [...existingRestaurants, ...newRestaurants].filter(restaurant => {
+      if (seenIds.has(restaurant.id)) {
+        return false;
+      }
+      seenIds.add(restaurant.id);
+      return true;
+    });
+
+    // Sort by distance from search center
+    mergedRestaurants.sort((a, b) => {
+      const distA = calculateDistance(lat, lng, a.latitude, a.longitude);
+      const distB = calculateDistance(lat, lng, b.latitude, b.longitude);
+      return distA - distB;
+    });
+
+    console.log(`Cache update summary for ${locationKey}:`);
+    console.log(`- Existing restaurants: ${existingRestaurants.length}`);
+    console.log(`- New restaurants: ${newRestaurants.length}`);
+    console.log(`- Total after merge: ${mergedRestaurants.length}`);
+
+    // Save merged results
+    await setDoc(cacheRef, {
+      restaurants: mergedRestaurants,
+      cachedAt: serverTimestamp(),
+      lastUpdated: serverTimestamp(),
+      geohash: locationKey,
+    });
+
+  } catch (error) {
+    console.error('Error saving cache:', error);
+    throw error;
+  }
 }
 
 // Function to get menus for multiple restaurants
@@ -917,41 +930,196 @@ export async function saveMenuImageReferences(
   });
 }
 
-// Update the saveRestaurantImageReference function
-export async function saveRestaurantImageReference(
-  restaurantId: string,
-  imageUrl: string
-): Promise<void> {
-  await saveRestaurantData(
-    { id: restaurantId } as Restaurant,
-    'unknown', // county
-    'unknown', // town
-    { imageUrl }
-  );
-}
+// Add this consolidated save function to replace the multiple save functions
 
-export async function getRestaurantDetails(
-  placeId: string,
-): Promise<any | null> {
-  const restaurantRef = doc(db, RESTAURANT_DETAILS_COLLECTION, placeId);
-  const docSnap = await getDoc(restaurantRef);
+const dataWithDefaults = (data: Partial<Restaurant>, now: string): DocumentData => ({
+  menuCount: 0,
+  hasGoogleData: false,
+  hasYelpData: false,
+  photos: [],
+  lastUpdated: serverTimestamp(),
+  createdAt: serverTimestamp(),
+  ...data
+});
 
-  if (docSnap.exists()) {
-    const data = docSnap.data();
-    const currentTime = Date.now();
-    const cacheTime = data.cachedAt?.toMillis() || 0;
-    const CACHE_DURATION = 365 * 24 * 60 * 60 * 1000; // 365 days in milliseconds
+export async function saveRestaurant(
+  restaurantData: Partial<Restaurant>,
+  options: SaveRestaurantOptions = {}
+): Promise<SaveRestaurantResult> {
+  const {
+    imageUrl,
+    incrementalUpdate = true,
+    batch: existingBatch,
+    updateCounts = true,
+    signal
+  } = options;
 
-    if (currentTime - cacheTime < CACHE_DURATION) {
-      return data; // Return all data, not just rating and address
-    } else {
-      console.log("Cached data expired. Consider refreshing the data.");
-      return data; // Still return data, but log that it's expired
-    }
+  if (!restaurantData.id || !restaurantData.county || !restaurantData.townName) {
+    throw new Error('Missing required restaurant information (id, county, or townName)');
   }
 
-  return null;
+  try {
+    if (signal?.aborted) {
+      throw new Error('Operation aborted');
+    }
+
+    const batch = existingBatch || writeBatch(db);
+    const now = new Date().toISOString();
+    
+    // References
+    const countyRef = doc(db, CONFIG.FIRESTORE.COLLECTIONS.COUNTIES, restaurantData.county);
+    const townRef = doc(db, `${CONFIG.FIRESTORE.COLLECTIONS.COUNTIES}/${restaurantData.county}/towns/${restaurantData.townName}`);
+    const restaurantRef = doc(db, CONFIG.FIRESTORE.COLLECTIONS.RESTAURANTS, restaurantData.id);
+    const townRestaurantRef = doc(db, `${CONFIG.FIRESTORE.COLLECTIONS.COUNTIES}/${restaurantData.county}/towns/${restaurantData.townName}/restaurants/${restaurantData.id}`);
+
+    // Check existing data
+    const [existingGlobalDoc, existingTownDoc] = await Promise.all([
+      getDoc(restaurantRef),
+      getDoc(townRestaurantRef)
+    ]);
+
+    const isNewGlobal = !existingGlobalDoc.exists();
+    const isNewTown = !existingTownDoc.exists();
+
+    // Prepare data
+    const firestoreData = dataWithDefaults({
+      ...restaurantData,
+      ...(imageUrl && { imageUrl })
+    }, now);
+
+    // Handle structure creation
+    if (isNewTown) {
+      const [countyDoc, townDoc] = await Promise.all([
+        getDoc(countyRef),
+        getDoc(townRef)
+      ]);
+
+      if (!countyDoc.exists()) {
+        const countyData: RestaurantDocData = {
+          name: restaurantData.county,
+          restaurantCount: 0,
+          lastUpdated: serverTimestamp(),
+          createdAt: serverTimestamp()
+        };
+        (batch as WriteBatch).set(countyRef, countyData);
+      }
+      
+      if (!townDoc.exists()) {
+        const townData: RestaurantDocData = {
+          name: restaurantData.townName,
+          restaurantCount: 0,
+          lastUpdated: serverTimestamp(),
+          createdAt: serverTimestamp()
+        };
+        (batch as WriteBatch).set(townRef, townData);
+      }
+    }
+
+    // Save restaurant data
+    const mergeOptions = { merge: incrementalUpdate };
+    (batch as WriteBatch).set(restaurantRef, firestoreData, mergeOptions);
+    (batch as WriteBatch).set(townRestaurantRef, firestoreData, mergeOptions);
+
+    // Update counts
+    if (updateCounts) {
+      const updateData: DocumentData = {
+        restaurantCount: increment(1),
+        lastUpdated: serverTimestamp()
+      };
+
+      if (isNewTown) {
+        (batch as WriteBatch).set(townRef, updateData, { merge: true });
+      }
+
+      if (isNewGlobal) {
+        (batch as WriteBatch).set(countyRef, updateData, { merge: true });
+      }
+    }
+
+    // Commit if we created the batch
+    if (!existingBatch) {
+      await batch.commit();
+    }
+
+    return {
+      success: true,
+      restaurantId: restaurantData.id,
+      updates: (isNewGlobal || isNewTown) ? {
+        countyCount: isNewGlobal ? 1 : 0,
+        townCount: isNewTown ? 1 : 0
+      } : undefined
+    };
+
+  } catch (error) {
+    console.error('Error saving restaurant:', error);
+    return {
+      success: false,
+      restaurantId: restaurantData.id,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    };
+  }
 }
+
+// Add this helper to transform Google Place data to Restaurant type
+export function transformPlaceToRestaurant(
+  place: PlaceData,
+  county: string,
+  townName: string
+): Restaurant {
+  const now = new Date().toISOString();
+  
+  return {
+    // Essential Information
+    id: place.place_id!,
+    name: place.name!,
+    address: place.formatted_address || place.vicinity || '',
+    rating: place.rating || 0,
+
+    // Location Information
+    latitude: place.geometry!.location.lat,
+    longitude: place.geometry!.location.lng,
+    county,
+    townName,
+
+    // Menu Information
+    menuCount: 0,
+    hasMenu: false,
+
+    // Integration Data
+    hasGoogleData: true,
+    hasYelpData: false,
+    placeId: place.place_id!,
+
+    // State Management
+    hasDetailsFetched: false,
+    createdAt: now,
+    lastUpdated: now,
+
+    // Menu and Media fields will be undefined until enhanced
+    // Contact & Business Details will be undefined until enhanced
+  };
+}
+
+
+// Add this helper function to get a restaurant's data
+export async function getRestaurant(restaurantId: string): Promise<Restaurant | null> {
+  try {
+    const restaurantRef = doc(db, CONFIG.FIRESTORE.COLLECTIONS.RESTAURANTS, restaurantId);
+    const docSnap = await getDoc(restaurantRef);
+
+    if (docSnap.exists()) {
+      return {
+        id: docSnap.id,
+        ...docSnap.data()
+      } as Restaurant;
+    }
+    return null;
+  } catch (error) {
+    console.error('Error fetching restaurant:', error);
+    return null;
+  }
+}
+
 
 export const updateValidationStatus = async (
   menuId: string,
@@ -1166,118 +1334,7 @@ export async function checkExistingYelpMenu(
   return !querySnapshot.empty;
 }
 
-export async function saveRestaurantData(
-  restaurant: Restaurant,
-  countyName: string,
-  townName: string,
-  options: {
-    fromCache?: boolean;
-    incrementalUpdate?: boolean;
-    forceEnsureStructure?: boolean;
-    imageUrl?: string;
-    signal?: AbortSignal;
-  } = {}
-): Promise<void> {
-  const {
-    fromCache = false,
-    incrementalUpdate = false,
-    forceEnsureStructure = true,
-    imageUrl,
-    signal
-  } = options;
 
-  if (signal?.aborted) {
-    throw new Error('Operation aborted');
-  }
-
-  console.log(`\n🔄 Starting save process for restaurant: ${restaurant.name}`);
-  console.log(`County: ${countyName}, Town: ${townName}`);
-
-  try {
-    const batch = writeBatch(db);
-    
-    // References
-    const countyRef = doc(db, 'counties', countyName);
-    const townRef = doc(countyRef, 'towns', townName);
-    const restaurantRef = doc(townRef, 'restaurants', restaurant.id);
-    const globalRestaurantRef = doc(db, 'restaurants', restaurant.id);
-
-    // First ensure the county and town documents exist
-    const [countyDoc, townDoc] = await Promise.all([
-      getDoc(countyRef),
-      getDoc(townRef)
-    ]);
-
-    // Create county if it doesn't exist
-    if (!countyDoc.exists()) {
-      console.log(`Creating county document for ${countyName}`);
-      batch.set(countyRef, {
-        name: countyName,
-        restaurantCount: 0,
-        lastUpdated: serverTimestamp(),
-        createdAt: serverTimestamp()
-      });
-    }
-
-    // Create town if it doesn't exist
-    if (!townDoc.exists()) {
-      console.log(`Creating town document for ${townName} in ${countyName}`);
-      batch.set(townRef, {
-        name: townName,
-        restaurantCount: 0,
-        lastUpdated: serverTimestamp(),
-        createdAt: serverTimestamp()
-      });
-    }
-
-    // Check existing data
-    const [existingTownRestaurant, existingGlobalRestaurant] = await Promise.all([
-      getDoc(restaurantRef),
-      getDoc(globalRestaurantRef)
-    ]);
-
-    // Prepare data with county and town information
-    const dataToSave = {
-      ...restaurant,
-      countyName,
-      townName,
-      ...(imageUrl && { imageUrl }),
-      lastUpdated: serverTimestamp(),
-      ...((!existingTownRestaurant.exists() || !existingGlobalRestaurant.exists()) && {
-        createdAt: serverTimestamp()
-      })
-    };
-
-    // Save to both locations
-    batch.set(restaurantRef, dataToSave, { merge: incrementalUpdate });
-    batch.set(globalRestaurantRef, dataToSave, { merge: incrementalUpdate });
-
-    // Update counts for new restaurants
-    if (!existingTownRestaurant.exists()) {
-      batch.update(townRef, {
-        restaurantCount: increment(1),
-        lastUpdated: serverTimestamp()
-      });
-
-      if (!existingGlobalRestaurant.exists()) {
-        batch.update(countyRef, {
-          restaurantCount: increment(1),
-          lastUpdated: serverTimestamp()
-        });
-      }
-    }
-
-    await batch.commit();
-
-        // Verify and fix counts after save
-        await verifyAndFixRestaurantCount(countyName, townName, true);
-        console.log(`✅ Successfully saved restaurant data for ${restaurant.name}`);
-    
-      } catch (error) {
-        console.error(`Error saving restaurant data for ${restaurant.name}:`, error);
-        throw error;
-      }
-    }
 
 
 // Updated verifyAndFixRestaurantCount with throttling

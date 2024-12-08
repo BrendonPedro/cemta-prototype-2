@@ -1,4 +1,5 @@
-import { Timestamp } from 'firebase/firestore';
+import { Timestamp, WriteBatch } from 'firebase/firestore';
+import { CONFIG } from '@/lib/database-builder/config';
 
 // Price level type for restaurants
 export type PriceLevel = '$' | '$$' | '$$$' | '$$$$';
@@ -64,7 +65,38 @@ export interface Location {
     lastUpdated?: string;
   }
 
-//
+  export interface SaveRestaurantOptions {
+    imageUrl?: string;
+    incrementalUpdate?: boolean;
+    batch?: WriteBatch;
+    updateCounts?: boolean;
+    signal?: AbortSignal;
+  }
+  
+  export interface SaveRestaurantResult {
+    success: boolean;
+    restaurantId: string;
+    updates?: {
+      countyCount: number;
+      townCount: number;
+    };
+    error?: string;
+  }
+  
+  
+  export interface CountyTownPaths {
+    countyPath: string;
+    townPath: string;
+    restaurantPath: string;
+  }
+  
+  export const RESTAURANT_COLLECTIONS = {
+    GLOBAL: CONFIG.FIRESTORE.COLLECTIONS.RESTAURANTS,
+    COUNTY: CONFIG.FIRESTORE.COLLECTIONS.COUNTIES,
+    TOWN: CONFIG.FIRESTORE.COLLECTIONS.TOWNS
+  } as const;
+
+//-----PROPS-----
 export interface RestaurantCardProps {
     restaurant: Restaurant;
     showDetails?: boolean;  // For expandable cards
@@ -77,49 +109,7 @@ export interface RestaurantCardProps {
     showFullDetails?: boolean;  // For expanded/collapsed views
   }
 
-// Core Restaurant Information
-export interface RestaurantBase {
-  id: string;
-  name: string;
-  address: string;
-  location: Location;
-  county: string;
-  townName: string;
-}
-
-// Restaurant Details from External Sources
-export interface RestaurantSourceData {
-  source: 'google' | 'yelp';
-  hasGoogleData: boolean;
-  hasYelpData: boolean;
-  yelpId?: string;
-  yelpRating?: number;
-  googleRating?: number;
-  rating: number;  // Composite rating
-  priceLevel?: string;
-}
-
-// Restaurant Contact & Business Info
-export interface RestaurantBusinessInfo {
-  phone?: string;
-  website?: string;
-  openingHours?: {
-    [key: string]: string[];  // e.g., "Monday": ["9:00 AM - 5:00 PM"]
-  };
-  socialMedia?: {
-    [platform: string]: string;
-  };
-}
-
-// Restaurant Media
-export interface RestaurantMedia {
-  imageUrl?: string;
-  photoUrl?: string;
-  menuImageUrl?: string;
-  photos?: string[];
-}
-
-// Menu-related Information
+//-----MENU-----
 export interface MenuItemName {
   original: string;
   english?: string;
@@ -181,21 +171,6 @@ export interface MenuDocument {
   processingId?: string;
 }
 
-// Complete Restaurant Document
-export interface RestaurantDocument extends 
-  RestaurantBase,
-  RestaurantSourceData,
-  RestaurantBusinessInfo,
-  RestaurantMedia 
-{
-  menuCount: number;
-  hasMenu: boolean;
-  menuIds?: string[];
-  lastUpdated: string;
-  contribution?: boolean;
-  hasDetailsFetched?: boolean;
-}
-
 // For API Responses
 export interface MenuProcessingResponse {
   menuData: MenuData;
@@ -213,7 +188,6 @@ export interface MenuDisplayProps {
   onEdit?: (menuData: MenuData) => void;
 }
 
-// Add these interfaces from firebaseFirestore.ts
 export interface Photo {
     url: string;
     source: "google" | "yelp";
@@ -287,7 +261,7 @@ export interface Photo {
   
   export type YelpApiResponse = YelpSearchResponse | YelpErrorResponse;
 
-// Add this interface to match the Restaurant interface structure
+//-----CACHE-----
 export interface CachedRestaurant {
   // Essential Information 
   id: string;
@@ -328,4 +302,6 @@ export interface CachedRestaurant {
   // State Management
   contribution?: boolean;
   hasDetailsFetched?: boolean;
+  createdAt?: string;
+  lastUpdated?: string;
 }

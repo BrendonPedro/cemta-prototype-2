@@ -17,7 +17,7 @@ import { getYelpBusinessWithPhotos } from "./yelpService";
 import { CachedRestaurant } from "@/interfaces/restaurant/types";
 import axios from 'axios';
 import geohash from "ngeohash";
-import { saveRestaurantData } from "./firebaseFirestore";
+import { saveRestaurant } from "./firebaseFirestore";
 import { measureAPICall, checkRateLimit } from '@/app/utils/apiUtils';
 import { saveCachedRestaurantsForLocation, getCachedRestaurantsForLocation } from "./firebaseFirestore";
 import { counties, getTownsByCounty } from '@/lib/data/counties';

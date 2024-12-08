@@ -32,7 +32,22 @@ interface BatchImageUploadRequest {
 
 // Helper function to get the bucket based on metadata
 function getBucket(type: string, source: string) {
-  const bucket = restaurantImagesBucket;
+  const bucket = (() => {
+    switch (type) {
+      case "menu":
+        return source === "yelp" ? yelpMenuBucket : originalMenuBucket;
+      case "processed":
+        return processedMenuBucket;
+      case "restaurant":
+      default:
+        return restaurantImagesBucket;
+    }
+  })();
+
+  if (!bucket) {
+    throw new Error(`Bucket not initialized for type: ${type} and source: ${source}`);
+  }
+
   console.log('Using bucket:', bucket.name);
   return bucket;
 }
@@ -92,7 +107,7 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { images } = body;
+    const { images } = body as BatchImageUploadRequest;
 
     if (!images || !Array.isArray(images)) {
       return NextResponse.json({ message: "Invalid request body" }, { status: 400 });
@@ -102,9 +117,9 @@ export async function POST(req: NextRequest) {
 
     // Process each image
     const uploadResults = await Promise.all(
-      images.map(async ({ imageData, metadata }) => {
+      images.map(async ({ imageUrl, metadata }) => {
         try {
-          if (!imageData || !metadata) {
+          if (!imageUrl || !metadata) {
             console.error('Missing image data or metadata');
             return null;
           }
@@ -114,8 +129,8 @@ export async function POST(req: NextRequest) {
             metadata.source || "google"
           );
 
-          // Create buffer from base64
-          const imageBuffer = Buffer.from(imageData, 'base64');
+          // Get image buffer
+          const imageBuffer = await getImageFromUrl(imageUrl);
 
           // Construct file path
           const filePath = `counties/${metadata.countyName}/${metadata.townName}/restaurants/${metadata.restaurantId}/${Date.now()}.jpg`;

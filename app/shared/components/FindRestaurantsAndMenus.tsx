@@ -21,7 +21,7 @@ import { useJsApiLoader, GoogleMap, Marker, MarkerClusterer } from "@react-googl
 import {
   getMenuCountForRestaurant,
   getCachedRestaurantDetails,
-  saveRestaurantDetails,
+  saveRestaurant,
   getCachedRestaurantsForLocation,
   saveCachedRestaurantsForLocation,
   checkExistingMenuForRestaurant,
@@ -70,7 +70,12 @@ import { calculateDistance } from "@/app/utils/locationUtils";
 import type { Restaurant } from "@/lib/database-builder/types";
 import { CONFIG } from "@/lib/database-builder/config";
 import { Loader2 } from "lucide-react";
+import { CachedRestaurant } from "@/interfaces/restaurant/types";
 
+interface RestaurantDetails {
+  restaurant: CachedRestaurant;
+  onReset: () => void;
+}
 
 type LatLngLiteral = { lat: number; lng: number };
 
@@ -314,7 +319,7 @@ const [center, setCenter] = useState<LatLngLiteral>({
   const [selectedMarker, setSelectedMarker] = useState<string | null>(null);
   const [isCacheLoading, setIsCacheLoading] = useState(false);
   const [isApiLoading, setIsApiLoading] = useState(false);
-  
+   
 
    // Location permission check
    useEffect(() => {
@@ -694,17 +699,56 @@ const handleMarkerClick = useCallback(async (
       const result = await response.json();
 
       // Update Firestore restaurant details
-      await saveRestaurantDetails(
-        restaurantId,
-        {
-          name: restaurantName,
-          rating: yelpBusiness.rating || 0,
-          address: yelpBusiness.location.address1 || "",
-          lastUpdated: new Date().toISOString()
-        },
-        yelpBusiness.photos?.[0]
-      );
-
+      await saveRestaurant({
+        // Essential Information 
+        id: restaurantId,
+        name: restaurantName,
+        address: yelpBusiness.location.address1 || "",
+        rating: yelpBusiness.rating || 0,
+      
+        // Location Information 
+        latitude,
+        longitude,
+        county,
+        townName,
+      
+        // Menu Information (required)
+        menuCount: 0,
+        hasMenu: false,
+        menuId: undefined,
+        menuImageUrl: undefined,
+      
+        // Media & Visual Content
+        imageUrl: yelpBusiness.photos?.[0],
+        photoUrl: yelpBusiness.photos?.[0],
+        photos: yelpBusiness.photos,
+      
+        // Contact & Business Details
+        priceLevel: yelpBusiness.price_level || null,
+        phone: yelpBusiness.display_phone || null,
+        website: yelpBusiness.url || null,
+        openingHours: yelpBusiness.hours ? {
+          openNow: false, // Yelp doesn't provide this directly
+          periods: yelpBusiness.hours[0]?.open.map(period => ({
+            open: { day: period.day, time: period.start },
+            close: { day: period.day, time: period.end }
+          })) || [],
+          weekdayText: [] // Yelp doesn't provide this format
+        } : null,
+      
+        // Integration Data
+        hasGoogleData: false,
+        hasYelpData: true,
+        yelpId: yelpBusiness.id,
+        yelpRating: yelpBusiness.rating || null,
+        placeId: undefined,
+      
+        // State Management
+        contribution: false,
+        hasDetailsFetched: true,
+        createdAt: new Date().toISOString(),
+        lastUpdated: new Date().toISOString()
+      } as Restaurant);
       // Update local state
       setRestaurants((prevRestaurants) =>
         prevRestaurants.map((r) =>

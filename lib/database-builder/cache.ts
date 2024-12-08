@@ -13,7 +13,7 @@ getDocs,
     increment,
     serverTimestamp, 
 } from 'firebase/firestore';
-import type { CachedRestaurant } from '@/app/services/firebaseFirestore';
+import type { CachedRestaurant } from '@/interfaces/restaurant/types';
 import geohash from 'ngeohash';
 import { CONFIG } from './config';
 

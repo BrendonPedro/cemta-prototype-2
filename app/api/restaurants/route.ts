@@ -9,7 +9,8 @@ import {
   getCachedRestaurantsForLocation, 
   getLocationCacheKey, 
   saveCachedRestaurantsForLocation,
-  saveRestaurantData,
+  saveRestaurant,
+  transformPlaceToRestaurant,
 } from "@/app/services/firebaseFirestore";
 import { determineLocationDetails } from "@/app/services/locationService";
 import { uploadRestaurantImage } from "@/app/services/gcpBucketStorage";
@@ -27,7 +28,7 @@ import {
   AddressComponent,
   PlacesNearbyRequest
 } from "@googlemaps/google-maps-services-js";
-import type { CachedRestaurant } from "@/interfaces/restaurant/types";
+import type { CachedRestaurant, Restaurant, OpeningHours } from "@/interfaces/restaurant/types";
 import type { DecodedIdToken } from "firebase-admin/auth";
 import geohash from 'ngeohash';
 import { CONFIG } from "@/lib/database-builder/config";
@@ -49,6 +50,12 @@ const { SEARCH: { PRECISE }, CACHE } = CONFIG;
 // Types & Interfaces
 // ----------------
 
+interface ImageData {
+  imageUrl: string;
+  hasGoogleImage: boolean;
+  yelpData: any | null;
+}
+
 interface RequestParams {
   lat: number;
   lng: number;
@@ -65,6 +72,86 @@ interface ApiCallMetrics {
   places: number;
   newRestaurants: number;
   cachedRestaurants: number;
+}
+
+
+// Function to get restaurant images
+async function getRestaurantImages(
+  place: PlaceData,
+  apiKey: string
+): Promise<ImageData> {
+  let imageUrl = '/placeholder-restaurant.jpg';
+  let hasGoogleImage = false;
+  let yelpData = null;
+
+  // Try Google image first
+  if (place.photos?.[0] && 'photo_reference' in place.photos[0]) {
+    try {
+      const photoRef = (place.photos[0] as any).photo_reference;
+      const googlePhotoUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${photoRef}&key=${apiKey}`;
+      const savedImageUrl = await uploadRestaurantImage(
+        place.place_id ?? '',
+        Buffer.from((await axios.get(googlePhotoUrl, { responseType: 'arraybuffer' })).data),
+        'image/jpeg',
+        'google'
+      );
+      imageUrl = savedImageUrl;
+      hasGoogleImage = true;
+    } catch (error) {
+      console.error(`Failed to fetch Google image for ${place.name}:`, error);
+    }
+  }
+
+  // Try Yelp if no Google image
+  if (!hasGoogleImage) {
+    try {
+      yelpData = await getYelpBusinessWithPhotos(
+        place.name!,
+        place.geometry!.location.lat,
+        place.geometry!.location.lng
+      );
+
+      if (yelpData?.photos?.[0]) {
+        const savedImageUrl = await uploadRestaurantImage(
+          place.place_id!,
+          Buffer.from((await axios.get(yelpData.photos[0], { responseType: 'arraybuffer' })).data),
+          'image/jpeg',
+          'yelp'
+        );
+        imageUrl = savedImageUrl;
+      }
+    } catch (error) {
+      console.error(`Failed to fetch Yelp data for ${place.name}:`, error);
+    }
+  }
+
+  return { imageUrl, hasGoogleImage, yelpData };
+}
+
+// Function to get enhanced place details
+async function getEnhancedPlaceDetails(
+  place: PlaceData,
+  apiKey: string,
+  client: Client
+) {
+  const detailsResponse = await client.placeDetails({
+    params: {
+      place_id: place.place_id ?? '',
+      key: apiKey,
+      fields: [
+        'website',
+        'formatted_phone_number',
+        'price_level',
+        'opening_hours',
+        'formatted_address',
+        'name',
+        'rating',
+        'photos',
+        'utc_offset'
+      ]
+    }
+  });
+  return detailsResponse.data.result;
 }
 
 // ----------------
@@ -219,161 +306,67 @@ async function processPlaceDetails(
   place: PlaceData,
   apiKey: string,
   client: Client = new Client({})
-): Promise<CachedRestaurant> {
+): Promise<Restaurant> {
   const { county, townName } = await determineLocationDetails(
     place.geometry!.location.lat,
     place.geometry!.location.lng
   );
 
-  let imageUrl = '/placeholder-restaurant.jpg';
-  let hasGoogleImage = false;
-  let yelpData = null;
+  // Get base restaurant data using single source of truth
+  const baseRestaurant = transformPlaceToRestaurant(place, county, townName);
 
-  // Try to get Google image first
-  if (place.photos?.[0] && 'photo_reference' in place.photos[0]) {
-    try {
-      const photoRef = (place.photos[0] as any).photo_reference;
-      const googlePhotoUrl = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photoreference=${photoRef}&key=${apiKey}`;
-      const savedImageUrl = await uploadRestaurantImage(
-        place.place_id ?? '',
-        Buffer.from((await axios.get(googlePhotoUrl, { responseType: 'arraybuffer' })).data),
-        'image/jpeg',
-        'google'
-      );
-      imageUrl = savedImageUrl;
-      hasGoogleImage = true;
-    } catch (error) {
-      console.error(`Failed to fetch Google image for ${place.name}:`, error);
-    }
-  }
-
-  // Try to get Yelp data if no Google image
-  if (!hasGoogleImage) {
-    try {
-      yelpData = await getYelpBusinessWithPhotos(
-        place.name!,
-        place.geometry!.location.lat,
-        place.geometry!.location.lng
-      );
-
-      if (yelpData?.photos?.[0]) {
-        const savedImageUrl = await uploadRestaurantImage(
-          place.place_id!,
-          Buffer.from((await axios.get(yelpData.photos[0], { responseType: 'arraybuffer' })).data),
-          'image/jpeg',
-          'yelp'
-        );
-        imageUrl = savedImageUrl;
-      }
-    } catch (error) {
-      console.error(`Failed to fetch Yelp data for ${place.name}:`, error);
-    }
-  }
-
-  // Get place details for additional information
   try {
-    const detailsResponse = await client.placeDetails({
-      params: {
-        place_id: place.place_id ?? '',
-        key: apiKey,
-        // Add operating hours to the fields
-        fields: [
-          'website',
-          'formatted_phone_number',
-          'price_level',
-          'opening_hours',
-          'formatted_address',
-          'name',
-          'rating',
-          'photos',
-          'utc_offset'
-        ]
-      }
-    });
-    const details = detailsResponse.data.result;
+    // Get additional details and images in parallel
+    const [details, imageData] = await Promise.all([
+      getEnhancedPlaceDetails(place, apiKey, client),
+      getRestaurantImages(place, apiKey)
+    ]);
 
-    // Save restaurant data with all available information
-    await saveRestaurantData(
-      {
-        id: place.place_id!,
-        name: place.name!,
-        address: place.vicinity || 'No Address Available',
-        latitude: place.geometry!.location.lat,
-        longitude: place.geometry!.location.lng,
-        rating: place.rating || 0,
-        priceLevel: details.price_level?.toString() || null,
-        phone: details.formatted_phone_number || null,
-        website: details.website || null,
-        placeId: place.place_id!,
-        yelpId: yelpData?.id || null,
-        yelpRating: yelpData?.rating || null,
-        photos: imageUrl !== '/placeholder-restaurant.jpg' ? [imageUrl] : [],
-        menuCount: 0,
-        lastUpdated: new Date().toISOString(),
-        createdAt: new Date().toISOString(),
-        hasGoogleData: hasGoogleImage,
-        hasYelpData: !hasGoogleImage && imageUrl !== '/placeholder-restaurant.jpg',
-        county,
-        townName,
-        imageUrl
-      },
-      county,
-      townName,
-      { 
-        fromCache: false,
-        incrementalUpdate: true,
-        forceEnsureStructure: true,
-        imageUrl
-      }
-    );
+    // Transform Google's opening hours to match our OpeningHours type
+    const openingHours: OpeningHours | null = details.opening_hours ? {
+      openNow: details.opening_hours.open_now || false,
+      periods: details.opening_hours.periods?.map(period => ({
+        open: {
+          day: period.open.day,
+          time: period.open.time || ''
+        },
+        close: period.close ? {
+          day: period.close.day,
+          time: period.close.time || ''
+        } : {
+          day: period.open.day,
+          time: '2359' // Default closing time if not specified
+        }
+      })) || [],
+      weekdayText: details.opening_hours.weekday_text || []
+    } : null;
 
-    return {
-      id: place.place_id!,
-      name: place.name!,
-      address: place.vicinity || 'Unknown address',
-      latitude: place.geometry!.location.lat,
-      longitude: place.geometry!.location.lng,
-      rating: place.rating || 0,
-      menuCount: 0,
-      hasMenu: false,
-      county,
-      townName,
-      source: 'google',
-      hasGoogleData: true,
-      hasYelpData: !!yelpData,
-      imageUrl,
-      priceLevel: details.price_level?.toString() || null,
+    // Enhance the base restaurant
+    const enhancedRestaurant: Restaurant = {
+      ...baseRestaurant,
       phone: details.formatted_phone_number || null,
       website: details.website || null,
-      yelpId: yelpData?.id || null,
-      yelpRating: yelpData?.rating || null,
-      openingHours: details.opening_hours ? {
-        openNow: details.opening_hours.open_now,
-        periods: details.opening_hours.periods,
-        weekdayText: details.opening_hours.weekday_text
-      } : null
-    } as CachedRestaurant;
+      openingHours,
+      imageUrl: imageData.imageUrl,
+      yelpId: imageData.yelpData?.id || null,
+      yelpRating: imageData.yelpData?.rating || null,
+      hasYelpData: !!imageData.yelpData,
+      priceLevel: details.price_level?.toString() || null,
+    };
+
+    await saveRestaurant(enhancedRestaurant, {
+      updateCounts: true,
+      imageUrl: imageData.imageUrl
+    });
+
+    return enhancedRestaurant;
+
   } catch (error) {
-    console.error(`Failed to fetch place details for ${place.name}:`, error);
-    // Return basic restaurant data if details fetch fails
-    return {
-      id: place.place_id!,
-      name: place.name!,
-      address: place.vicinity || 'Unknown address',
-      latitude: place.geometry!.location.lat,
-      longitude: place.geometry!.location.lng,
-      rating: place.rating || 0,
-      menuCount: 0,
-      hasMenu: false,
-      county,
-      townName,
-      source: 'google',
-      hasGoogleData: true,
-      hasYelpData: !!yelpData,
-      imageUrl
-    } as CachedRestaurant;
+    await saveRestaurant(baseRestaurant, { updateCounts: true });
+    return baseRestaurant;
   }
 }
+
 
 // ----------------
 // Main Route Handler
@@ -466,26 +459,36 @@ export async function GET(request: Request) {
       const processedNewPlaces = await Promise.all(
         newPlaces.map(place => processPlaceDetails(place, apiKey))
       );
-
-      // Merge avoiding nearby duplicates
-      processedNewPlaces.forEach(newPlace => {
-        const hasNearbyDuplicate = combinedResults.some(existing => 
+    
+      // Add new places to the combined results
+      const newRestaurants = processedNewPlaces.filter(newPlace => 
+        !combinedResults.some(existing => 
+          existing.id === newPlace.id || 
           calculateDistance(
             existing.latitude,
             existing.longitude,
             newPlace.latitude,
             newPlace.longitude
           ) < CONFIG.SEARCH.PRECISE.MERGE_DISTANCE
-        );
-
-        if (!hasNearbyDuplicate) {
-          combinedResults.push(newPlace);
-        }
-      });
-
-      // Update cache with new results
-      await saveCachedRestaurantsForLocation(params.lat, params.lng, combinedResults);
-      await batchUpdateRestaurants(combinedResults);
+        )
+      );
+    
+      console.log(`Processing summary:`);
+      console.log(`- New places processed: ${processedNewPlaces.length}`);
+      console.log(`- Unique new restaurants: ${newRestaurants.length}`);
+      
+      // Update cache with all results
+      await saveCachedRestaurantsForLocation(
+        params.lat, 
+        params.lng, 
+        [...combinedResults, ...newRestaurants]
+      );
+    
+      // Update Firestore documents
+      await batchUpdateRestaurants(newRestaurants);
+    
+      // Update the combined results for the response
+      combinedResults = [...combinedResults, ...newRestaurants];
     }
 
     // Sort by distance and apply limit
@@ -507,11 +510,19 @@ export async function GET(request: Request) {
     return NextResponse.json({
       restaurants: combinedResults.map(restaurant => ({
         ...restaurant,
-        // Ensure these fields are always present
-        menuCount: restaurant.menuCount || 0,
+        // Ensure all required fields from Restaurant interface are present
+        id: restaurant.id,
+        name: restaurant.name,
+        address: restaurant.address,
+        rating: restaurant.rating,
+        latitude: restaurant.latitude,
+        longitude: restaurant.longitude,
+        county: restaurant.county,
+        townName: restaurant.townName,
+        menuCount: restaurant.menuCount || 0, // Required field
+        // Optional fields with defaults
         hasMenu: !!restaurant.menuCount,
         hasDetailsFetched: true,
-        // Add default values for potentially undefined fields
         openingHours: restaurant.openingHours || null,
         priceLevel: restaurant.priceLevel || null,
         phone: restaurant.phone || null,
