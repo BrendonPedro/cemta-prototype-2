@@ -14,7 +14,7 @@ import {
 import { Client, Language, AddressType, PlaceType1, PlacesNearbyRanking } from "@googlemaps/google-maps-services-js";
 import { uploadImageToBucket } from "./gcpBucketStorage";
 import { getYelpBusinessWithPhotos } from "./yelpService";
-import { checkExistingMenuForRestaurant, CachedRestaurant } from "./firebaseFirestore";
+import { CachedRestaurant } from "@/interfaces/restaurant/types";
 import axios from 'axios';
 import geohash from "ngeohash";
 import { saveRestaurantData } from "./firebaseFirestore";

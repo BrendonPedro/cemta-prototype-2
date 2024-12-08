@@ -2,7 +2,7 @@
 
 "use client";
 
-import React, { useRef, useState, useEffect, useCallback } from "react";
+import React, { useRef, useState, useEffect, useCallback, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -33,6 +33,7 @@ import Image from "next/image";
 import { counties, EnhancedCountyData } from "@/lib/data/counties";
 import { clientConfig } from '@/config/googleMapsConfig';
 import { getImageProps } from '@/app/utils/imageHandling';
+import { debounce } from "lodash";
 
 
 import {
@@ -57,9 +58,6 @@ import {
 import { getYelpBusinessWithPhotos } from "@/app/services/yelpService";
 import { MenuWarningDialog } from "@/components/ui/menu-warning-dialog";
 import axios from "axios";
-import {
-  CachedRestaurant,
- } from "@/app/services/firebaseFirestore";
 import { EnhancedTownData, getTownsByCounty } from "@/lib/data/counties";
 import { determineLocationDetails } from "@/app/services/locationService";
 import { fetchWithError } from "@/app/utils/clientUtils";
@@ -179,41 +177,69 @@ const mapOptions = {
   tilt: 0,
   heading: 0,
   gestureHandling: "greedy" as const,
+  draggableCursor: "pointer",
+  draggingCursor: "grabbing"
 };
 
-// Update the AdvancedMarker component props interface
+// AdvancedMarker component props interface
 interface AdvancedMarkerProps {
   position: LatLngLiteral;
   onClick?: () => void;
   isSelected?: boolean;
+  isUserLocation?: boolean;
+  isSelectedLocation?: boolean; // Add new prop
   title?: string;
   map: google.maps.Map | null | undefined;
 }
 
-const AdvancedMarker: React.FC<AdvancedMarkerProps> = ({ position, onClick, isSelected, title, map }) => {
-  const markerRef = useRef<any>(null);
+const AdvancedMarker: React.FC<AdvancedMarkerProps> = ({ 
+  position, 
+  onClick, 
+  isSelected,
+  isUserLocation,
+  isSelectedLocation,
+  title, 
+  map 
+}) => {
+  const markerRef = useRef<google.maps.marker.AdvancedMarkerElement | null>(null);
 
   useEffect(() => {
-    if (!window.google || !map) return;
+    async function createMarker() {
+      if (!window.google || !map) return;
 
-    const markerView = new google.maps.marker.PinElement({
-      background: isSelected ? "#4A90E2" : "#FF0000",
-      borderColor: "#FFFFFF",
-      scale: 1,
-    });
+      const { AdvancedMarkerElement, PinElement } = await google.maps.importLibrary("marker") as any;
 
-    const marker = new google.maps.marker.AdvancedMarkerElement({
-      map,
-      position,
-      content: markerView.element,
-      title
-    });
+      // Determine pin color based on marker type
+      let pinColor;
+      if (isUserLocation) {
+        pinColor = "#22C55E"; // Green for user location
+      } else if (isSelectedLocation || isSelected) {
+        pinColor = "#4A90E2"; // Blue for selected location or restaurant
+      } else {
+        pinColor = "#FF0000"; // Red for other restaurants
+      }
 
-    if (onClick) {
-      marker.addListener('gmp-click', onClick);
+      const pinView = new PinElement({
+        background: pinColor,
+        borderColor: "#FFFFFF",
+        scale: isUserLocation ? 1.4 : 1.2,
+      });
+
+      const marker = new AdvancedMarkerElement({
+        map,
+        position,
+        content: pinView.element,
+        title,
+      });
+
+      if (onClick) {
+        marker.addListener('click', onClick);
+      }
+
+      markerRef.current = marker;
     }
 
-    markerRef.current = marker;
+    createMarker();
 
     return () => {
       if (markerRef.current) {
@@ -221,19 +247,32 @@ const AdvancedMarker: React.FC<AdvancedMarkerProps> = ({ position, onClick, isSe
         markerRef.current.map = null;
       }
     };
-  }, [map, position, onClick, isSelected, title]);
+  }, [map, position, onClick, isSelected, isUserLocation, isSelectedLocation, title]);
 
   return null;
 };
 
-const LoadingState = ({ isCacheHit }: { isCacheHit: boolean }) => (
+const LoadingState = () => (
   <div className="flex items-center justify-center space-x-2">
-    <Loader2 className="w-4 h-4 animate-spin" />
-    <span className="text-sm text-gray-600">
-      {isCacheHit ? 'Loading cached restaurants...' : 'Fetching new restaurants...'}
-    </span>
+    <div className="bg-white p-6 rounded-lg shadow-lg flex items-center space-x-3">
+      <div className="animate-spin rounded-full h-5 w-5 border-2 border-customTeal border-t-transparent" />
+      <span className="text-base font-medium text-gray-700">
+        Loading nearby restaurants...
+      </span>
+    </div>
   </div>
 );
+
+// Update the getGoogleMapsUrl function
+const getGoogleMapsUrl = (restaurant: Restaurant) => {
+  // Create a search query with restaurant name and location
+  const searchQuery = encodeURIComponent(
+    `${restaurant.name} ${restaurant.address} ${restaurant.county} ${restaurant.townName}`
+  );
+  
+  // Use latitude and longitude directly
+  return `https://www.google.com/maps/search/${searchQuery}/@${restaurant.latitude},${restaurant.longitude},17z`;
+};
 
 export default function FindRestaurantsAndMenus() {
   const mapRef = useRef<google.maps.Map | null>(null);
@@ -343,17 +382,26 @@ const [center, setCenter] = useState<LatLngLiteral>({
       try {
         setIsApiLoading(true);
         setIsCacheLoading(true);
-        
-        // Get cached restaurants within search radius
-        const cachedResults = await getCachedRestaurantsForLocation(lat, lng);
+
+        // Fetch cache and API results in parallel
+        const [cachedResults, apiResponse] = await Promise.all([
+          getCachedRestaurantsForLocation(lat, lng),
+          fetch(
+            `/api/restaurants?lat=${lat}&lng=${lng}&limit=${CONFIG.SEARCH.PRECISE.MAX_RESULTS}&type=full`,
+            {
+              headers: {
+                Authorization: `Bearer ${firebaseToken}`,
+                'Content-Type': 'application/json'
+              },
+            }
+          )
+        ]);
+
+        // Process cached results immediately
         let nearbyResults = cachedResults?.filter(restaurant => 
           calculateDistance(lat, lng, restaurant.latitude, restaurant.longitude) <= CONFIG.SEARCH.PRECISE.RADIUS
         ) || [];
 
-        console.log(`Cache ${cachedResults ? 'HIT' : 'MISS'} for location ${lat},${lng}`);
-        console.log(`Found ${nearbyResults.length} cached restaurants within ${CONFIG.SEARCH.PRECISE.RADIUS}m`);
-
-        // Update UI with cached results first
         if (nearbyResults.length > 0) {
           setRestaurants(nearbyResults);
           setFilteredRestaurants(nearbyResults.slice(0, 10));
@@ -361,28 +409,15 @@ const [center, setCenter] = useState<LatLngLiteral>({
         }
         setIsCacheLoading(false);
 
-        // Only fetch more if we have less than max results
-        if (nearbyResults.length < CONFIG.SEARCH.PRECISE.MAX_RESULTS) {
-          const response = await fetch(
-            `/api/restaurants?lat=${lat}&lng=${lng}&limit=${CONFIG.SEARCH.PRECISE.MAX_RESULTS - nearbyResults.length}&type=full`,
-            {
-              headers: {
-                Authorization: `Bearer ${firebaseToken}`,
-                'Content-Type': 'application/json'
-              },
-            }
-          );
-
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-          }
-
-          const data = await response.json();
-          console.log('API Response:', data);
-          
+        // Process API results
+        if (apiResponse.ok) {
+          const data = await apiResponse.json();
           if (data.restaurants?.length) {
-            // Merge and update results
-            nearbyResults = [...nearbyResults, ...data.restaurants]
+            // Merge and deduplicate results
+            const allRestaurants = [...nearbyResults, ...data.restaurants];
+            const uniqueRestaurants = Array.from(
+              new Map(allRestaurants.map(r => [r.id, r])).values()
+            )
               .sort((a, b) => {
                 const distA = calculateDistance(lat, lng, a.latitude, a.longitude);
                 const distB = calculateDistance(lat, lng, b.latitude, b.longitude);
@@ -390,8 +425,8 @@ const [center, setCenter] = useState<LatLngLiteral>({
               })
               .slice(0, CONFIG.SEARCH.PRECISE.MAX_RESULTS);
 
-            setRestaurants(nearbyResults);
-            setFilteredRestaurants(nearbyResults.slice(0, 10));
+            setRestaurants(uniqueRestaurants);
+            setFilteredRestaurants(uniqueRestaurants.slice(0, 10));
             handleFilter();
           }
         }
@@ -517,24 +552,25 @@ const [center, setCenter] = useState<LatLngLiteral>({
     }
   };
 
- // Update handleMapClick to use the correct event type
- const handleMapClick = useCallback((event: google.maps.MapMouseEvent) => {
-  const latLng = event.latLng;
-  if (!latLng) return;
-  
-  const newLat = latLng.lat();
-  const newLng = latLng.lng();
-  
-  setCenter({ lat: newLat, lng: newLng });
-  setPinLocation({ lat: newLat, lng: newLng });
-  
-  // Fetch restaurants for the new location
-  fetchNearbyRestaurants(newLat, newLng);
-  
-  // Reset focused restaurant when clicking elsewhere on map
-  setFocusedRestaurant(null);
-  setSelectedMarker(null);
-}, [fetchNearbyRestaurants]);
+ // Update handleMapClick to use debounce
+ const handleMapClick = useCallback(
+  debounce((event: google.maps.MapMouseEvent) => {
+    const latLng = event.latLng;
+    if (!latLng) return;
+    
+    const newLat = latLng.lat();
+    const newLng = latLng.lng();
+    
+    setCenter({ lat: newLat, lng: newLng });
+    setPinLocation({ lat: newLat, lng: newLng });
+    
+    fetchNearbyRestaurants(newLat, newLng);
+    
+    setFocusedRestaurant(null);
+    setSelectedMarker(null);
+  }, 300),
+  [fetchNearbyRestaurants, setCenter, setPinLocation, setFocusedRestaurant, setSelectedMarker]
+);
 
 // Add a new handler for marker clicks
 const handleMarkerClick = useCallback(async (
@@ -755,19 +791,13 @@ const handleMarkerClick = useCallback(async (
 
   // Update the loading state component
   const LoadingState = () => (
-    <div className="flex flex-col items-center justify-center space-y-2">
-      {isCacheLoading && (
-        <div className="flex items-center space-x-2">
-          <Loader2 className="w-4 h-4 animate-spin text-gray-500" />
-          <span className="text-sm text-gray-600">Loading cached restaurants...</span>
-        </div>
-      )}
-      {isApiLoading && (
-        <div className="flex items-center space-x-2">
-          <Loader2 className="w-4 h-4 animate-spin text-teal-500" />
-          <span className="text-sm text-gray-600">Fetching new restaurants...</span>
-        </div>
-      )}
+    <div className="flex items-center justify-center space-x-2">
+      <div className="bg-white p-6 rounded-lg shadow-lg flex items-center space-x-3">
+        <div className="animate-spin rounded-full h-5 w-5 border-2 border-customTeal border-t-transparent" />
+        <span className="text-base font-medium text-gray-700">
+          Loading nearby restaurants...
+        </span>
+      </div>
     </div>
   );
 
@@ -901,7 +931,19 @@ const handleMarkerClick = useCallback(async (
               </TooltipProvider>
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="relative">
+            {/* Loading Overlay */}
+            {(isApiLoading || isCacheLoading) && (
+              <div className="absolute inset-0 bg-white/75 backdrop-blur-sm flex items-center justify-center z-50">
+                <div className="bg-white p-6 rounded-lg shadow-lg flex items-center space-x-3">
+                  <div className="animate-spin rounded-full h-5 w-5 border-2 border-customTeal border-t-transparent" />
+                  <span className="text-base font-medium text-gray-700">
+                    Loading nearby restaurants...
+                  </span>
+                </div>
+              </div>
+            )}
+
             {/* Search bar for county */}
             
             {/* Restaurant Table */}
@@ -1006,31 +1048,41 @@ const handleMarkerClick = useCallback(async (
         onClick={() => handleRestaurantClick(restaurant)}
       >
                     <TableCell className="w-2/5">
-                      <span
-                        className="cursor-pointer px-1 py-0.5 rounded transition duration-200
-               hover:font-bold hover:text-customTealDark"
-                        onClick={() => handleRestaurantNameClick(restaurant)}
-                      >
-                        {restaurant.name}
-                      </span>
-                      <TooltipProvider>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <a
-                              href={`https://www.google.com/maps/search/?api=1&query=${restaurant.latitude},${restaurant.longitude}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="ml-4 group"
-                            >
-                              <MapPin className="inline h-4 w-4 text-gray-500 group-hover:text-teal-700 group-hover:scale-150 group-hover:shadow-lg transform transition duration-200" />
-                            </a>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p>View on Google Maps</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </TooltipProvider>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="cursor-pointer px-1 py-0.5 rounded transition duration-200 hover:font-bold hover:text-customTealDark"
+                          onClick={() => handleRestaurantNameClick(restaurant)}
+                        >
+                          {restaurant.name}
+                        </span>
+                        <TooltipProvider>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <a
+                                href={getGoogleMapsUrl(restaurant)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  window.open(
+                                    getGoogleMapsUrl(restaurant),
+                                    '_blank',
+                                    'noopener,noreferrer'
+                                  );
+                                }}
+                                className="group inline-flex items-center"
+                              >
+                                <MapPin className="h-4 w-4 text-gray-500 transition-all duration-200 transform 
+                                  group-hover:text-customTeal group-hover:scale-125" />
+                              </a>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              <p>View on Google Maps</p>
+                            </TooltipContent>
+                          </Tooltip>
+                        </TooltipProvider>
+                      </div>
                     </TableCell>
 
                     <TableCell className="w-1/6 text-center">
@@ -1117,7 +1169,7 @@ const handleMarkerClick = useCallback(async (
           <CardContent>
             {isLoaded ? (
               <>
-                <GoogleMap
+              <GoogleMap
   mapContainerStyle={mapContainerStyle}
   center={center}
   zoom={14}
@@ -1128,38 +1180,45 @@ const handleMarkerClick = useCallback(async (
   <MarkerClusterer averageCenter enableRetinaIcons>
     {(clusterer) => (
       <>
-        {/* Pin location marker */}
+        {/* User's location marker (only show when location is enabled) */}
+        {locationEnabled && pinLocation && (
+          <AdvancedMarker
+            position={center}
+            title="Your Current Location"
+            isUserLocation={true}
+            map={mapRef.current}
+          />
+        )}
+
+        {/* Selected location marker (show when clicking on map) */}
         {pinLocation && (
           <AdvancedMarker
             position={pinLocation}
-            title="Selected Location"
-            isSelected={true}
+            title="Selected Search Location"
+            isSelectedLocation={true}
             map={mapRef.current}
           />
         )}
         
         {/* Restaurant markers */}
         {restaurants
-          .slice(0, 20) // Ensure only 20 restaurants are rendered
-          .map((restaurant) => {
-            // Only create the visual marker, not the clustering marker
-            return (
-              <AdvancedMarker
-                key={`marker-${restaurant.id}`} // Unique key for each marker
-                position={{
-                  lat: restaurant.latitude,
-                  lng: restaurant.longitude,
-                }}
-                onClick={() => handleMarkerClick(restaurant, {
-                  lat: restaurant.latitude,
-                  lng: restaurant.longitude
-                })}
-                isSelected={selectedMarker === restaurant.id}
-                title={restaurant.name}
-                map={mapRef.current}
-              />
-            );
-          })}
+          .slice(0, 20)
+          .map((restaurant) => (
+            <AdvancedMarker
+              key={`marker-${restaurant.id}`}
+              position={{
+                lat: restaurant.latitude,
+                lng: restaurant.longitude,
+              }}
+              onClick={() => handleMarkerClick(restaurant, {
+                lat: restaurant.latitude,
+                lng: restaurant.longitude
+              })}
+              isSelected={selectedMarker === restaurant.id}
+              title={restaurant.name}
+              map={mapRef.current}
+            />
+          ))}
       </>
     )}
   </MarkerClusterer>

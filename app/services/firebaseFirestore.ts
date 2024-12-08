@@ -22,22 +22,15 @@ import {
 import geohash from 'ngeohash';
 import { db } from "@/lib/database-builder/db";
 import { CONFIG } from '@/lib/database-builder/config';
-import type { RestaurantData, OpeningHours } from '@/lib/database-builder/types';
+import type { Restaurant, CachedRestaurant, OpeningHours, MenuSummary, Photo } from '@/interfaces/restaurant/types';
 import { calculateDistance } from '@/app/utils/locationUtils'
-import type { Restaurant } from '@/lib/database-builder/types';
-import { UserPreferences } from "@/interfaces/users/user-preferences";
+import type { UserPreferences } from "@/interfaces/users/user-preferences";
 
 // ======= Basic Types and Shared Interfaces =======
 // (Used across multiple components)
 export interface Location {
   latitude: number;
   longitude: number;
-}
-
-// (Used in RestaurantPage.tsx and firestore.ts)
-export interface Photo {
-  url: string;
-  source: "google" | "yelp";
 }
 
 // (Used in RestaurantPage.tsx)
@@ -76,7 +69,6 @@ export interface RestaurantDocument {
     yelp: boolean;
   };
   createdAt?: Date;  
-  updatedAt?: Date; 
 }
 
 // (Used in RestaurantPage.tsx)
@@ -98,37 +90,8 @@ export interface RestaurantDetails {
   menuCount?: number;
   county?: string;
   createdAt?: Date;
-  updatedAt?: Date;
+  lastUpdated?: Date;
   openingHours?: OpeningHours | null;
-}
-
-// (Used in FindRestaurantsAndMenus.tsx and nearby-restaurants/route.ts)
-export interface CachedRestaurant {
-  id: string;
-  name: string;
-  address: string;
-  latitude: number;
-  longitude: number;
-  rating: number;
-  menuCount: number;
-  county: string;
-  townName: string;
-  source: 'google' | 'yelp';
-  hasGoogleData: boolean;
-  hasYelpData: boolean;
-  imageUrl?: string;
-  photoUrl?: string;  
-  menuImageUrl?: string;  
-  menuId?: string; 
-  hasMenu: boolean;
-  contribution?: boolean; 
-  priceLevel?: string | null;
-  phone?: string | null;
-  website?: string | null;
-  yelpId?: string | null;
-  yelpRating?: number | null;
-  openingHours?: OpeningHours | null;
-  hasDetailsFetched?: boolean;  // Added to track fetch status
 }
 
 // ======= Menu Related Interfaces =======
@@ -206,14 +169,6 @@ export interface MenuDetails {
   menuData: MenuData;
 }
 
-// (Used in RestaurantPage.tsx and firestore.ts)
-export interface MenuSummary {
-  id: string;
-  menuName: string;
-  imageUrl?: string;
-  timestamp: Date; // TODO: Change to string or Date
-}
-
 // ======= Yelp Related Interfaces =======
 // (Used in yelpService.ts and nearby-restaurants/route.ts)
 export interface YelpBusiness {
@@ -253,11 +208,11 @@ export interface YelpBusiness {
 // (Used in firestore.ts and search components)
 export interface SearchResult {
   id: string;
-  restaurantName: string;
-  location: string;
-  imageUrl?: string;  
-  rating?: number;    
-  county?: string;    
+  name: string;           
+  address: string;        
+  imageUrl?: string;
+  rating?: number;
+  county?: string;
 }
 
 // (Used in VertexAiResultsDisplay.tsx)
@@ -269,9 +224,10 @@ export interface HistoryItem {
 
 // Used in restaurant/page.tsx and firestores
 export interface EnhancedSearchResult extends SearchResult {
-  county?: string;
-  rating?: number;
-  imageUrl?: string;
+  hasMenu?: boolean;
+  menuCount?: number;
+  hasGoogleData?: boolean;
+  hasYelpData?: boolean;
 }
 
 // ======= Type Aliases =======
@@ -568,22 +524,19 @@ export async function setRestaurantDetails(
 // Save restaurant details (rating and address) in Firestore
 export async function saveRestaurantDetails(
   restaurantId: string,
-  restaurantData: Omit<Partial<RestaurantDocument>, 'id'>,
+  restaurant: Omit<Partial<Restaurant>, 'id'>,
   imageUrl?: string
 ): Promise<void> {
   const restaurantRef = doc(db, "restaurants", restaurantId);
 
   // Add default values for required fields
-  const dataWithDefaults = {
+  const dataWithDefaults: Partial<Restaurant> = {
     photos: [],
     menuCount: 0,
     lastUpdated: new Date().toISOString(),
-    source: {
-      google: false,
-      yelp: false
-    },
-    ...restaurantData,
-    timestamp: new Date().toISOString(),
+    hasGoogleData: false,
+    hasYelpData: false,
+    ...restaurant,
     ...(imageUrl && { imageUrl })
   };
 
@@ -594,7 +547,7 @@ export async function saveRestaurantDetails(
 // Get cached restaurant details from Firestore
 export async function getCachedRestaurantDetails(
   restaurantId: string
-): Promise<RestaurantDocument | null> {
+): Promise<Restaurant | null> {
   const restaurantRef = doc(db, "restaurants", restaurantId);
   const docSnap = await getDoc(restaurantRef);
 
@@ -602,7 +555,7 @@ export async function getCachedRestaurantDetails(
     return {
       id: docSnap.id,
       ...docSnap.data(),
-    } as RestaurantDocument;
+    } as Restaurant;
   }
   return null;
 }
@@ -783,7 +736,7 @@ export async function saveUserPreferences(
     await updateDoc(userRef, {
       'preferences': {
         ...preferences,
-        updatedAt: serverTimestamp()
+        lastUpdated: serverTimestamp()
       }
     });
   } catch (error) {
@@ -872,8 +825,11 @@ export async function searchMenus(searchTerm: string): Promise<SearchResult[]> {
   const querySnapshot = await getDocs(q);
   return querySnapshot.docs.map((doc) => ({
     id: doc.id,
-    restaurantName: doc.data().restaurantName,
-    location: doc.data().location,
+    name: doc.data().restaurantName || doc.data().name, // Handle both old and new field names
+    address: doc.data().location || doc.data().address, // Handle both old and new field names
+    imageUrl: doc.data().imageUrl,
+    rating: doc.data().rating,
+    county: doc.data().county,
   }));
 }
 
@@ -891,8 +847,11 @@ export async function getRecentMenus(userId: string): Promise<SearchResult[]> {
     const data = doc.data();
     return {
       id: doc.id,
-      restaurantName: data.restaurantName || "Unknown Restaurant",
-      location: data.location || "Unknown Location",
+      name: data.restaurantName || data.name || "Unknown Restaurant",
+      address: data.location || data.address || "Unknown Location",
+      imageUrl: data.imageUrl,
+      rating: data.rating || 0,
+      county: data.county || "",
     };
   });
 }
@@ -964,7 +923,7 @@ export async function saveRestaurantImageReference(
   imageUrl: string
 ): Promise<void> {
   await saveRestaurantData(
-    { id: restaurantId } as RestaurantData,
+    { id: restaurantId } as Restaurant,
     'unknown', // county
     'unknown', // town
     { imageUrl }
@@ -1029,8 +988,8 @@ export async function searchRestaurants(searchTerm: string): Promise<SearchResul
       const data = doc.data();
       results.set(doc.id, {
         id: doc.id,
-        restaurantName: data.name,
-        location: data.address || "Unknown Location",
+        name: data.name,
+        address: data.address || "Unknown Location",
         imageUrl: data.imageUrl,
         rating: data.rating,
         county: data.county
@@ -1054,8 +1013,8 @@ export async function searchRestaurants(searchTerm: string): Promise<SearchResul
             if (!results.has(restaurant.id) || !results.get(restaurant.id)?.county) {
               results.set(restaurant.id, {
                 id: restaurant.id,
-                restaurantName: restaurant.name,
-                location: restaurant.address,
+                name: restaurant.name,
+                address: restaurant.address,
                 imageUrl: restaurant.imageUrl,
                 rating: restaurant.rating,
                 county: restaurant.county
@@ -1208,7 +1167,7 @@ export async function checkExistingYelpMenu(
 }
 
 export async function saveRestaurantData(
-  restaurantData: RestaurantData,
+  restaurant: Restaurant,
   countyName: string,
   townName: string,
   options: {
@@ -1231,7 +1190,7 @@ export async function saveRestaurantData(
     throw new Error('Operation aborted');
   }
 
-  console.log(`\n🔄 Starting save process for restaurant: ${restaurantData.name}`);
+  console.log(`\n🔄 Starting save process for restaurant: ${restaurant.name}`);
   console.log(`County: ${countyName}, Town: ${townName}`);
 
   try {
@@ -1240,8 +1199,8 @@ export async function saveRestaurantData(
     // References
     const countyRef = doc(db, 'counties', countyName);
     const townRef = doc(countyRef, 'towns', townName);
-    const restaurantRef = doc(townRef, 'restaurants', restaurantData.id);
-    const globalRestaurantRef = doc(db, 'restaurants', restaurantData.id);
+    const restaurantRef = doc(townRef, 'restaurants', restaurant.id);
+    const globalRestaurantRef = doc(db, 'restaurants', restaurant.id);
 
     // First ensure the county and town documents exist
     const [countyDoc, townDoc] = await Promise.all([
@@ -1279,12 +1238,11 @@ export async function saveRestaurantData(
 
     // Prepare data with county and town information
     const dataToSave = {
-      ...restaurantData,
+      ...restaurant,
       countyName,
       townName,
       ...(imageUrl && { imageUrl }),
       lastUpdated: serverTimestamp(),
-      updatedAt: serverTimestamp(),
       ...((!existingTownRestaurant.exists() || !existingGlobalRestaurant.exists()) && {
         createdAt: serverTimestamp()
       })
@@ -1313,10 +1271,10 @@ export async function saveRestaurantData(
 
         // Verify and fix counts after save
         await verifyAndFixRestaurantCount(countyName, townName, true);
-        console.log(`✅ Successfully saved restaurant data for ${restaurantData.name}`);
+        console.log(`✅ Successfully saved restaurant data for ${restaurant.name}`);
     
       } catch (error) {
-        console.error(`Error saving restaurant data for ${restaurantData.name}:`, error);
+        console.error(`Error saving restaurant data for ${restaurant.name}:`, error);
         throw error;
       }
     }

@@ -16,32 +16,18 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { GoogleMap, useJsApiLoader, Marker } from "@react-google-maps/api";
 import ErrorBoundary from "@/components/ErrorBoundary";
 import { getImageProps } from "@/app/utils/imageHandling";
+import { getRestaurantLink } from "@/app/utils/restaurantUtils";
 
 // Types and Interfaces
-interface Location {
-  lat: number;
-  lng: number;
-}
+import { 
+  Restaurant, 
+  Location, 
+  YelpErrorResponse,
+  YelpBusinessResponse,
+  YelpSearchResponse,
+  YelpApiResponse 
+} from '@/interfaces/restaurant/types';
 
-interface Restaurant extends Omit<EnhancedSearchResult, 'location'> {
-  id: string;
-  latitude?: number;
-  longitude?: number;
-  location: string;
-  restaurantName: string;
-  county: string;
-  imageUrl?: string;
-  rating?: number;
-  hasMenu: boolean;
-  menuCount: number;
-  hasGoogleData: boolean;
-  hasYelpData: boolean;
-  // Optional fields
-  yelpId?: string;
-  yelpRating?: number;
-  contribution?: boolean;
-  hasDetailsFetched?: boolean;
-}
 
 interface MapConfig {
   containerStyle: {
@@ -52,15 +38,9 @@ interface MapConfig {
   defaultZoom: number;
 }
 
-interface NearbyRestaurantResponse {
-  id: string;
-  name: string;
-  address: string;
-  imageUrl?: string;
-  rating?: number;
-  county?: string;
-  latitude: number;
-  longitude: number;
+interface MapState {
+  isLoaded: boolean;
+  error: string | null;
 }
 
 // Map Configuration
@@ -76,41 +56,17 @@ const MAP_CONFIG: MapConfig = {
   defaultZoom: 14,
 };
 
-interface MapState {
-  isLoaded: boolean;
-  error: string | null;
-}
-
-// Updated interfaces at the top of your restaurants/page.tsx
-interface YelpErrorResponse {
-  error: {
-    code: string;
-    description: string;
-  };
-}
-
-interface YelpBusinessResponse {
+interface NearbyRestaurantResponse {
   id: string;
   name: string;
-  image_url?: string;
+  address: string;
+  imageUrl?: string;
   rating?: number;
-  coordinates?: {
-    latitude: number;
-    longitude: number;
-  };
-  location?: {
-    address1?: string;
-    city?: string;
-    state?: string;
-  };
+  county?: string;
+  latitude: number;
+  longitude: number;
 }
 
-interface YelpSearchResponse {
-  businesses: YelpBusinessResponse[];
-  total: number;
-}
-
-type YelpApiResponse = YelpSearchResponse | YelpErrorResponse;
 
 // Component for loading skeleton
 const RestaurantSkeleton: React.FC = () => (
@@ -258,7 +214,7 @@ function RestaurantsPage() {
   }, [debouncedSearchTerm]);
 
   // Map click handler
-  const handleMapClick = async (event: google.maps.MouseEvent) => {
+  const handleMapClick = async (event: google.maps.MapMouseEvent) => {
     if (!event.latLng) return;
   
     const lat = event.latLng.lat();
@@ -288,26 +244,37 @@ function RestaurantsPage() {
       }
   
       setRestaurants((prev) => {
-        const newRestaurants = data.businesses.map((r: YelpBusinessResponse) => ({
+        const newRestaurants: Restaurant[] = data.businesses.map((r: YelpBusinessResponse) => ({
           id: r.id,
-          restaurantName: r.name,
-          location: r.location?.address1 || 'Address unavailable',
-          imageUrl: r.image_url || '/placeholder-restaurant.jpg',
+          name: r.name,
+          address: r.location?.address1 || 'Address unavailable',
           rating: r.rating || 0,
-          county: r.location?.city || r.location?.state || 'Location unavailable',
-          latitude: r.coordinates?.latitude,
-          longitude: r.coordinates?.longitude,
-          hasMenu: false,
+            
+            latitude: r.coordinates?.latitude || 0,
+            longitude: r.coordinates?.longitude || 0,
+         
+          county: r.location?.city || 'Location unavailable',
+          townName: r.location?.state || 'Unknown',  
           menuCount: 0,
+          hasMenu: false,
           hasGoogleData: false,
-          hasYelpData: true
-        }));
-  
-        // Filter out restaurants without valid coordinates
+          hasYelpData: true,
+          // Optional fields with null values
+          priceLevel: null,
+          phone: null,
+          website: null,
+          openingHours: null,
+          // Required basic fields
+          imageUrl: r.image_url || '/placeholder-restaurant.jpg',
+          contribution: false,
+          hasDetailsFetched: true
+        } satisfies Restaurant));
+      
+        // Filter out invalid restaurants
         const validRestaurants = newRestaurants.filter(
-          r => typeof r.latitude === 'number' && typeof r.longitude === 'number'
+          r => r.latitude !== 0 && r.longitude !== 0
         );
-  
+      
         const combined = [...prev, ...validRestaurants];
         
         // Remove duplicates based on ID
@@ -431,21 +398,22 @@ function RestaurantsPage() {
   ) : restaurants.length > 0 ? (
     restaurants.map((restaurant) => (
       <Link 
-        href={`/restaurants/${restaurant.id}`} 
+        href={getRestaurantLink(restaurant)}
         key={restaurant.id}
         className="group"
+        prefetch={false}
       >
         <Card className="overflow-hidden hover:shadow-lg transition-shadow duration-300 cursor-pointer">
-        <div className="relative h-48">
-  <Image
-    {...getImageProps(restaurant.imageUrl, restaurant.restaurantName, 'card')}
-    fill
-    onError={(e) => {
-      const img = e.target as HTMLImageElement;
-      img.src = '/placeholder-restaurant.jpg';
-    }}
-    unoptimized={restaurant.imageUrl?.includes('yelp')}
-  />
+          <div className="relative h-48">
+            <Image
+              {...getImageProps(restaurant.imageUrl, restaurant.name, 'card')}
+              fill
+              onError={(e) => {
+                const img = e.target as HTMLImageElement;
+                img.src = '/placeholder-restaurant.jpg';
+              }}
+              unoptimized={restaurant.imageUrl?.includes('yelp')}
+            />
 
             {restaurant.hasYelpData && (
               <div className="absolute top-2 right-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
@@ -454,14 +422,25 @@ function RestaurantsPage() {
             )}
           </div>
           <div className="p-6">
-            <h3 className="text-xl font-semibold mb-2 line-clamp-1">
-              {restaurant.restaurantName}
+          <h3 className="text-xl font-semibold mb-2 line-clamp-1">
+              {restaurant.name}  
             </h3>
             <div className="flex items-center text-gray-600 mb-2">
-              <MapPin className="h-4 w-4 mr-2 flex-shrink-0" />
-              <span className="line-clamp-1">
-                {restaurant.county || restaurant.location}
-              </span>
+              <a 
+                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                  `${restaurant.name} ${restaurant.address}`
+                )}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                className="group"
+              >
+                <MapPin className="h-4 w-4 mr-2 flex-shrink-0 hover:text-customTeal transition-all duration-200 transform group-hover:scale-125" />
+              </a>
+              <div className="flex flex-col">
+                <span className="line-clamp-1">{restaurant.county}</span>
+                <span className="line-clamp-2 text-sm">{restaurant.address}</span>
+              </div>
             </div>
             {restaurant.rating && restaurant.rating > 0 && (
               <div className="flex items-center">

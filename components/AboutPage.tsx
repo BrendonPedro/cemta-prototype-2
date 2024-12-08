@@ -29,54 +29,46 @@ import { RestaurantCardProps } from "@/interfaces/restaurant/types";
 
 // Constants
 import { FALLBACK_IMAGE, MENU_DEMO_IMAGE } from "@/app/constants/fallbackImages";
+import { getRestaurantLink } from "@/app/utils/restaurantUtils";
+import { getRestaurantImageProps, handleImageError } from '@/app/utils/imageHandling';
+
 
 // Component: Restaurant Card
-const RestaurantCard: React.FC<RestaurantCardProps> = ({
-  restaurant,
-}) => {
-  // Get the appropriate image URL with fallback
-  const imageUrl = restaurant.imageUrl || restaurant.photoUrl || FALLBACK_IMAGE;
-
-  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement>) => {
-    console.error("Image load error:", e);
-    e.currentTarget.src = FALLBACK_IMAGE;
+  const RestaurantCard: React.FC<RestaurantCardProps> = ({ restaurant }) => {
+    return (
+      <Link 
+        href={getRestaurantLink(restaurant)}
+        prefetch={false}
+      >
+        <Card className="w-full h-full overflow-hidden rounded-3xl shadow-xl cursor-pointer transition-all duration-300 hover:shadow-2xl transform hover:-translate-y-1">
+          <div className="relative w-full h-56">
+            <Image
+              {...getRestaurantImageProps(restaurant, 'card')}
+              fill
+              onError={handleImageError}
+            />
+          </div>
+          <CardContent className="p-6">
+            <h3 className="text-2xl font-semibold mb-3 text-gray-800">
+              {restaurant.name}
+            </h3>
+            <p className="text-gray-600 mb-4">{restaurant.address}</p>
+            <div className="flex items-center text-gray-500 mb-4">
+              <MapPin className="w-4 h-4 mr-2" />
+              <span>{restaurant.county}</span>
+            </div>
+            <div className="flex items-center">
+              <span className="text-yellow-400 mr-1">★</span>
+              <span className="font-semibold">
+                {restaurant.rating.toFixed(1)}
+              </span>
+            </div>
+          </CardContent>
+        </Card>
+      </Link>
+    );
   };
-
-  return (
-    <Link href={`/restaurants/${restaurant.id}`} passHref>
-      <Card className="w-full h-full overflow-hidden rounded-3xl shadow-xl cursor-pointer transition-all duration-300 hover:shadow-2xl transform hover:-translate-y-1">
-        <div className="relative w-full h-56">
-          <Image
-            src={imageUrl}
-            alt={restaurant.name}
-            fill
-            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 33vw, 33vw"
-            className="object-cover transition-transform duration-300"
-            priority={true}
-            onError={handleImageError}
-          />
-        </div>
-        <CardContent className="p-6">
-          <h3 className="text-2xl font-semibold mb-3 text-gray-800">
-            {restaurant.name}
-          </h3>
-          <p className="text-gray-600 mb-4">{restaurant.address}</p>
-          <div className="flex items-center text-gray-500 mb-4">
-            <MapPin className="w-4 h-4 mr-2" />
-            <span>{restaurant.county}</span>
-          </div>
-          <div className="flex items-center">
-            <span className="text-yellow-400 mr-1">★</span>
-            <span className="font-semibold">
-              {restaurant.rating.toFixed(1)}
-            </span>
-          </div>
-        </CardContent>
-      </Card>
-    </Link>
-  );
-};
-
+  
 // Component: Loading Skeleton
 const RestaurantSkeleton = () => (
   <div className="w-full h-full animate-pulse">

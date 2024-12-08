@@ -28,7 +28,8 @@ export interface Location {
     rating: number;
   
     // Location Information 
-    location: Location;  
+    latitude: number;
+    longitude: number; 
     county: string;
     townName: string;
     
@@ -54,10 +55,13 @@ export interface Location {
     hasYelpData?: boolean;
     yelpId?: string | null;
     yelpRating?: number | null;
+    placeId?: string;
     
     // State Management
     contribution?: boolean;
     hasDetailsFetched?: boolean;
+    createdAt?: string;
+    lastUpdated?: string;
   }
 
 //
@@ -252,3 +256,76 @@ export interface Photo {
       longitude: number;
     };
   }
+
+  export interface YelpErrorResponse {
+    error: {
+      code: string;
+      description: string;
+    };
+  }
+  
+  export interface YelpBusinessResponse {
+    id: string;
+    name: string;
+    image_url?: string;
+    rating?: number;
+    coordinates?: {
+      latitude: number;
+      longitude: number;
+    };
+    location?: {
+      address1?: string;
+      city?: string;
+      state?: string;
+    };
+  }
+  
+  export interface YelpSearchResponse {
+    businesses: YelpBusinessResponse[];
+    total: number;
+  }
+  
+  export type YelpApiResponse = YelpSearchResponse | YelpErrorResponse;
+
+// Add this interface to match the Restaurant interface structure
+export interface CachedRestaurant {
+  // Essential Information 
+  id: string;
+  name: string;
+  address: string;
+  rating: number;
+
+  // Location Information 
+  latitude: number;
+  longitude: number;  
+  county: string;
+  townName: string;
+  
+  // Menu Information 
+  menuCount: number;
+  hasMenu?: boolean;
+  menuId?: string;
+  menuImageUrl?: string;
+  
+  // Media & Visual Content
+  imageUrl?: string;
+  photoUrl?: string;
+  photos?: string[];  // For gallery view in details
+  
+  // Contact & Business Details
+  priceLevel?: string | null; // e.g., '$' for budget, '$$$$' for luxury
+  phone?: string | null;
+  website?: string | null;
+  openingHours?: OpeningHours | null;
+  
+  // Integration Data (for admin/backend use)
+  hasGoogleData?: boolean;
+  hasYelpData?: boolean;
+  yelpId?: string | null;
+  yelpRating?: number | null;
+  placeId?: string;
+  
+  // State Management
+  contribution?: boolean;
+  hasDetailsFetched?: boolean;
+}

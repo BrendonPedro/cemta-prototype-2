@@ -1,7 +1,7 @@
 import { Star, MapPin, Clock, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { Restaurant } from "@/lib/database-builder/types";
-import { OpeningHours } from "@/lib/database-builder/types";
+import type { Restaurant } from "@/interfaces/restaurant/types";
+import { OpeningHours } from "@/interfaces/restaurant/types";
 
 // Update the OperatingHours component props type
 interface OperatingHoursProps {
@@ -11,16 +11,9 @@ interface OperatingHoursProps {
 const OperatingHours: React.FC<OperatingHoursProps> = ({ openingHours }) => {
   if (!openingHours) return null;
 
-  const today = new Date().getDay();
-  const daysMap: { [key: number]: string } = {
-    0: 'Sunday',
-    1: 'Monday',
-    2: 'Tuesday',
-    3: 'Wednesday',
-    4: 'Thursday',
-    5: 'Friday',
-    6: 'Saturday'
-  };
+  // Get current day (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
+  const now = new Date();
+  const today = now.getDay();
 
   return (
     <div className="space-y-1 bg-gray-50 rounded-lg p-3">
@@ -35,7 +28,9 @@ const OperatingHours: React.FC<OperatingHoursProps> = ({ openingHours }) => {
       {openingHours.weekdayText && (
         <div className="space-y-1">
           {openingHours.weekdayText.map((hours: string, index: number) => {
-            const isToday = index === today;
+            // Convert index to match JavaScript's getDay() (0 = Sunday, 1 = Monday, ..., 6 = Saturday)
+            const adjustedIndex = (index + 1) % 7; // Shift Monday (0) to 1, Sunday (6) to 0
+            const isToday = adjustedIndex === today;
             const [day, time] = hours.split(': ');
             
             return (
@@ -96,20 +91,22 @@ export const RestaurantDetails: React.FC<RestaurantDetailsProps> = ({
       </div>
       
       {/* Address and Google Maps Link */}
-      <div className="space-y-1">
-        <span className="text-gray-700 text-sm block">
-          {restaurant.address}
-        </span>
-        <a
-          href={`https://www.google.com/maps/search/?api=1&query=${restaurant.latitude},${restaurant.longitude}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-customTeal hover:underline flex items-center justify-center text-sm"
-        >
-          <MapPin className="mr-1 h-4 w-4" />
-          View on Google Maps
-        </a>
-      </div>
+<div className="space-y-1">
+  <span className="text-gray-700 text-sm block">
+    {restaurant.address}
+  </span>
+  <a
+    href={`https://www.google.com/maps/search/${encodeURIComponent(
+      `${restaurant.name} ${restaurant.address} ${restaurant.county} ${restaurant.townName}`
+    )}/@${restaurant.latitude},${restaurant.longitude},17z`}
+    target="_blank"
+    rel="noopener noreferrer"
+    className="text-customTeal hover:underline flex items-center justify-center text-sm"
+  >
+    <MapPin className="mr-1 h-4 w-4" />
+    View on Google Maps
+  </a>
+</div>
 
       {/* Menu Count - only show if there are menus */}
       {restaurant.menuCount > 0 && (

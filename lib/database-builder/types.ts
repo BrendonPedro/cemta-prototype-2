@@ -5,6 +5,7 @@ import {
   Timestamp,
   serverTimestamp 
 } from 'firebase/firestore';
+import type { CachedRestaurant, OpeningHours } from '@/interfaces/restaurant/types';
 
  
 export interface Geometry {
@@ -22,70 +23,6 @@ export interface CountyData {
   towns: TownData[];
 }
 
-export interface RestaurantData {
-  id: string;
-  name: string;
-  address: string;
-  location: Location;
-  rating: number;
-  priceLevel?: string | null;  
-  phone?: string | null;       
-  website?: string | null;     
-  googlePlaceId: string;
-  yelpId?: string | null;      
-  yelpRating?: number | null;  
-  photos: string[];
-  menuCount: number;
-  lastUpdated: string;
-  createdAt?: string;
-  source: {
-    google: boolean;
-    yelp: boolean;
-  };
-  townName: string;
-  hasGoogleData?: boolean;  
-  hasYelpData?: boolean;    
-  hasMenu?: boolean;        
-  imageUrl?: string;        
-}
-
-export interface OpeningHours {
-  openNow?: boolean;
-  periods?: Array<{
-    open: { day: number; time: string };
-    close: { day: number; time: string };
-  }>;
-  weekdayText?: string[];
-}
-
-
-export interface CachedRestaurant {
-  id: string;
-  name: string;
-  address: string;
-  latitude: number;
-  longitude: number;
-  rating: number;
-  menuCount: number;
-  county: string;
-  townName: string;
-  source: 'google' | 'yelp';
-  hasGoogleData: boolean;
-  hasYelpData: boolean;
-  imageUrl?: string;
-  photoUrl?: string;  // Added
-  menuImageUrl?: string;  // Added
-  menuId?: string;  // Added
-  hasMenu: boolean;
-  contribution?: boolean;  // Added
-  priceLevel?: string | null;
-  phone?: string | null;
-  website?: string | null;
-  yelpId?: string | null;
-  yelpRating?: number | null;
-  openingHours?: OpeningHours | null;
-  hasDetailsFetched?: boolean;  // Added to track fetch status
-}
 
 export interface CountyStats {
   name: string;

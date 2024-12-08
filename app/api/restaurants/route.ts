@@ -27,7 +27,7 @@ import {
   AddressComponent,
   PlacesNearbyRequest
 } from "@googlemaps/google-maps-services-js";
-import type { CachedRestaurant } from "@/app/services/firebaseFirestore";
+import type { CachedRestaurant } from "@/interfaces/restaurant/types";
 import type { DecodedIdToken } from "firebase-admin/auth";
 import geohash from 'ngeohash';
 import { CONFIG } from "@/lib/database-builder/config";
@@ -298,26 +298,24 @@ async function processPlaceDetails(
         id: place.place_id!,
         name: place.name!,
         address: place.vicinity || 'No Address Available',
-        location: {
-          lat: place.geometry!.location.lat,
-          lng: place.geometry!.location.lng,
-        },
+        latitude: place.geometry!.location.lat,
+        longitude: place.geometry!.location.lng,
         rating: place.rating || 0,
         priceLevel: details.price_level?.toString() || null,
         phone: details.formatted_phone_number || null,
         website: details.website || null,
-        googlePlaceId: place.place_id!,
+        placeId: place.place_id!,
         yelpId: yelpData?.id || null,
         yelpRating: yelpData?.rating || null,
         photos: imageUrl !== '/placeholder-restaurant.jpg' ? [imageUrl] : [],
         menuCount: 0,
         lastUpdated: new Date().toISOString(),
         createdAt: new Date().toISOString(),
-        source: {
-          google: hasGoogleImage,
-          yelp: !hasGoogleImage && imageUrl !== '/placeholder-restaurant.jpg'
-        },
-        townName
+        hasGoogleData: hasGoogleImage,
+        hasYelpData: !hasGoogleImage && imageUrl !== '/placeholder-restaurant.jpg',
+        county,
+        townName,
+        imageUrl
       },
       county,
       townName,

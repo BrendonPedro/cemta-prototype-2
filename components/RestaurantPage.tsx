@@ -37,7 +37,7 @@ import {
   type YelpBusiness,
   type Location
 } from "@/interfaces/restaurant/types";
-import { getImageProps } from "@/app/utils/imageHandling";
+import { getImageProps, handleImageError } from "@/app/utils/imageHandling";
 
 // ======= Helper Functions (outside all components) =======
 const formatDay = (day: number): string => {
@@ -243,6 +243,7 @@ const RestaurantContent: React.FC<RestaurantContentProps> = ({
                     'carousel'
                   )}
                   fill
+                  onError={handleImageError}
                   className="rounded-lg object-cover"
                   unoptimized={photo.url?.includes('yelp')}
                 />
