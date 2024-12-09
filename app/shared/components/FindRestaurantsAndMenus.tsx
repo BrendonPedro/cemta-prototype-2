@@ -319,6 +319,7 @@ const [center, setCenter] = useState<LatLngLiteral>({
   const [selectedMarker, setSelectedMarker] = useState<string | null>(null);
   const [isCacheLoading, setIsCacheLoading] = useState(false);
   const [isApiLoading, setIsApiLoading] = useState(false);
+  const [userLocation, setUserLocation] = useState<LatLngLiteral | null>(null);
    
 
    // Location permission check
@@ -342,16 +343,92 @@ const [center, setCenter] = useState<LatLngLiteral>({
     checkLocationPermission();
   }, []);
 
+  const geolocationOptions: PositionOptions = {
+    enableHighAccuracy: true, // Request high accuracy
+    timeout: 10000,          // 10 second timeout
+    maximumAge: 0           // Don't use cached position
+  };
+
   // Handle location toggle
   const handleLocationToggle = async (enabled: boolean) => {
     setLocationEnabled(enabled);
     if (enabled) {
-      await handleRefreshLocation(true);
+      try {
+        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(
+            resolve,
+            reject,
+            geolocationOptions
+          );
+        });
+        
+        const newUserLocation = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude
+        };
+        
+        console.log('New user location:', newUserLocation); // For debugging
+        
+        setUserLocation(newUserLocation);
+        setCenter(newUserLocation);
+        setPinLocation(newUserLocation);
+        await fetchNearbyRestaurants(newUserLocation.lat, newUserLocation.lng);
+        
+        // Start watching position for updates
+        const watchId = navigator.geolocation.watchPosition(
+          (newPosition) => {
+            const updatedLocation = {
+              lat: newPosition.coords.latitude,
+              lng: newPosition.coords.longitude
+            };
+            
+            // Only update if position has changed significantly (more than 10 meters)
+            if (calculateDistance(
+              updatedLocation.lat,
+              updatedLocation.lng,
+              newUserLocation.lat,
+              newUserLocation.lng
+            ) > 10) {
+              setUserLocation(updatedLocation);
+              // Optionally update center and fetch new restaurants
+              // setCenter(updatedLocation);
+              // fetchNearbyRestaurants(updatedLocation.lat, updatedLocation.lng);
+            }
+          },
+          (error) => console.error('Watch position error:', error),
+          geolocationOptions
+        );
+        
+        // Store the watch ID to clear it later
+        return () => navigator.geolocation.clearWatch(watchId);
+        
+      } catch (error) {
+        console.error('Error getting location:', error);
+        const errorMessage = error instanceof GeolocationPositionError 
+          ? getLocationErrorMessage(error.code)
+          : 'Failed to get user location';
+        setLocationError(errorMessage);
+        setLocationEnabled(false);
+      }
     } else {
-      // Reset to Taiwan center
+      setUserLocation(null);
       setCenter(DEFAULT_CENTER);
       setPinLocation(DEFAULT_CENTER);
       await fetchNearbyRestaurants(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng);
+    }
+  };
+  
+  // Helper function to get meaningful error messages
+  const getLocationErrorMessage = (code: number): string => {
+    switch (code) {
+      case GeolocationPositionError.PERMISSION_DENIED:
+        return 'Location permission denied. Please enable location services in your browser settings.';
+      case GeolocationPositionError.POSITION_UNAVAILABLE:
+        return 'Unable to determine your location. Please try again.';
+      case GeolocationPositionError.TIMEOUT:
+        return 'Location request timed out. Please check your connection and try again.';
+      default:
+        return 'An unknown error occurred while getting your location.';
     }
   };
 
@@ -475,21 +552,28 @@ const [center, setCenter] = useState<LatLngLiteral>({
       navigator.geolocation.getCurrentPosition(
         (position) => {
           const { latitude, longitude } = position.coords;
-          setCenter({ lat: latitude, lng: longitude });
-          setPinLocation({ lat: latitude, lng: longitude });
+          const newLocation = { lat: latitude, lng: longitude };
+          
+          setUserLocation(newLocation);
+          setCenter(newLocation);
+          setPinLocation(newLocation);
           fetchNearbyRestaurants(latitude, longitude);
           setIsInitialized(true);
         },
         (error) => {
           console.error('Geolocation error:', error);
+          setLocationError(getLocationErrorMessage(error.code));
+          
           // Use default location only if not initialized
           if (!isInitialized) {
-            setCenter({ lat: 24.687604, lng: 120.871407 });
-            setPinLocation({ lat: 24.687604, lng: 120.871407 });
-            fetchNearbyRestaurants(24.687604, 120.871407);
+            const defaultLocation = { lat: 24.687604, lng: 120.871407 };
+            setCenter(defaultLocation);
+            setPinLocation(defaultLocation);
+            fetchNearbyRestaurants(defaultLocation.lat, defaultLocation.lng);
             setIsInitialized(true);
           }
-        }
+        },
+        geolocationOptions
       );
     }
   }, [fetchNearbyRestaurants, isInitialized]);
@@ -498,57 +582,38 @@ const [center, setCenter] = useState<LatLngLiteral>({
     setIsRefreshing(true);
     setError(null);
   
-    // If location is disabled and not showing prompt, use default immediately
-    if (!locationEnabled && !showPrompt) {
-      setCenter(DEFAULT_CENTER);
-      setPinLocation(DEFAULT_CENTER);
-      await fetchNearbyRestaurants(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng);
-      setIsRefreshing(false);
-      return;
-    }
-  
     try {
       const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-        const timeoutId = setTimeout(() => {
-          reject(new Error('Location request timed out. Using default location.'));
-        }, 10000); // 10 second timeout
-  
         navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            clearTimeout(timeoutId);
-            resolve(pos);
-          },
-          (error) => {
-            clearTimeout(timeoutId);
-            if (error.code === error.PERMISSION_DENIED) {
-              reject(new Error('Location permission denied. Please enable location services.'));
-            } else {
-              reject(new Error('Unable to get location. Using default location.'));
-            }
-          },
-          {
-            enableHighAccuracy: true,
-            timeout: 5000,
-            maximumAge: 0
-          }
+          resolve,
+          reject,
+          geolocationOptions
         );
       });
-  
-      const { latitude, longitude } = position.coords;
-      const newCenter = { lat: latitude, lng: longitude };
-      setCenter(newCenter);
-      setPinLocation(newCenter);
+      
+      const newLocation = {
+        lat: position.coords.latitude,
+        lng: position.coords.longitude
+      };
+      
+      setUserLocation(newLocation);
+      setCenter(newLocation);
+      setPinLocation(newLocation);
       setFocusedRestaurant(null);
-      await fetchNearbyRestaurants(latitude, longitude);
+      await fetchNearbyRestaurants(newLocation.lat, newLocation.lng);
       setLocationError(null);
-  
+      
     } catch (error) {
       console.error('Location error:', error);
-      setLocationError(error instanceof Error ? error.message : 'Unknown location error');
+      const errorMessage = error instanceof GeolocationPositionError 
+        ? getLocationErrorMessage(error.code)
+        : 'Unknown location error';
+      setLocationError(errorMessage);
       
       // Add a small delay before falling back to default location
       await new Promise(resolve => setTimeout(resolve, 2000));
       
+      setUserLocation(null);
       setCenter(DEFAULT_CENTER);
       setPinLocation(DEFAULT_CENTER);
       await fetchNearbyRestaurants(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng);
@@ -556,7 +621,7 @@ const [center, setCenter] = useState<LatLngLiteral>({
       setIsRefreshing(false);
     }
   };
-
+      
  // Update handleMapClick to use debounce
  const handleMapClick = useCallback(
   debounce((event: google.maps.MapMouseEvent) => {
@@ -566,6 +631,7 @@ const [center, setCenter] = useState<LatLngLiteral>({
     const newLat = latLng.lat();
     const newLng = latLng.lng();
     
+    // Keep the center and pin location updates
     setCenter({ lat: newLat, lng: newLng });
     setPinLocation({ lat: newLat, lng: newLng });
     
@@ -574,8 +640,15 @@ const [center, setCenter] = useState<LatLngLiteral>({
     setFocusedRestaurant(null);
     setSelectedMarker(null);
   }, 300),
-  [fetchNearbyRestaurants, setCenter, setPinLocation, setFocusedRestaurant, setSelectedMarker]
+  [fetchNearbyRestaurants]
 );
+
+// Helper function to compare coordinates
+const isSameLocation = (loc1: LatLngLiteral | null, loc2: LatLngLiteral | null): boolean => {
+  if (!loc1 || !loc2) return false;
+  return Math.abs(loc1.lat - loc2.lat) < 0.000001 && 
+         Math.abs(loc1.lng - loc2.lng) < 0.000001;
+};
 
 // Add a new handler for marker clicks
 const handleMarkerClick = useCallback(async (
@@ -1213,7 +1286,7 @@ const handleMarkerClick = useCallback(async (
           <CardContent>
             {isLoaded ? (
               <>
-              <GoogleMap
+             <GoogleMap
   mapContainerStyle={mapContainerStyle}
   center={center}
   zoom={14}
@@ -1224,18 +1297,18 @@ const handleMarkerClick = useCallback(async (
   <MarkerClusterer averageCenter enableRetinaIcons>
     {(clusterer) => (
       <>
-        {/* User's location marker (only show when location is enabled) */}
-        {locationEnabled && pinLocation && (
+        {/* User's location marker (green) - Always show when enabled */}
+        {locationEnabled && userLocation && (
           <AdvancedMarker
-            position={center}
+            position={userLocation}
             title="Your Current Location"
             isUserLocation={true}
             map={mapRef.current}
           />
         )}
 
-        {/* Selected location marker (show when clicking on map) */}
-        {pinLocation && (
+        {/* Selected location marker (blue) - Show only if different from user location */}
+        {pinLocation && !isSameLocation(pinLocation, userLocation) && (
           <AdvancedMarker
             position={pinLocation}
             title="Selected Search Location"
