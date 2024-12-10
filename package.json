@@ -93,7 +93,8 @@
     "unsplash-js": "^7.0.19",
     "util": "^0.12.5",
     "zod": "^3.23.8",
-    "zustand": "^5.0.1"
+    "zustand": "^5.0.1",
+    "punycode": "^2.3.1"
   },
   "devDependencies": {
     "@babel/plugin-transform-class-properties": "^7.25.4",
@@ -126,5 +127,8 @@
     "tsconfig-paths": "^4.2.0",
     "tsx": "^4.19.2",
     "typescript": "^5"
+  },
+  "overrides": {
+    "punycode": "^2.3.1"
   }
 }

@@ -1,4 +1,3 @@
-// app/utils/imageHandling.ts
 
 // app/utils/imageHandling.ts
 import { ImageType, ImageHandlingProps } from "@/interfaces/images/types";

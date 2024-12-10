@@ -1,7 +1,8 @@
+// components/UserPreferences.tsx
+
 "use client";
 
 import { useState, useEffect } from "react";
-import { UserPreferences } from "@/interfaces/users/user-preferences";
 import { Button } from "@/components/ui/button";
 import { useForm } from "react-hook-form";
 import {
@@ -11,10 +12,79 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
+  FormDescription,
 } from "@/components/ui/form";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/components/ui/toast";
 import { useAuth } from "@/components/AuthProvider";
+import { Badge } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { UserPreferences } from "@/interfaces/users/user-preferences";
+
+const ALLERGENS = [
+  { id: "peanuts", label: "Peanuts" },
+  { id: "tree_nuts", label: "Tree Nuts" },
+  { id: "dairy", label: "Dairy" },
+  { id: "eggs", label: "Eggs" },
+  { id: "soy", label: "Soy" },
+  { id: "wheat", label: "Wheat" },
+  { id: "fish", label: "Fish" },
+  { id: "shellfish", label: "Shellfish" },
+  { id: "sesame", label: "Sesame" }
+] as const;
+
+const DIETARY_RESTRICTIONS = [
+  { id: "halal", label: "Halal" },
+  { id: "kosher", label: "Kosher" },
+  { id: "gluten_free", label: "Gluten-Free" },
+  { id: "lactose_free", label: "Lactose-Free" },
+  { id: "low_carb", label: "Low Carb" },
+  { id: "keto", label: "Keto" },
+  { id: "paleo", label: "Paleo" }
+] as const;
+
+const CUISINES = [
+  "Italian",
+  "Japanese",
+  "Chinese",
+  "Mexican",
+  "Indian",
+  "Thai",
+  "Mediterranean",
+  "French",
+  "Korean",
+  "American",
+  "Greek",
+  "Spanish",
+  "Caribbean",
+  "African",
+  "Indonesian",
+  "Vietnamese",
+  "Russian",
+] as const;
+
+const SPICE_LEVELS = [
+  { id: "none" as const, label: "No Spice" },
+  { id: "mild" as const, label: "Mild" },
+  { id: "medium" as const, label: "Medium" },
+  { id: "hot" as const, label: "Hot" },
+  { id: "extra_hot" as const, label: "Extra Hot" }
+];
+
+const DEFAULT_PREFERENCES: UserPreferences = {
+  allergens: [],
+  dietary_restrictions: [],
+  spice_level: "medium",
+  vegetarian: false,
+  vegan: false,
+  favorite_cuisines: [],
+  no_onions: false,
+  no_garlic: false,
+  low_sodium: false,
+  preferred_protein: "any",
+  meal_size_preference: "regular"
+};
 
 export default function PreferencesForm() {
   const { toast } = useToast();
@@ -23,14 +93,7 @@ export default function PreferencesForm() {
   const [isLoading, setIsLoading] = useState(true);
   
   const form = useForm<UserPreferences>({
-    defaultValues: {
-      allergens: [],
-      dietary_restrictions: [],
-      likes_spicy: false,
-      vegetarian: false,
-      vegan: false,
-      favorite_cuisines: []
-    }
+    defaultValues: DEFAULT_PREFERENCES
   });
 
   useEffect(() => {
@@ -41,28 +104,10 @@ export default function PreferencesForm() {
       }
       
       try {
-        const response = await fetch('/api/preferences', {
-          method: 'GET',
-          headers: {
-            'Cache-Control': 'no-cache'
-          }
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to load preferences');
-        }
-
+        const response = await fetch('/api/preferences');
+        if (!response.ok) throw new Error('Failed to load preferences');
         const preferences = await response.json();
-        console.log('Loaded preferences:', preferences);
-        
-        form.reset({
-          allergens: preferences.allergens || [],
-          dietary_restrictions: preferences.dietary_restrictions || [],
-          likes_spicy: Boolean(preferences.likes_spicy),
-          vegetarian: Boolean(preferences.vegetarian),
-          vegan: Boolean(preferences.vegan),
-          favorite_cuisines: preferences.favorite_cuisines || []
-        });
+        form.reset(preferences);
       } catch (error) {
         console.error('Error loading preferences:', error);
         toast({
@@ -84,32 +129,16 @@ export default function PreferencesForm() {
     try {
       const response = await fetch('/api/preferences', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          preferences: {
-            ...data,
-            likes_spicy: Boolean(data.likes_spicy),
-            vegetarian: Boolean(data.vegetarian),
-            vegan: Boolean(data.vegan)
-          },
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferences: data }),
       });
 
-      if (!response.ok) {
-        throw new Error('Failed to save preferences');
-      }
+      if (!response.ok) throw new Error('Failed to save preferences');
 
       toast({
         title: "Preferences saved successfully",
+        variant: "default",
       });
-
-      const updatedResponse = await fetch('/api/preferences');
-      if (updatedResponse.ok) {
-        const updatedPreferences = await updatedResponse.json();
-        form.reset(updatedPreferences);
-      }
     } catch (error) {
       console.error('Error saving preferences:', error);
       toast({
@@ -131,68 +160,177 @@ export default function PreferencesForm() {
 
   return (
     <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-        <div className="space-y-4">
-          <FormField
-            control={form.control}
-            name="likes_spicy"
-            render={({ field }) => (
-              <FormItem className="flex flex-row items-start space-x-3 space-y-0 p-4 hover:bg-gray-50 rounded-lg transition-colors">
-                <FormControl>
-                  <Checkbox
-                    checked={field.value}
-                    onCheckedChange={field.onChange}
-                  />
-                </FormControl>
-                <FormLabel className="font-normal cursor-pointer flex-1">
-                  Likes Spicy Food
-                </FormLabel>
-              </FormItem>
-            )}
-          />
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
+        <Tabs defaultValue="allergies" className="w-full">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="allergies">Allergies</TabsTrigger>
+            <TabsTrigger value="dietary">Dietary</TabsTrigger>
+            <TabsTrigger value="preferences">Preferences</TabsTrigger>
+            <TabsTrigger value="cuisines">Cuisines</TabsTrigger>
+          </TabsList>
 
-          <FormField
-            control={form.control}
-            name="vegetarian"
-            render={({ field }) => (
-              <FormItem className="flex flex-row items-start space-x-3 space-y-0 p-4 hover:bg-gray-50 rounded-lg transition-colors">
-                <FormControl>
-                  <Checkbox
-                    checked={field.value}
-                    onCheckedChange={field.onChange}
+          <TabsContent value="allergies" className="mt-4">
+            <Card className="p-6">
+              <h3 className="text-lg font-semibold mb-4">Allergies & Intolerances</h3>
+              <div className="grid grid-cols-2 gap-4">
+                {ALLERGENS.map((allergen) => (
+                  <FormField
+                    key={allergen.id}
+                    control={form.control}
+                    name="allergens"
+                    render={({ field }) => (
+                      <FormItem className="flex items-center space-x-2">
+                        <FormControl>
+                          <Checkbox
+                            checked={field.value?.includes(allergen.id)}
+                            onCheckedChange={(checked) => {
+                              const newValue = checked
+                                ? [...(field.value || []), allergen.id]
+                                : (field.value || []).filter((value) => value !== allergen.id);
+                              field.onChange(newValue);
+                            }}
+                          />
+                        </FormControl>
+                        <FormLabel className="font-normal">{allergen.label}</FormLabel>
+                      </FormItem>
+                    )}
                   />
-                </FormControl>
-                <FormLabel className="font-normal cursor-pointer flex-1">
-                  Vegetarian
-                </FormLabel>
-              </FormItem>
-            )}
-          />
+                ))}
+              </div>
+            </Card>
+          </TabsContent>
 
-          <FormField
-            control={form.control}
-            name="vegan"
-            render={({ field }) => (
-              <FormItem className="flex flex-row items-start space-x-3 space-y-0 p-4 hover:bg-gray-50 rounded-lg transition-colors">
-                <FormControl>
-                  <Checkbox
-                    checked={field.value}
-                    onCheckedChange={field.onChange}
+          <TabsContent value="dietary" className="mt-4">
+            <Card className="p-6">
+              <h3 className="text-lg font-semibold mb-4">Dietary Restrictions</h3>
+              <div className="grid grid-cols-2 gap-4">
+                {DIETARY_RESTRICTIONS.map((restriction) => (
+                  <FormField
+                    key={restriction.id}
+                    control={form.control}
+                    name="dietary_restrictions"
+                    render={({ field }) => (
+                      <FormItem className="flex items-center space-x-2">
+                        <FormControl>
+                          <Checkbox
+                            checked={field.value?.includes(restriction.id)}
+                            onCheckedChange={(checked) => {
+                              const newValue = checked
+                                ? [...(field.value || []), restriction.id]
+                                : (field.value || []).filter((value) => value !== restriction.id);
+                              field.onChange(newValue);
+                            }}
+                          />
+                        </FormControl>
+                        <FormLabel className="font-normal">{restriction.label}</FormLabel>
+                      </FormItem>
+                    )}
                   />
-                </FormControl>
-                <FormLabel className="font-normal cursor-pointer flex-1">
-                  Vegan
-                </FormLabel>
-              </FormItem>
-            )}
-          />
-        </div>
+                ))}
+              </div>
+            </Card>
+          </TabsContent>
 
-        <FormMessage />
-        
+          <TabsContent value="preferences" className="mt-4">
+            <Card className="p-6">
+              <h3 className="text-lg font-semibold mb-4">Food Preferences</h3>
+              <div className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="spice_level"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Spice Level Preference</FormLabel>
+                      <div className="flex gap-4 mt-2">
+                        {SPICE_LEVELS.map((level) => (
+                          <FormControl key={level.id}>
+                            <div
+                              className={`cursor-pointer p-2 rounded-lg border ${
+                                field.value === level.id
+                                  ? 'bg-primary text-primary-foreground'
+                                  : 'bg-background'
+                              }`}
+                              onClick={() => field.onChange(level.id)}
+                            >
+                              {level.label}
+                            </div>
+                          </FormControl>
+                        ))}
+                      </div>
+                    </FormItem>
+                  )}
+                />
+
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField
+                    control={form.control}
+                    name="vegetarian"
+                    render={({ field }) => (
+                      <FormItem className="flex items-center space-x-2">
+                        <FormControl>
+                          <Checkbox
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                        <FormLabel className="font-normal">Vegetarian</FormLabel>
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="vegan"
+                    render={({ field }) => (
+                      <FormItem className="flex items-center space-x-2">
+                        <FormControl>
+                          <Checkbox
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                        <FormLabel className="font-normal">Vegan</FormLabel>
+                      </FormItem>
+                    )}
+                  />
+                </div>
+              </div>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="cuisines" className="mt-4">
+            <Card className="p-6">
+              <h3 className="text-lg font-semibold mb-4">Favorite Cuisines</h3>
+              <div className="flex flex-wrap gap-2">
+                {CUISINES.map((cuisine) => (
+                  <FormField
+                    key={cuisine}
+                    control={form.control}
+                    name="favorite_cuisines"
+                    render={({ field }) => (
+                      <Badge
+                        variant={field.value?.includes(cuisine) ? "default" : "outline"}
+                        className="cursor-pointer"
+                        onClick={() => {
+                          const newValue = field.value?.includes(cuisine)
+                            ? (field.value || []).filter((value) => value !== cuisine)
+                            : [...(field.value || []), cuisine];
+                          field.onChange(newValue);
+                        }}
+                      >
+                        {cuisine}
+                      </Badge>
+                    )}
+                  />
+                ))}
+              </div>
+            </Card>
+          </TabsContent>
+        </Tabs>
+
         <Button 
-          variant="ghostOutline" 
-          className="w-full py-6 text-lg font-semibold rounded-xl hover:shadow-lg transition-all duration-200"
+          type="submit"
+          className="w-full py-6 text-lg font-semibold rounded-xl"
           disabled={isSaving}
         >
           {isSaving ? "Saving..." : "Save Preferences"}
@@ -201,4 +339,3 @@ export default function PreferencesForm() {
     </Form>
   );
 }
-

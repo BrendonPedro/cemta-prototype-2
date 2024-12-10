@@ -1,10 +1,14 @@
+// components/PreferencesWrapper.tsx
+
 "use client";
 
 import { useAuth } from "@/components/AuthProvider";
 import PreferencesForm from "@/components/UserPreferences";
+import { useRouter } from 'next/navigation';
 
 export default function PreferencesWrapper() {
-  const {loading } = useAuth();
+  const { loading, userId } = useAuth();
+  const router = useRouter();
 
   if (loading) {
     return (
@@ -14,5 +18,10 @@ export default function PreferencesWrapper() {
     );
   }
 
-  return <PreferencesForm/>;
+  if (!userId) {
+    router.push('/login');
+    return null;
+  }
+
+  return <PreferencesForm />;
 }

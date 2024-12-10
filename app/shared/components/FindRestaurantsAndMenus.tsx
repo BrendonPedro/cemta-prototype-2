@@ -34,6 +34,7 @@ import { counties, EnhancedCountyData } from "@/lib/data/counties";
 import { clientConfig } from '@/config/googleMapsConfig';
 import { getImageProps } from '@/app/utils/imageHandling';
 import { debounce } from "lodash";
+import { useGeolocation } from '@/hooks/use-geolocation';
 
 
 import {
@@ -268,6 +269,14 @@ const LoadingState = () => (
   </div>
 );
 
+const geolocationOptions: PositionOptions = {
+  enableHighAccuracy: true,
+  timeout: 10000,
+  maximumAge: 0
+};
+
+
+
 // Update the getGoogleMapsUrl function
 const getGoogleMapsUrl = (restaurant: Restaurant) => {
   // Create a search query with restaurant name and location
@@ -280,6 +289,11 @@ const getGoogleMapsUrl = (restaurant: Restaurant) => {
 };
 
 export default function FindRestaurantsAndMenus() {
+  const { position, error: geoError, isLoading: geoLoading } = useGeolocation({
+    enableHighAccuracy: true,
+    timeout: 10000,
+    maximumAge: 0
+  });
   const mapRef = useRef<google.maps.Map | null>(null);
   const { userId } = useClerkAuth();
   const { firebaseToken, loading: authLoading, error: authError } = useAuth();
@@ -320,117 +334,7 @@ const [center, setCenter] = useState<LatLngLiteral>({
   const [isCacheLoading, setIsCacheLoading] = useState(false);
   const [isApiLoading, setIsApiLoading] = useState(false);
   const [userLocation, setUserLocation] = useState<LatLngLiteral | null>(null);
-   
-
-   // Location permission check
-   useEffect(() => {
-    const checkLocationPermission = async () => {
-      try {
-        const permission = await navigator.permissions.query({ name: 'geolocation' });
-        setPermissionStatus(permission.state);
-        setLocationEnabled(permission.state === 'granted');
-        
-        permission.addEventListener('change', () => {
-          setPermissionStatus(permission.state);
-          setLocationEnabled(permission.state === 'granted');
-        });
-      } catch (error) {
-        console.error('Error checking location permission:', error);
-        setLocationEnabled(false);
-      }
-    };
-
-    checkLocationPermission();
-  }, []);
-
-  const geolocationOptions: PositionOptions = {
-    enableHighAccuracy: true, // Request high accuracy
-    timeout: 10000,          // 10 second timeout
-    maximumAge: 0           // Don't use cached position
-  };
-
-  // Handle location toggle
-  const handleLocationToggle = async (enabled: boolean) => {
-    setLocationEnabled(enabled);
-    if (enabled) {
-      try {
-        const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(
-            resolve,
-            reject,
-            geolocationOptions
-          );
-        });
-        
-        const newUserLocation = {
-          lat: position.coords.latitude,
-          lng: position.coords.longitude
-        };
-        
-        console.log('New user location:', newUserLocation); // For debugging
-        
-        setUserLocation(newUserLocation);
-        setCenter(newUserLocation);
-        setPinLocation(newUserLocation);
-        await fetchNearbyRestaurants(newUserLocation.lat, newUserLocation.lng);
-        
-        // Start watching position for updates
-        const watchId = navigator.geolocation.watchPosition(
-          (newPosition) => {
-            const updatedLocation = {
-              lat: newPosition.coords.latitude,
-              lng: newPosition.coords.longitude
-            };
-            
-            // Only update if position has changed significantly (more than 10 meters)
-            if (calculateDistance(
-              updatedLocation.lat,
-              updatedLocation.lng,
-              newUserLocation.lat,
-              newUserLocation.lng
-            ) > 10) {
-              setUserLocation(updatedLocation);
-              // Optionally update center and fetch new restaurants
-              // setCenter(updatedLocation);
-              // fetchNearbyRestaurants(updatedLocation.lat, updatedLocation.lng);
-            }
-          },
-          (error) => console.error('Watch position error:', error),
-          geolocationOptions
-        );
-        
-        // Store the watch ID to clear it later
-        return () => navigator.geolocation.clearWatch(watchId);
-        
-      } catch (error) {
-        console.error('Error getting location:', error);
-        const errorMessage = error instanceof GeolocationPositionError 
-          ? getLocationErrorMessage(error.code)
-          : 'Failed to get user location';
-        setLocationError(errorMessage);
-        setLocationEnabled(false);
-      }
-    } else {
-      setUserLocation(null);
-      setCenter(DEFAULT_CENTER);
-      setPinLocation(DEFAULT_CENTER);
-      await fetchNearbyRestaurants(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng);
-    }
-  };
-  
-  // Helper function to get meaningful error messages
-  const getLocationErrorMessage = (code: number): string => {
-    switch (code) {
-      case GeolocationPositionError.PERMISSION_DENIED:
-        return 'Location permission denied. Please enable location services in your browser settings.';
-      case GeolocationPositionError.POSITION_UNAVAILABLE:
-        return 'Unable to determine your location. Please try again.';
-      case GeolocationPositionError.TIMEOUT:
-        return 'Location request timed out. Please check your connection and try again.';
-      default:
-        return 'An unknown error occurred while getting your location.';
-    }
-  };
+  const [useUserLocation, setUseUserLocation] = useState(false);
 
   // Move handleFilter declaration before it's used
   const handleFilter = useCallback(() => {
@@ -453,8 +357,9 @@ const [center, setCenter] = useState<LatLngLiteral>({
     setFilteredRestaurants(filtered.slice(currentPage * 10, (currentPage + 1) * 10));
   }, [restaurants, nameFilter, ratingFilter, menuCountFilter, currentPage]);
 
-  // Modified fetchNearbyRestaurants function
-  const fetchNearbyRestaurants = useCallback(
+ 
+   // Modified fetchNearbyRestaurants function
+   const fetchNearbyRestaurants = useCallback(
     async (lat: number, lng: number) => {
       if (!userId || !firebaseToken) {
         console.log('Missing userId or firebaseToken');
@@ -523,7 +428,97 @@ const [center, setCenter] = useState<LatLngLiteral>({
     },
     [userId, firebaseToken, handleFilter]
   );
+   
+   
+  
+   // Location permission check
+   useEffect(() => {
+    if (position && useUserLocation && !isInitialized) {
+      const handleLocationUpdate = async () => {
+        try {
+          const { latitude, longitude } = position.coords;
+          
+          // Get detailed location information
+          const response = await fetch(
+            `/api/maps/geocode?lat=${latitude}&lng=${longitude}`
+          );
+          
+          if (!response.ok) {
+            throw new Error('Failed to get location details');
+          }
+          
+          const locationInfo = await response.json();
+          const newLocation = { lat: latitude, lng: longitude };
+          
+          setUserLocation(newLocation);
+          setCenter(newLocation);
+          setPinLocation(newLocation);
+          await fetchNearbyRestaurants(latitude, longitude);
+          setIsInitialized(true);
+          setLocationError(null);
+        } catch (error) {
+          console.error('Error processing location:', error);
+          handleDefaultLocation();
+        }
+      };
 
+      handleLocationUpdate();
+    }
+  }, [position, useUserLocation, isInitialized, fetchNearbyRestaurants]);
+
+  
+
+  // Handle location toggle
+  const handleLocationToggle = async (enabled: boolean) => {
+    setUseUserLocation(enabled);
+    setLocationEnabled(enabled);
+    
+    if (enabled && position) {
+      const newLocation = {
+        lat: position.coords.latitude,
+        lng: position.coords.longitude
+      };
+      
+      setUserLocation(newLocation);
+      setCenter(newLocation);
+      setPinLocation(newLocation);
+      await fetchNearbyRestaurants(newLocation.lat, newLocation.lng);
+    } else {
+      setUserLocation(null);
+      setCenter(DEFAULT_CENTER);
+      setPinLocation(DEFAULT_CENTER);
+      await fetchNearbyRestaurants(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng);
+    }
+  };
+  
+  
+  
+  // Helper function to get meaningful error messages
+  const getLocationErrorMessage = (code: number): string => {
+    switch (code) {
+      case GeolocationPositionError.PERMISSION_DENIED:
+        return 'Location permission denied. Please enable location services in your browser settings.';
+      case GeolocationPositionError.POSITION_UNAVAILABLE:
+        return 'Unable to determine your location. Please try again.';
+      case GeolocationPositionError.TIMEOUT:
+        return 'Location request timed out. Please check your connection and try again.';
+      default:
+        return 'An unknown error occurred while getting your location.';
+    }
+  };
+
+  // Handle default location
+  const handleDefaultLocation = () => {
+    if (!isInitialized) {
+      const defaultLocation = DEFAULT_CENTER;
+      setCenter(defaultLocation);
+      setPinLocation(defaultLocation);
+      fetchNearbyRestaurants(defaultLocation.lat, defaultLocation.lng);
+      setIsInitialized(true);
+    }
+  };
+
+  
   // Add handleMapLoad function
   const handleMapLoad = useCallback((map: google.maps.Map) => {
     mapRef.current = map;
@@ -548,49 +543,30 @@ const [center, setCenter] = useState<LatLngLiteral>({
   );
 
   useEffect(() => {
-    if (!isInitialized && navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const { latitude, longitude } = position.coords;
-          const newLocation = { lat: latitude, lng: longitude };
-          
-          setUserLocation(newLocation);
-          setCenter(newLocation);
-          setPinLocation(newLocation);
-          fetchNearbyRestaurants(latitude, longitude);
-          setIsInitialized(true);
-        },
-        (error) => {
-          console.error('Geolocation error:', error);
-          setLocationError(getLocationErrorMessage(error.code));
-          
-          // Use default location only if not initialized
-          if (!isInitialized) {
-            const defaultLocation = { lat: 24.687604, lng: 120.871407 };
-            setCenter(defaultLocation);
-            setPinLocation(defaultLocation);
-            fetchNearbyRestaurants(defaultLocation.lat, defaultLocation.lng);
-            setIsInitialized(true);
-          }
-        },
-        geolocationOptions
-      );
-    }
-  }, [fetchNearbyRestaurants, isInitialized]);
-
-  const handleRefreshLocation = async (showPrompt = false) => {
-    setIsRefreshing(true);
-    setError(null);
-  
-    try {
-      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(
-          resolve,
-          reject,
-          geolocationOptions
-        );
-      });
+    if (!isInitialized && position && useUserLocation) {
+      const { latitude, longitude } = position.coords;
+      const newLocation = { lat: latitude, lng: longitude };
       
+      setUserLocation(newLocation);
+      setCenter(newLocation);
+      setPinLocation(newLocation);
+      fetchNearbyRestaurants(latitude, longitude)
+        .then(() => setIsInitialized(true))
+        .catch(error => {
+          console.error('Error initializing location:', error);
+          handleDefaultLocation();
+        });
+    }
+  }, [position, useUserLocation, isInitialized, fetchNearbyRestaurants]);
+
+  const handleRefreshLocation = async () => {
+    if (!position) {
+      setLocationError('Unable to get current location');
+      return;
+    }
+  
+    setIsRefreshing(true);
+    try {
       const newLocation = {
         lat: position.coords.latitude,
         lng: position.coords.longitude
@@ -599,24 +575,10 @@ const [center, setCenter] = useState<LatLngLiteral>({
       setUserLocation(newLocation);
       setCenter(newLocation);
       setPinLocation(newLocation);
-      setFocusedRestaurant(null);
       await fetchNearbyRestaurants(newLocation.lat, newLocation.lng);
-      setLocationError(null);
-      
     } catch (error) {
-      console.error('Location error:', error);
-      const errorMessage = error instanceof GeolocationPositionError 
-        ? getLocationErrorMessage(error.code)
-        : 'Unknown location error';
-      setLocationError(errorMessage);
-      
-      // Add a small delay before falling back to default location
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      setUserLocation(null);
-      setCenter(DEFAULT_CENTER);
-      setPinLocation(DEFAULT_CENTER);
-      await fetchNearbyRestaurants(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng);
+      console.error('Error refreshing location:', error);
+      setLocationError('Failed to refresh location');
     } finally {
       setIsRefreshing(false);
     }
@@ -959,7 +921,7 @@ const handleMarkerClick = useCallback(async (
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
-                  onClick={() => handleRefreshLocation(true)}
+                  onClick={handleRefreshLocation}
                   className="bg-customTeal hover:bg-customTeal/90 text-white"
                   disabled={isRefreshing}
                 >
