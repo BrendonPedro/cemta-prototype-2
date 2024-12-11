@@ -23,6 +23,8 @@ import { saveCachedRestaurantsForLocation, getCachedRestaurantsForLocation } fro
 import { counties, getTownsByCounty } from '@/lib/data/counties';
 import { getImageUrl } from './gcpBucketStorage';
 import { EnhancedCountyData, EnhancedTownData } from '@/lib/data/counties';
+import { calculateDistance } from '@/app/utils/locationUtils';
+
 
 //-----INTERFACES-----
 
@@ -132,6 +134,14 @@ const CACHE_CONFIG = {
   }
 };
 
+const TAIWAN_BOUNDS = {
+  north: 25.3,
+  south: 21.9,
+  east: 122.0,
+  west: 120.0
+};
+
+
 // Track ongoing requests by location
 const activeRequests = new Map<string, {
   promise: Promise<any>;
@@ -139,6 +149,15 @@ const activeRequests = new Map<string, {
 }>();
 
 //-----HELPER FUNCTIONS-----
+
+function verifyTaiwanCoordinates(lat: number, lng: number): boolean {
+  return (
+    lat >= TAIWAN_BOUNDS.south &&
+    lat <= TAIWAN_BOUNDS.north &&
+    lng >= TAIWAN_BOUNDS.west &&
+    lng <= TAIWAN_BOUNDS.east
+  );
+}
 
 function getCacheKey(lat: number, lng: number): string {
   const roundedLat = Number(lat.toFixed(CACHE_CONFIG.MEMORY.PRECISION));
@@ -304,36 +323,73 @@ export async function determineLocationDetails(lat: number, lng: number): Promis
       throw new Error('Invalid coordinates provided');
     }
 
-    const userLocation: Coordinates = { lat, lng };
+    if (!verifyTaiwanCoordinates(lat, lng)) {
+      console.warn('Coordinates outside Taiwan bounds:', { lat, lng });
+      return DEFAULT_LOCATION;
+    }
+
+    const userLocation = { lat, lng };
     let nearestLocation: NearestLocation = {
       town: null,
       county: null,
       distance: Infinity
     };
 
-    // Find the nearest town and its county
+    let exactMatch = false;
+
+    // First pass: look for exact matches within 500m
     for (const county of counties) {
       for (const town of county.towns) {
-        const distance = calculateHaversineDistance(
-          userLocation,
-          town.location
+        const distance = calculateDistance(
+          lat, 
+          lng, 
+          town.location.lat, 
+          town.location.lng
         );
 
+        // Immediate return if we find a very close match
+        if (distance < 500) {
+          console.log('Exact location match found:', {
+            town: town.name,
+            county: county.name,
+            distance: Math.round(distance),
+            coordinates: { lat, lng }
+          });
+          
+          return {
+            county: county.name,
+            townName: town.name
+          };
+        }
+
+        // Keep track of nearest location as fallback
         if (distance < nearestLocation.distance) {
           nearestLocation = {
-            town: town,
-            county: county,
+            town,
+            county,
             distance
           };
         }
       }
     }
 
-    // Validate results
-    if (!nearestLocation.county || !nearestLocation.town) {
-      console.warn('No nearby locations found for coordinates:', { lat, lng });
+    // Validate nearest location found
+    if (!nearestLocation.county || !nearestLocation.town || nearestLocation.distance > 5000) {
+      console.warn('Location determination issue:', {
+        coordinates: { lat, lng },
+        nearestDistance: nearestLocation.distance,
+        foundTown: nearestLocation.town?.name,
+        foundCounty: nearestLocation.county?.name
+      });
       return DEFAULT_LOCATION;
     }
+
+    console.log('Location determined:', {
+      county: nearestLocation.county.name,
+      town: nearestLocation.town.name,
+      distance: Math.round(nearestLocation.distance),
+      coordinates: { lat, lng }
+    });
 
     return {
       county: nearestLocation.county.name,
@@ -341,10 +397,10 @@ export async function determineLocationDetails(lat: number, lng: number): Promis
     };
 
   } catch (error) {
-    console.error('Error details:', {
-      message: error instanceof Error ? error.message : String(error),
-      location: 'determineLocationDetails',
-      params: { lat, lng }
+    console.error('Error in determineLocationDetails:', {
+      error: error instanceof Error ? error.message : String(error),
+      coordinates: { lat, lng },
+      stack: error instanceof Error ? error.stack : undefined
     });
 
     return DEFAULT_LOCATION;

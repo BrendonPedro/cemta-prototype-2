@@ -4,7 +4,7 @@
 "use client";
 
 import React from "react";
-import FindRestaurantsAndMenus from "@/app/shared/components/FindRestaurantsAndMenus";
+import { FindRestaurantsAndMenus } from "@/app/shared/components/FindRestaurantsAndMenus";
 import useClerkFirebaseAuth from "@/hooks/useClerkFirebaseAuth";
 
 export default function UserDashboardPage() {

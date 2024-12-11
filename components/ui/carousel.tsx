@@ -1,11 +1,7 @@
-// app/components/ui/carousel.tsx
-
 "use client";
 
 import * as React from "react";
-import useEmblaCarousel, {
-  type UseEmblaCarouselType,
-} from "embla-carousel-react";
+import useEmblaCarousel, { type UseEmblaCarouselType } from "embla-carousel-react";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -56,12 +52,11 @@ const Carousel = React.forwardRef<
       {
         ...opts,
         axis: orientation === "horizontal" ? "x" : "y",
-        align: "center",
+        align: "start", // Align start so items begin from the left
         containScroll: "trimSnaps",
         loop: false,
         dragFree: false,
         skipSnaps: false,
-        startIndex: 1, // Start with the second item (index 1)
       },
       plugins
     );
@@ -77,18 +72,18 @@ const Carousel = React.forwardRef<
 
     const handleKeyDown = React.useCallback(
       (event: React.KeyboardEvent<HTMLDivElement>) => {
+        if (!api) return;
         if (event.key === "ArrowLeft") {
           event.preventDefault();
-          api?.scrollPrev();
+          api.scrollPrev();
         } else if (event.key === "ArrowRight") {
           event.preventDefault();
-          api?.scrollNext();
+          api.scrollNext();
         }
       },
       [api]
     );
 
-    //API setup effect
     React.useEffect(() => {
       if (!api || !setApi) {
         return;
@@ -96,7 +91,6 @@ const Carousel = React.forwardRef<
       setApi(api);
     }, [api, setApi]);
 
-    //select effect
     React.useEffect(() => {
       if (!api) return;
       api.on("select", onSelect);
@@ -105,49 +99,6 @@ const Carousel = React.forwardRef<
         api.off("select", onSelect);
       };
     }, [api, onSelect]);
-
-    // Main carousel effect - handles all carousel UI updates
-    React.useEffect(() => {
-      if (!api) return;
-
-      const slides = api.slideNodes();
-
-      const updateSlides = () => {
-        const selectedIndex = api.selectedScrollSnap();
-        const nextIndex = selectedIndex + 1; // Scale the next slide
-
-        slides.forEach((slide, index) => {
-          // Scale up the slide that's one position ahead
-          const isNextSlide = index === nextIndex;
-
-          const scale = isNextSlide ? 1.05 : 0.9;
-          const opacity = isNextSlide ? 1 : 0.7;
-          const zIndex = isNextSlide ? 2 : 1;
-
-          // Apply transformations with smooth transition
-          slide.style.transform = `scale(${scale})`;
-          slide.style.opacity = `${opacity}`;
-          slide.style.zIndex = `${zIndex}`;
-          slide.style.transition = "all 0.3s ease-out";
-        });
-      };
-
-      // Set up event listeners for all carousel events
-      api.on("scroll", updateSlides);
-      api.on("select", updateSlides);
-      api.on("reInit", updateSlides);
-      api.on("resize", updateSlides);
-
-      // Initial update
-      updateSlides();
-
-      return () => {
-        api.off("scroll", updateSlides);
-        api.off("select", updateSlides);
-        api.off("reInit", updateSlides);
-        api.off("resize", updateSlides);
-      };
-    }, [api]);
 
     return (
       <CarouselContext.Provider
@@ -185,8 +136,8 @@ const CarouselContent = React.forwardRef<
   const { carouselRef } = useCarousel();
 
   return (
-    <div ref={carouselRef} className="overflow-hidden">
-      <div ref={ref} className={cn("flex -mx-4", className)} {...props} />
+    <div ref={carouselRef} className="overflow-hidden w-full">
+      <div ref={ref} className={cn("flex gap-4", className)} {...props} />
     </div>
   );
 });
@@ -196,15 +147,17 @@ const CarouselItem = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
 >(({ className, ...props }, ref) => {
+  // Adjust these flex values if you want a certain number of slides visible per screen size
   return (
     <div
       ref={ref}
       role="group"
       aria-roledescription="slide"
       className={cn(
-        "relative flex-shrink-0 px-4",
+        "relative flex-shrink-0",
+        // Each item takes 80% width on mobile, 60% on small screens, etc.
+        // Adjust as needed
         "flex-[0_0_80%] sm:flex-[0_0_60%] md:flex-[0_0_40%] lg:flex-[0_0_33.333%]",
-        "transition-all duration-300 ease-out",
         className
       )}
       {...props}
@@ -225,7 +178,7 @@ const CarouselPrevious = React.forwardRef<
       className={cn(
         "absolute z-10 h-12 w-12 rounded-full bg-white bg-opacity-70 hover:bg-opacity-90 shadow-md",
         "flex items-center justify-center",
-        "-left-4 sm:-left-6 top-1/2 -translate-y-1/2",
+        "left-4 top-1/2 -translate-y-1/2",
         className
       )}
       disabled={!canScrollPrev}
@@ -251,7 +204,7 @@ const CarouselNext = React.forwardRef<
       className={cn(
         "absolute z-10 h-12 w-12 rounded-full bg-white bg-opacity-70 hover:bg-opacity-90 shadow-md",
         "flex items-center justify-center",
-        "-right-4 sm:-right-6 top-1/2 -translate-y-1/2",
+        "right-4 top-1/2 -translate-y-1/2",
         className
       )}
       disabled={!canScrollNext}

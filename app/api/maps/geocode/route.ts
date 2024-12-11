@@ -1,3 +1,5 @@
+// app/api/maps/geocode/route.ts
+
 import { NextResponse } from "next/server";
 import { 
   Client, 
@@ -27,19 +29,29 @@ export async function GET(request: Request) {
   try {
     // Reverse geocoding (coordinates to address)
     if (lat && lng) {
+      const parsedLat = parseFloat(lat);
+      const parsedLng = parseFloat(lng);
+
+      // Validate coordinates
+      if (isNaN(parsedLat) || isNaN(parsedLng) ||
+          parsedLat < 21.9 || parsedLat > 25.3 ||
+          parsedLng < 120.0 || parsedLng > 122.0) {
+        return NextResponse.json(
+          { error: 'Coordinates outside Taiwan bounds' },
+          { status: 400 }
+        );
+      }
+
       const response = await client.reverseGeocode({
         params: {
-          latlng: { lat: parseFloat(lat), lng: parseFloat(lng) },
+          latlng: { lat: parsedLat, lng: parsedLng },
           key: process.env.GOOGLE_MAPS_API_KEY!,
           language: Language.en,
-          location_type: [ReverseGeocodingLocationType.ROOFTOP],
           result_type: [
-            AddressType.street_address,
-            AddressType.premise,
-            AddressType.sublocality,
-            AddressType.locality,
             AddressType.administrative_area_level_1,
-            AddressType.administrative_area_level_2
+            AddressType.administrative_area_level_2,
+            AddressType.locality,
+            AddressType.sublocality
           ]
         },
       });
@@ -68,11 +80,8 @@ export async function GET(request: Request) {
           c.types.includes(AddressType.sublocality) || 
           c.types.includes(AddressType.sublocality_level_1)
         )?.long_name,
-        streetAddress: components?.find(c => 
-          c.types.includes(AddressType.street_address)
-        )?.long_name,
-        locationType: result.geometry.location_type,
-        placeId: result.place_id
+        bounds: result.geometry.viewport,
+        accuracy: result.geometry.location_type
       };
 
       return NextResponse.json(locationInfo);

@@ -4,7 +4,7 @@ import { type FC, useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import axios from "axios";
-import { MapPin, Camera, ChevronRight, Loader2 } from "lucide-react";
+import { MapPin, Camera, ChevronRight, Loader2, Search, RefreshCw } from "lucide-react";
 
 // UI Components
 import { Button } from "@/components/ui/button";
@@ -34,40 +34,47 @@ import { getRestaurantImageProps, handleImageError } from '@/app/utils/imageHand
 
 
 // Component: Restaurant Card
-  const RestaurantCard: React.FC<RestaurantCardProps> = ({ restaurant }) => {
-    return (
-      <Link 
-        href={getRestaurantLink(restaurant)}
-        prefetch={false}
-      >
-        <Card className="w-full h-full overflow-hidden rounded-3xl shadow-xl cursor-pointer transition-all duration-300 hover:shadow-2xl transform hover:-translate-y-1">
-          <div className="relative w-full h-56">
-            <Image
-              {...getRestaurantImageProps(restaurant, 'card')}
-              fill
-              onError={handleImageError}
-            />
-          </div>
-          <CardContent className="p-6">
-            <h3 className="text-2xl font-semibold mb-3 text-gray-800">
-              {restaurant.name}
-            </h3>
-            <p className="text-gray-600 mb-4">{restaurant.address}</p>
-            <div className="flex items-center text-gray-500 mb-4">
-              <MapPin className="w-4 h-4 mr-2" />
-              <span>{restaurant.county}</span>
-            </div>
+const RestaurantCard: React.FC<RestaurantCardProps> = ({ restaurant }) => {
+  return (
+    <Link 
+      href={getRestaurantLink(restaurant)}
+      prefetch={false}
+      className="block w-full h-full"
+    >
+      <Card className="w-full h-full rounded-3xl shadow-xl transform transition-all duration-300 hover:shadow-2xl hover:-translate-y-1">
+        <div className="relative aspect-[4/3] w-full">
+          <Image
+            {...getRestaurantImageProps(restaurant, 'carousel')}
+            fill
+            onError={handleImageError}
+            className="rounded-t-3xl object-cover"
+            priority
+          />
+          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-4">
             <div className="flex items-center">
-              <span className="text-yellow-400 mr-1">★</span>
-              <span className="font-semibold">
+              <span className="text-yellow-400 text-sm">★</span>
+              <span className="text-white text-sm ml-1">
                 {restaurant.rating.toFixed(1)}
               </span>
             </div>
-          </CardContent>
-        </Card>
-      </Link>
-    );
-  };
+          </div>
+        </div>
+        <CardContent className="p-6">
+          <h3 className="text-xl font-semibold mb-2 line-clamp-1 text-gray-800">
+            {restaurant.name}
+          </h3>
+          <p className="text-sm text-gray-600 mb-3 line-clamp-1">
+            {restaurant.address}
+          </p>
+          <div className="flex items-center text-gray-500 text-sm">
+            <MapPin className="w-4 h-4 mr-1" />
+            <span className="line-clamp-1">{restaurant.county}</span>
+          </div>
+        </CardContent>
+      </Card>
+    </Link>
+  );
+};
   
 // Component: Loading Skeleton
 const RestaurantSkeleton = () => (
@@ -162,22 +169,29 @@ export default function AboutPage() {
   const renderCarousel = () => (
     <Carousel
       opts={{
-        align: "start",
-        loop: false,
+        align: "center",
+        loop: true,
         skipSnaps: false,
-        dragFree: false,
+        dragFree: true,
       }}
-      className="w-full relative group"
+      className="w-full max-w-[90rem] mx-auto relative"
     >
-      <CarouselContent>
+      <CarouselContent className="-ml-2 md:-ml-4">
         {restaurants.map((restaurant) => (
-          <CarouselItem key={restaurant.id}>
-            <RestaurantCard restaurant={restaurant} />
+          <CarouselItem 
+            key={restaurant.id} 
+            className="pl-2 md:pl-4 basis-full md:basis-1/2 lg:basis-1/3"
+          >
+            <div className="p-1">
+              <RestaurantCard restaurant={restaurant} />
+            </div>
           </CarouselItem>
         ))}
       </CarouselContent>
-      <CarouselPrevious />
-      <CarouselNext />
+      <div className="hidden md:block">
+        <CarouselPrevious className="absolute -left-12 hover:bg-white/90" />
+        <CarouselNext className="absolute -right-12 hover:bg-white/90" />
+      </div>
     </Carousel>
   );
 
@@ -218,36 +232,50 @@ export default function AboutPage() {
     <div className="min-h-screen">
       <main className="container mx-auto px-6 py-12">
         {/* Trending Restaurants Section */}
-        <section className="mb-20 relative">
-          <div className="text-center mb-12">
-            <h2 className="inline-block text-4xl font-bold bg-gradient-to-r from-customTeal via-customBlack to-customTeal bg-clip-text text-transparent animate-gradient relative">
-              Trending Culinary Hotspots
-            </h2>
-          </div>
+        <section className="mb-20">
+  <div className="text-center mb-12">
+    <h2 className="inline-block text-4xl font-bold bg-gradient-to-r from-customTeal via-customBlack to-customTeal bg-clip-text text-transparent animate-gradient relative">
+      Trending Culinary Hotspots
+    </h2>
+  </div>
 
-          <div className="w-full max-w-7xl mx-auto px-4 md:px-20">
+  <div className="w-full px-4 md:px-16 relative">
             {isLoading ? (
-              <div className="w-full max-w-5xl mx-auto">
-                <div className="flex items-center justify-center mb-8">
-                  <Loader2 className="w-8 h-8 text-customTeal animate-spin mr-2" />
-                  <span className="text-lg text-gray-600">
-                    {locationLoading 
-                      ? "Finding your location..." 
-                      : "Discovering nearby hotspots..."}
-                  </span>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {Array.from({ length: 3 }).map((_, i) => (
-                    <RestaurantSkeleton key={i} />
-                  ))}
-                </div>
-              </div>
+              renderLoadingState()
             ) : locationError || error ? (
               renderErrorState()
             ) : restaurants.length > 0 ? (
               renderCarousel()
-            ) : null}
-          </div>
+            ) : (
+              // New "no results" state
+              <div className="w-full max-w-3xl mx-auto"> 
+              <Card className="bg-gradient-to-br from-customTeal/5 to-white shadow-lg rounded-3xl"> 
+                <CardContent className="p-8"> 
+                  <div className="flex flex-col items-center space-y-4"> 
+                    <div className="rounded-full bg-customTeal/10 p-3"> 
+                      <Search className="h-8 w-8 text-customTeal" /> 
+                    </div>
+                    <h3 className="text-3xl font-semibold bg-gradient-to-r from-customTeal via-customBlack to-customTeal bg-clip-text text-transparent">
+                      No Trending Restaurants Found
+                    </h3>
+                    <p className="text-gray-600 max-w-sm text-center text-base"> 
+                      {locationError 
+                        ? "Enable location services to discover trending restaurants in your area."
+                        : "We're still discovering great restaurants in this area. Check back soon or try refreshing the page."}
+                    </p>
+                    <Button
+                      onClick={() => window.location.reload()}
+                      className="bg-gradient-to-r from-customTeal to-customBlack hover:from-customBlack hover:to-customTeal text-white rounded-full py-4 px-6 text-base transition-all duration-300 transform hover:scale-105"
+                    >
+                      <RefreshCw className="mr-2 h-4 w-4" /> 
+                      Refresh Results
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+        </div>
         </section>
 
         {/* Menu Translation Section */}

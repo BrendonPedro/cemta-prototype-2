@@ -1,119 +1,77 @@
-import { useState, useEffect } from 'react';
+// hooks/use-geolocation.ts
 
-// Define the GeolocationError type
-type GeolocationErrorType = {
-  code: number;
-  message: string;
-  PERMISSION_DENIED: number;
-  POSITION_UNAVAILABLE: number;
-  TIMEOUT: number;
-};
+import { useState, useEffect } from 'react';
 
 interface GeolocationState {
   position: GeolocationPosition | null;
-  error: GeolocationPositionError | null; // Using the correct type
+  error: GeolocationPositionError | null;
   isLoading: boolean;
+  timestamp: number | null;
 }
 
-export function useGeolocation(options: PositionOptions = {}) {
+interface UseGeolocationOptions {
+  enableHighAccuracy?: boolean;
+  timeout?: number;
+  maximumAge?: number;
+  watchPosition?: boolean;
+}
+
+export function useGeolocation(options: UseGeolocationOptions = {}) {
   const [state, setState] = useState<GeolocationState>({
     position: null,
     error: null,
-    isLoading: true
+    isLoading: true,
+    timestamp: null
   });
 
   useEffect(() => {
-    // Try to get cached position first
-    const cachedPosition = sessionStorage.getItem('lastKnownPosition');
-    if (cachedPosition) {
-      const position = JSON.parse(cachedPosition);
-      setState({
-        position,
-        error: null,
-        isLoading: false
-      });
-    }
-
-    const successHandler = (position: GeolocationPosition) => {
-      // Cache the position
-      sessionStorage.setItem('lastKnownPosition', JSON.stringify(position));
-      setState({
-        position,
-        error: null,
-        isLoading: false
-      });
-    };
-
-    const errorHandler = (error: GeolocationPositionError) => {
-      setState({
-        position: null,
-        error,
-        isLoading: false
-      });
-    };
-
-    // Default options for better performance
-    const defaultOptions: PositionOptions = {
-      enableHighAccuracy: false, // Faster initial position
-      timeout: 5000,            // Fail fast if no position
-      maximumAge: 300000,       // Cache position for 5 minutes
-      ...options
-    };
-
-    setState(prev => ({ ...prev, isLoading: true }));
-
-    // Check if geolocation is available
     if (!navigator.geolocation) {
-      setState({
-        position: null,
-        error: {
-          code: 2,
-          message: 'Geolocation is not supported by this browser.',
-          PERMISSION_DENIED: 1,
-          POSITION_UNAVAILABLE: 2,
-          TIMEOUT: 3
-        } as GeolocationPositionError,
+      setState(prev => ({
+        ...prev,
+        error: new GeolocationPositionError(),
         isLoading: false
-      });
+      }));
       return;
     }
 
-    // Watch position
-    const watchId = navigator.geolocation.watchPosition(
-      successHandler,
-      errorHandler,
-      defaultOptions
-    );
+    let watchId: number | null = null;
 
-    // Cleanup
-    return () => navigator.geolocation.clearWatch(watchId);
-  }, []); // Empty deps array means this only runs once
+    const onSuccess = (position: GeolocationPosition) => {
+      setState({
+        position,
+        error: null,
+        isLoading: false,
+        timestamp: Date.now()
+      });
+    };
+
+    const onError = (error: GeolocationPositionError) => {
+      setState({
+        position: null,
+        error,
+        isLoading: false,
+        timestamp: null
+      });
+    };
+
+    const geolocationOptions: PositionOptions = {
+      enableHighAccuracy: options.enableHighAccuracy ?? true,
+      timeout: options.timeout ?? 20000,
+      maximumAge: options.maximumAge ?? 0
+    };
+
+    if (options.watchPosition) {
+      watchId = navigator.geolocation.watchPosition(onSuccess, onError, geolocationOptions);
+    } else {
+      navigator.geolocation.getCurrentPosition(onSuccess, onError, geolocationOptions);
+    }
+
+    return () => {
+      if (watchId) {
+        navigator.geolocation.clearWatch(watchId);
+      }
+    };
+  }, [options.enableHighAccuracy, options.timeout, options.maximumAge, options.watchPosition]);
 
   return state;
 }
-
-// Example usage:
-/*
-const YourComponent = () => {
-  const { position, error, isLoading } = useGeolocation();
-
-  if (isLoading) {
-    return <div>Loading location...</div>;
-  }
-
-  if (error) {
-    return <div>Error: {error.message}</div>;
-  }
-
-  if (position) {
-    return (
-      <div>
-        Latitude: {position.coords.latitude}
-        Longitude: {position.coords.longitude}
-      </div>
-    );
-  }
-
-  return null;
-};
-*/
