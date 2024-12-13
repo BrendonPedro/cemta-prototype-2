@@ -24,6 +24,7 @@ import {
   saveCachedRestaurantsForLocation,
   checkExistingMenuForRestaurant,
   batchUpdateRestaurants,
+  getLocationCacheKey,
 } from "@/app/services/firebaseFirestore";
 import { useRouter } from 'next/navigation'; 
 import { Client as GoogleMapsClient } from "@googlemaps/google-maps-services-js";
@@ -285,6 +286,7 @@ const MapWithErrorBoundary = ({
 };
 
 export function FindRestaurantsAndMenus() {
+  const initRef = useRef(false);
   const { position, error: geoError, isLoading: geoLoading } = useGeolocation({
     enableHighAccuracy: true,
     timeout: 20000,
@@ -317,6 +319,27 @@ export function FindRestaurantsAndMenus() {
   const [isApiLoading, setIsApiLoading] = useState(false);
   const [userLocation, setUserLocation] = useState<LatLngLiteral | null>(null);
   const [locationEnabled, setLocationEnabled] = useState(false);
+  const [locationStats, setLocationStats] = useState<{
+    towns: Set<string>;
+    counties: Set<string>;
+  }>({
+    towns: new Set<string>(),
+    counties: new Set<string>()
+  });
+
+  const updateLocationStats = (restaurants: Restaurant[]) => {
+    const newStats = {
+      towns: new Set<string>(),
+      counties: new Set<string>()
+    };
+    
+    restaurants.forEach(restaurant => {
+      if (restaurant.townName) newStats.towns.add(restaurant.townName);
+      if (restaurant.county) newStats.counties.add(restaurant.county);
+    });
+    
+    setLocationStats(newStats);
+  };
 
   const handleFilter = useCallback(() => {
     const filtered = restaurants.filter((restaurant) => {
@@ -338,141 +361,119 @@ export function FindRestaurantsAndMenus() {
     setFilteredRestaurants(filtered.slice(currentPage * 10, (currentPage + 1) * 10));
   }, [restaurants, nameFilter, ratingFilter, menuCountFilter, currentPage]);
 
-  const fetchNearbyRestaurants = useCallback(
-    async (lat: number, lng: number) => {
-      if (!userId || !firebaseToken) {
-        console.log('Missing userId or firebaseToken');
-        return;
-      }
-
-      try {
-        setIsApiLoading(true);
-        setIsCacheLoading(true);
-
-        const [cachedResults, apiResponse] = await Promise.all([
-          getCachedRestaurantsForLocation(lat, lng),
-          fetch(
-            `/api/restaurants?lat=${lat}&lng=${lng}&limit=${CONFIG.SEARCH.PRECISE.MAX_RESULTS}&type=full`,
-            {
-              headers: {
-                Authorization: `Bearer ${firebaseToken}`,
-                'Content-Type': 'application/json'
-              },
-            }
-          )
-        ]);
-
-        const existingMap = new Map<string, Restaurant>();
-
-        // Add cached results if any
-        const nearbyResults = (cachedResults || []).filter(r =>
-          calculateDistance(lat, lng, r.latitude, r.longitude) <= CONFIG.SEARCH.PRECISE.RADIUS
-        );
-        nearbyResults.forEach(r => existingMap.set(r.id, r));
-
-        // Add currently loaded restaurants
-        restaurants.forEach(r => {
-          if (!existingMap.has(r.id)) {
-            existingMap.set(r.id, r);
-          }
-        });
-
-        // Update UI with cached first
-        if (nearbyResults.length > 0) {
-          const sortedCached = Array.from(existingMap.values()).sort((a, b) => {
-            const distA = calculateDistance(lat, lng, a.latitude, a.longitude);
-            const distB = calculateDistance(lat, lng, b.latitude, b.longitude);
-            return distA - distB;
-          });
-          setRestaurants(sortedCached);
-          setFilteredRestaurants(sortedCached.slice(0, 10));
-          handleFilter();
-        }
-
-        setIsCacheLoading(false);
-
-        // Process API results
-        if (apiResponse.ok) {
-          const data = await apiResponse.json();
-          if (data.restaurants?.length) {
-            data.restaurants.forEach((r: Restaurant) => {
-              if (!existingMap.has(r.id)) {
-                existingMap.set(r.id, r);
-              }
-            });
-
-            const allRestaurants = Array.from(existingMap.values())
-              .sort((a, b) => {
-                const distA = calculateDistance(lat, lng, a.latitude, a.longitude);
-                const distB = calculateDistance(lat, lng, b.latitude, b.longitude);
-                return distA - distB;
-              })
-              .slice(0, CONFIG.SEARCH.PRECISE.MAX_RESULTS);
-
-            await saveCachedRestaurantsForLocation(lat, lng, allRestaurants);
-
-            setRestaurants(allRestaurants);
-            setFilteredRestaurants(allRestaurants.slice(0, 10));
-            handleFilter();
-          }
-        }
-      } catch (err) {
-        console.error('Error fetching restaurants:', err);
-        setError(err instanceof Error ? err.message : 'Failed to fetch restaurants');
-      } finally {
+  const fetchNearbyRestaurants = useCallback(async (lat: number, lng: number) => {
+    if (!userId || !firebaseToken) {
+      console.log('Missing userId or firebaseToken');
+      return;
+    }
+  
+    const cacheKey = getLocationCacheKey(lat, lng);
+    
+    try {
+      setIsApiLoading(true);
+      setIsCacheLoading(true);
+  
+      // Get cached results first
+      const cachedResults = await getCachedRestaurantsForLocation(lat, lng);
+      
+      if (cachedResults?.length) {
+        console.log(`Cache hit for ${cacheKey} - ${cachedResults.length} restaurants`);
+        setRestaurants(cachedResults);
+        setFilteredRestaurants(cachedResults.slice(0, 10));
         setIsApiLoading(false);
-        setIsLoading(false);
+        setIsCacheLoading(false);
+        return; // Exit early if we have cached data
       }
-    },
-    [userId, firebaseToken, handleFilter, restaurants]
-  );
+  
+      // Only proceed with API call if no cache hit
+      console.log(`Cache miss for ${cacheKey}`);
+      console.log('💰 [COST] Making new API call for restaurants');
+      const apiResponse = await fetch(
+        `/api/restaurants?lat=${lat}&lng=${lng}&limit=${CONFIG.SEARCH.PRECISE.MAX_RESULTS}&type=full`,
+        {
+          headers: {
+            Authorization: `Bearer ${firebaseToken}`,
+            'Content-Type': 'application/json'
+          },
+        }
+      );
+  
+      if (apiResponse.ok) {
+        const data = await apiResponse.json();
+        if (data.restaurants?.length) {
+          console.log(`API call summary for ${cacheKey}:`, {
+            newResults: data.restaurants.length,
+            totalResults: 0 // No existing results since this is a cache miss
+          });
+  
+          // Save new results to cache only if they don't exist
+          await saveCachedRestaurantsForLocation(lat, lng, data.restaurants);
+          
+          setRestaurants(data.restaurants);
+          setFilteredRestaurants(data.restaurants.slice(0, 10));
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching restaurants:', error);
+      setError(error instanceof Error ? error.message : 'Failed to fetch restaurants');
+    } finally {
+      setIsApiLoading(false);
+      setIsCacheLoading(false);
+      setIsLoading(false);
+    }
+  }, [userId, firebaseToken]);
 
   // Initialize location once auth is done
   useEffect(() => {
     if (authLoading) return;
     if (!userId || !firebaseToken) return;
+    if (initRef.current) return; // prevent multiple initializations
 
-  const initLocation = async () => {
-    setIsLoading(true);
-
-    if (geoError || !position || !position.coords) {
-      console.log('No position available or geolocation error, using default location (Taipei)');
-      setUserLocation(null);
-      setCenter(DEFAULT_CENTER);
-      setPinLocation(DEFAULT_CENTER);
-      setLocationEnabled(false);
-      await fetchNearbyRestaurants(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng);
-      setIsLoading(false);
-      return;
-    }
-
-    const { latitude, longitude } = position.coords;
-    console.log('Geolocation succeeded, raw coordinates:', { latitude, longitude });
-
-    // Check if within Taiwan bounds:
-    if (latitude < 21.9 || latitude > 25.3 || longitude < 120.0 || longitude > 122.0) {
-      console.warn('Coordinates outside Taiwan bounds, using default Taipei location');
-      setUserLocation(null);
-      setCenter(DEFAULT_CENTER);
-      setPinLocation(DEFAULT_CENTER);
-      setLocationEnabled(false);
-      await fetchNearbyRestaurants(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng);
-      setIsLoading(false);
-      return;
-    }
-
-    const newLocation = { lat: latitude, lng: longitude };
-    console.log('Setting user location:', newLocation);
-    setUserLocation(newLocation);
-    setCenter(newLocation);
-    setPinLocation(newLocation);
-    setLocationEnabled(true);
-    await fetchNearbyRestaurants(latitude, longitude);
-    setIsLoading(false);
-  };
-
-  initLocation();
-}, [position, geoError, userId, firebaseToken, authLoading, fetchNearbyRestaurants]);
+    const initLocation = async () => {
+      initRef.current = true;
+      setIsLoading(true);
+  
+      try {
+        if (geoError || !position || !position.coords) {
+          console.log('Using default location (Taipei)');
+          setUserLocation(null);
+          setCenter(DEFAULT_CENTER);
+          setPinLocation(DEFAULT_CENTER);
+          setLocationEnabled(false);
+          await fetchNearbyRestaurants(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng);
+          return;
+        }
+  
+        const { latitude, longitude } = position.coords;
+        console.log('Setting coordinates:', { latitude, longitude });
+  
+        // Check Taiwan bounds
+        if (latitude < 21.9 || latitude > 25.3 || longitude < 120.0 || longitude > 122.0) {
+          console.warn('Using default Taipei location');
+          setUserLocation(null);
+          setCenter(DEFAULT_CENTER);
+          setPinLocation(DEFAULT_CENTER);
+          setLocationEnabled(false);
+          await fetchNearbyRestaurants(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng);
+          return;
+        }
+  
+        const newLocation = { lat: latitude, lng: longitude };
+        setUserLocation(newLocation);
+        setCenter(newLocation);
+        setPinLocation(newLocation);
+        setLocationEnabled(true);
+        await fetchNearbyRestaurants(latitude, longitude);
+      } catch (error) {
+        console.error('Initialization error:', error);
+        setError(error instanceof Error ? error.message : 'Failed to initialize');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+  
+    initLocation();
+  }, [position, geoError, userId, firebaseToken, authLoading]);
 
 
   const handleLocationToggle = async (enabled: boolean) => {
@@ -562,19 +563,22 @@ export function FindRestaurantsAndMenus() {
   }, [restaurants, userLocation]);
 
   const handleMapClick = useCallback(
-    debounce((event: google.maps.MapMouseEvent) => {
+    debounce(async (event: google.maps.MapMouseEvent) => {
       const latLng = event.latLng;
       if (!latLng) return;
+      
       const newLat = latLng.lat();
       const newLng = latLng.lng();
       
       setCenter({ lat: newLat, lng: newLng });
       setPinLocation({ lat: newLat, lng: newLng });
       
-      fetchNearbyRestaurants(newLat, newLng);
-      
       setFocusedRestaurant(null);
       setSelectedMarker(null);
+      
+      // Set loading state before fetching
+      setIsLoading(true);
+      await fetchNearbyRestaurants(newLat, newLng);
     }, 300),
     [fetchNearbyRestaurants]
   );
@@ -600,6 +604,7 @@ export function FindRestaurantsAndMenus() {
       }
 
       if (!restaurant.hasDetailsFetched) {
+        console.log(`💰 [COST] Fetching details for restaurant: ${restaurant.name}`);
         const response = await fetch(
           `/api/restaurants?lat=${position.lat}&lng=${position.lng}&id=${restaurant.id}&type=details`,
           {
@@ -627,6 +632,7 @@ export function FindRestaurantsAndMenus() {
           setFocusedRestaurant(updatedRestaurant);
         }
       }
+      
     } catch (error) {
       console.error('Error in handleMarkerClick:', error);
     }
@@ -894,18 +900,18 @@ export function FindRestaurantsAndMenus() {
         )}
       </AnimatePresence>
   
-      {(isLoading || isRefreshing) && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg shadow-xl">
-            <div className="flex items-center space-x-4">
-              <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-customTeal"></div>
-              <p className="text-lg font-semibold text-gray-700">
-                {isRefreshing ? "Refreshing location..." : "Loading nearby restaurants..."}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
+      {(isLoading || isRefreshing || (isApiLoading && isCacheLoading)) && (
+  <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+    <div className="bg-white p-6 rounded-lg shadow-xl">
+      <div className="flex items-center space-x-4">
+        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-customTeal"></div>
+        <p className="text-lg font-semibold text-gray-700">
+          {isRefreshing ? "Refreshing location..." : "Loading nearby restaurants..."}
+        </p>
+      </div>
+    </div>
+  </div>
+)}
   
       <div className="flex-grow flex flex-col lg:flex-row gap-6">
         <Card className="w-full lg:w-3/5 bg-gradient-to-br from-gray-50 to-gray-100 shadow-xl overflow-auto">

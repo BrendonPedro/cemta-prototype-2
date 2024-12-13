@@ -1,6 +1,6 @@
 // hooks/use-geolocation.ts
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 interface GeolocationState {
   position: GeolocationPosition | null;
@@ -23,6 +23,9 @@ export function useGeolocation(options: UseGeolocationOptions = {}) {
     isLoading: true,
     timestamp: null
   });
+  
+  const hasPosition = useRef(false);
+  const lastValidPosition = useRef<GeolocationPosition | null>(null);
 
   useEffect(() => {
     if (!navigator.geolocation) {
@@ -34,24 +37,40 @@ export function useGeolocation(options: UseGeolocationOptions = {}) {
       return;
     }
 
-    let watchId: number | null = null;
+    const validateTaiwanCoordinates = (lat: number, lng: number): boolean => {
+      return !(lat < 21.9 || lat > 25.3 || lng < 120.0 || lng > 122.0);
+    };
 
     const onSuccess = (position: GeolocationPosition) => {
-      setState({
-        position,
-        error: null,
-        isLoading: false,
-        timestamp: Date.now()
-      });
+      const { latitude, longitude } = position.coords;
+      
+      if (validateTaiwanCoordinates(latitude, longitude)) {
+        hasPosition.current = true;
+        lastValidPosition.current = position;
+        setState({
+          position,
+          error: null,
+          isLoading: false,
+          timestamp: Date.now()
+        });
+      } else {
+        // If coordinates are outside Taiwan, return last valid position or error
+        setState(prev => ({
+          position: lastValidPosition.current,
+          error: new GeolocationPositionError(),
+          isLoading: false,
+          timestamp: prev.timestamp
+        }));
+      }
     };
 
     const onError = (error: GeolocationPositionError) => {
-      setState({
-        position: null,
+      setState(prev => ({
+        position: lastValidPosition.current,
         error,
         isLoading: false,
-        timestamp: null
-      });
+        timestamp: prev.timestamp
+      }));
     };
 
     const geolocationOptions: PositionOptions = {
@@ -61,17 +80,21 @@ export function useGeolocation(options: UseGeolocationOptions = {}) {
     };
 
     if (options.watchPosition) {
-      watchId = navigator.geolocation.watchPosition(onSuccess, onError, geolocationOptions);
-    } else {
+      const watchId = navigator.geolocation.watchPosition(
+        onSuccess, 
+        onError, 
+        geolocationOptions
+      );
+      return () => navigator.geolocation.clearWatch(watchId);
+    } else if (!hasPosition.current) {
       navigator.geolocation.getCurrentPosition(onSuccess, onError, geolocationOptions);
     }
-
-    return () => {
-      if (watchId) {
-        navigator.geolocation.clearWatch(watchId);
-      }
-    };
-  }, [options.enableHighAccuracy, options.timeout, options.maximumAge, options.watchPosition]);
+  }, [
+    options.enableHighAccuracy,
+    options.timeout,
+    options.maximumAge,
+    options.watchPosition
+  ]);
 
   return state;
 }

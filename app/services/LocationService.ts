@@ -20,7 +20,7 @@ import geohash from "ngeohash";
 import { saveRestaurant } from "./firebaseFirestore";
 import { measureAPICall, checkRateLimit } from '@/app/utils/apiUtils';
 import { saveCachedRestaurantsForLocation, getCachedRestaurantsForLocation } from "./firebaseFirestore";
-import { counties, getTownsByCounty } from '@/lib/data/counties';
+import { counties, getNearbyTowns, getTownsByCounty } from '@/lib/data/counties';
 import { getImageUrl } from './gcpBucketStorage';
 import { EnhancedCountyData, EnhancedTownData } from '@/lib/data/counties';
 import { calculateDistance } from '@/app/utils/locationUtils';
@@ -328,16 +328,30 @@ export async function determineLocationDetails(lat: number, lng: number): Promis
       return DEFAULT_LOCATION;
     }
 
-    const userLocation = { lat, lng };
-    let nearestLocation: NearestLocation = {
-      town: null,
-      county: null,
+    // Get nearby towns directly using the utility function
+    const nearbyTowns = getNearbyTowns(lat, lng, 20); // Search within 20km radius
+
+    if (nearbyTowns.length > 0) {
+      const closestTown = nearbyTowns[0]; // Already sorted by distance
+      console.log('Location match found:', {
+        town: closestTown.name,
+        county: closestTown.countyName,
+        distance: Math.round(closestTown.distance * 1000), // Convert to meters
+        coordinates: { lat, lng }
+      });
+      
+      return {
+        county: closestTown.countyName,
+        townName: closestTown.name
+      };
+    }
+
+    // Fallback: manual search through all counties and towns
+    let nearestLocation = {
+      town: null as (EnhancedTownData & { countyName: string }) | null,
       distance: Infinity
     };
 
-    let exactMatch = false;
-
-    // First pass: look for exact matches within 500m
     for (const county of counties) {
       for (const town of county.towns) {
         const distance = calculateDistance(
@@ -347,54 +361,36 @@ export async function determineLocationDetails(lat: number, lng: number): Promis
           town.location.lng
         );
 
-        // Immediate return if we find a very close match
-        if (distance < 500) {
-          console.log('Exact location match found:', {
-            town: town.name,
-            county: county.name,
-            distance: Math.round(distance),
-            coordinates: { lat, lng }
-          });
-          
-          return {
-            county: county.name,
-            townName: town.name
-          };
-        }
-
-        // Keep track of nearest location as fallback
         if (distance < nearestLocation.distance) {
           nearestLocation = {
-            town,
-            county,
+            town: { ...town, countyName: county.name },
             distance
           };
         }
       }
     }
 
-    // Validate nearest location found
-    if (!nearestLocation.county || !nearestLocation.town || nearestLocation.distance > 5000) {
-      console.warn('Location determination issue:', {
-        coordinates: { lat, lng },
-        nearestDistance: nearestLocation.distance,
-        foundTown: nearestLocation.town?.name,
-        foundCounty: nearestLocation.county?.name
+    // Use nearest location if within 20km
+    if (nearestLocation.town && nearestLocation.distance < 20) {
+      console.log('Using nearest location:', {
+        county: nearestLocation.town.countyName,
+        town: nearestLocation.town.name,
+        distance: Math.round(nearestLocation.distance * 1000),
+        coordinates: { lat, lng }
       });
-      return DEFAULT_LOCATION;
+
+      return {
+        county: nearestLocation.town.countyName,
+        townName: nearestLocation.town.name
+      };
     }
 
-    console.log('Location determined:', {
-      county: nearestLocation.county.name,
-      town: nearestLocation.town.name,
-      distance: Math.round(nearestLocation.distance),
-      coordinates: { lat, lng }
+    console.warn('Location determination failed:', {
+      coordinates: { lat, lng },
+      nearestDistance: Math.round(nearestLocation.distance * 1000)
     });
-
-    return {
-      county: nearestLocation.county.name,
-      townName: nearestLocation.town.name
-    };
+    
+    return DEFAULT_LOCATION;
 
   } catch (error) {
     console.error('Error in determineLocationDetails:', {
@@ -404,42 +400,6 @@ export async function determineLocationDetails(lat: number, lng: number): Promis
     });
 
     return DEFAULT_LOCATION;
-  }
-}
-
-// Location data functions
-async function getCountyName(
-  lat: number,
-  lng: number,
-  apiKey: string,
-  apiCallCount: { count: number }
-): Promise<string> {
-  const client = new Client({});
-
-  try {
-    apiCallCount.count += 1; // Increment API call count
-
-    const response = await client.reverseGeocode({
-      params: {
-        latlng: { lat, lng },
-        key: apiKey,
-        language: Language.en,
-        result_type: [AddressType.administrative_area_level_2]
-      },
-    });
-
-    const countyComponent = response.data.results?.[0]?.address_components
-      .find(component => component.types.includes(AddressType.administrative_area_level_2));
-
-    return countyComponent?.long_name || 'Unknown County';
-  } catch (error) {
-    console.error('Google Maps API error:', error);
-    console.error('Error details:', {
-      message: error instanceof Error ? error.message : String(error),
-      location: 'getCountyName',
-      params: { lat, lng, apiCallCount: apiCallCount.count }
-    });
-    return 'Unknown County';
   }
 }
 

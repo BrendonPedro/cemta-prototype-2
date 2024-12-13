@@ -57,6 +57,7 @@ export interface Location {
     yelpId?: string | null;
     yelpRating?: number | null;
     placeId?: string;
+    lastYelpSync?: string;
     
     // State Management
     contribution?: boolean;
@@ -298,6 +299,7 @@ export interface CachedRestaurant {
   yelpId?: string | null;
   yelpRating?: number | null;
   placeId?: string;
+  lastYelpSync?: string;
   
   // State Management
   contribution?: boolean;

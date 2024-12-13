@@ -30,6 +30,8 @@ import type { Restaurant, CachedRestaurant, OpeningHours, MenuSummary, Photo, Sa
 import { calculateDistance } from '@/app/utils/locationUtils'
 import type { UserPreferences } from "@/interfaces/users/user-preferences";
 import type { PlaceData } from "@googlemaps/google-maps-services-js";
+import { calculateMatchScore } from '@/app/utils/restaurantMatching';
+import { determineLocationDetails } from "./locationService";
 
 // For the county/town creation part:
 type RestaurantDocData = WithFieldValue<DocumentData>;
@@ -544,24 +546,24 @@ export async function getVertexAiHistory(userId: string) {
 export async function getCachedRestaurantDetails(
   restaurantId: string
 ): Promise<Restaurant | null> {
+  console.log(`🔍 [CACHE] Checking cache for restaurant: ${restaurantId}`);
   const restaurantRef = doc(db, "restaurants", restaurantId);
   const docSnap = await getDoc(restaurantRef);
 
   if (docSnap.exists()) {
+    console.log('💰 [SAVINGS] Found cached restaurant details');
     return {
       id: docSnap.id,
       ...docSnap.data(),
     } as Restaurant;
   }
+  console.log('💰 [COST] No cached data found for restaurant');
   return null;
 }
 
 export function getLocationCacheKey(lat: number, lng: number): string {
-  return geohash.encode(
-    lat, 
-    lng, 
-    CONFIG.CACHE.GEOHASH.LOCATION_PRECISION // Uses precision level 5 from config script
-  );
+  // Use geohash for consistent cache keys
+  return geohash.encode(lat, lng, CONFIG.CACHE.GEOHASH.LOCATION_PRECISION);
 }
 
 export const CACHE_CONSTANTS = {
@@ -613,25 +615,66 @@ export async function saveCachedRestaurantsForLocation(
 ): Promise<void> {
   const locationKey = getLocationCacheKey(lat, lng);
   const cacheRef = doc(db, CACHE_CONSTANTS.COLLECTION_NAME, locationKey);
-  
+
   try {
     // Get existing cache
     const cacheDoc = await getDoc(cacheRef);
     let existingRestaurants: CachedRestaurant[] = [];
-    
+
     if (cacheDoc.exists()) {
       existingRestaurants = cacheDoc.data().restaurants || [];
+      console.log(`Cache hit for ${locationKey} - ${existingRestaurants.length} restaurants`);
+    } else {
+      console.log(`Cache miss for ${locationKey}`);
     }
 
-    // Merge existing and new restaurants, avoiding duplicates
-    const seenIds = new Set<string>();
-    const mergedRestaurants = [...existingRestaurants, ...newRestaurants].filter(restaurant => {
-      if (seenIds.has(restaurant.id)) {
-        return false;
-      }
-      seenIds.add(restaurant.id);
-      return true;
-    });
+    // Validate location data for new restaurants
+    const validatedRestaurants = await Promise.all(
+      newRestaurants.map(async (restaurant) => {
+        try {
+          const locationDetails = await determineLocationDetails(
+            restaurant.latitude,
+            restaurant.longitude
+          );
+
+          if (locationDetails.county === 'Unknown County' || 
+              locationDetails.townName === 'Unknown Town') {
+            console.warn(`Location validation failed for restaurant: ${restaurant.name}`);
+            return null;
+          }
+
+          return {
+            ...restaurant,
+            county: locationDetails.county,
+            townName: locationDetails.townName
+          };
+        } catch (error) {
+          console.error(`Failed to validate location for ${restaurant.name}:`, error);
+          return null;
+        }
+      })
+    );
+
+    const filteredRestaurants = validatedRestaurants.filter(
+      (r): r is CachedRestaurant => r !== null
+    );
+
+    // Create maps for both Google and Yelp IDs
+    const seenGoogleIds = new Set<string>();
+    const seenYelpIds = new Set<string>();
+    
+    const mergedRestaurants = [...existingRestaurants, ...filteredRestaurants]
+      .filter(restaurant => {
+        const googleDuplicate = restaurant.id && seenGoogleIds.has(restaurant.id);
+        const yelpDuplicate = restaurant.yelpId && seenYelpIds.has(restaurant.yelpId);
+
+        if (googleDuplicate || yelpDuplicate) return false;
+
+        if (restaurant.id) seenGoogleIds.add(restaurant.id);
+        if (restaurant.yelpId) seenYelpIds.add(restaurant.yelpId);
+        
+        return true;
+      });
 
     // Sort by distance from search center
     mergedRestaurants.sort((a, b) => {
@@ -640,19 +683,28 @@ export async function saveCachedRestaurantsForLocation(
       return distA - distB;
     });
 
-    console.log(`Cache update summary for ${locationKey}:`);
-    console.log(`- Existing restaurants: ${existingRestaurants.length}`);
-    console.log(`- New restaurants: ${newRestaurants.length}`);
-    console.log(`- Total after merge: ${mergedRestaurants.length}`);
+    // Only save if there are actual changes
+    if (mergedRestaurants.length !== existingRestaurants.length) {
+      console.log(`Cache update summary for ${locationKey}:`);
+      console.log(`- Existing restaurants: ${existingRestaurants.length}`);
+      console.log(`- New unique restaurants: ${filteredRestaurants.length}`);
+      console.log(`- Total after merge: ${mergedRestaurants.length}`);
 
-    // Save merged results
-    await setDoc(cacheRef, {
-      restaurants: mergedRestaurants,
-      cachedAt: serverTimestamp(),
-      lastUpdated: serverTimestamp(),
-      geohash: locationKey,
-    });
+      // Save to Firestore
+      await setDoc(cacheRef, {
+        restaurants: mergedRestaurants,
+        latitude: lat,
+        longitude: lng,
+        cachedAt: serverTimestamp(),
+        lastUpdated: serverTimestamp(),
+        expiresAt: new Date(Date.now() + CACHE_CONSTANTS.DURATION),
+        geohash: locationKey,
+      });
 
+      console.log(`Successfully updated collection: ${CACHE_CONSTANTS.COLLECTION_NAME}`);
+    } else {
+      console.log(`No new unique restaurants to add to cache ${locationKey}`);
+    }
   } catch (error) {
     console.error('Error saving cache:', error);
     throw error;
@@ -946,6 +998,7 @@ export async function saveRestaurant(
   restaurantData: Partial<Restaurant>,
   options: SaveRestaurantOptions = {}
 ): Promise<SaveRestaurantResult> {
+  console.log(`💾 [STORAGE] Saving restaurant data: ${restaurantData.name}`);
   const {
     imageUrl,
     incrementalUpdate = true,
@@ -1060,6 +1113,34 @@ export async function saveRestaurant(
   }
 }
 
+async function saveRestaurantWithYelpData(
+  restaurant: Restaurant,
+  yelpData: YelpBusiness | null
+): Promise<void> {
+  if (!yelpData) return;
+
+  const matchScore = calculateMatchScore(restaurant, yelpData);
+  
+  // Only merge data if there's a good match
+  if (matchScore.totalScore > 0.8) {
+    const mergedRestaurant: Restaurant = {
+      ...restaurant,
+      yelpId: yelpData.id,
+      yelpRating: yelpData.rating,
+      hasYelpData: true,
+      // Use Yelp photos for menus if available
+      photos: yelpData.photos || restaurant.photos,
+      // Prefer Google data for business info
+      phone: restaurant.phone || yelpData.display_phone,
+      website: restaurant.website || yelpData.url,
+      priceLevel: restaurant.priceLevel || yelpData.price_level,
+      // Keep track of last sync
+      lastYelpSync: new Date().toISOString()
+    };
+
+    await saveRestaurant(mergedRestaurant);
+  }
+}
 // Add this helper to transform Google Place data to Restaurant type
 export function transformPlaceToRestaurant(
   place: PlaceData,
