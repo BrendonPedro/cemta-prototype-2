@@ -131,30 +131,17 @@ const convertLocation = (location: YelpLocation): Location => {
   };
 };
 
-const convertLocationFormat = (location: { latitude: number; longitude: number; } | Location | undefined): Location => {
-  if (!location) {
-    // Return default location if undefined
+const convertLocationFormat = (details: Restaurant | undefined): Location => {
+  if (!details) {
     return {
       lat: 0,
       lng: 0
     };
   }
 
-  if ('lat' in location && 'lng' in location) {
-    return location;
-  }
-
-  if ('latitude' in location && 'longitude' in location) {
-    return {
-      lat: location.latitude,
-      lng: location.longitude
-    };
-  }
-
-  // Fallback default
   return {
-    lat: 0,
-    lng: 0
+    lat: details.latitude,
+    lng: details.longitude
   };
 };
 
@@ -396,25 +383,24 @@ const RestaurantPage: React.FC<RestaurantPageProps> = ({ restaurantId }) => {
         });
     
         // Only fetch from Yelp if we have valid location data
-        let yelpData = null;
-        const restaurantLocation = convertLocationFormat(details.location);
-        const hasValidLocation = restaurantLocation.lat !== 0 && restaurantLocation.lng !== 0;
-    
-        if (hasValidLocation && !details.yelpId) {
-          try {
-            yelpData = await getYelpBusinessWithPhotos(
-              details.name,
-              restaurantLocation.lat,
-              restaurantLocation.lng
-            );
-    
-            if (yelpData?.photos) {
-              yelpData.photos.forEach((url) => allPhotos.add(url));
+          let yelpData = null;
+          const hasValidLocation = details.latitude !== 0 && details.longitude !== 0;
+
+          if (hasValidLocation && !details.yelpId) {
+            try {
+              yelpData = await getYelpBusinessWithPhotos(
+                details.name,
+                details.latitude,
+                details.longitude
+              );
+
+              if (yelpData?.photos) {
+                yelpData.photos.forEach((url) => allPhotos.add(url));
+              }
+            } catch (error) {
+              console.error('Error fetching Yelp data:', error);
             }
-          } catch (error) {
-            console.error('Error fetching Yelp data:', error);
           }
-        }
     
         // Create photos array from all sources
         const photoArray: Photo[] = Array.from(allPhotos).map((url) => ({
@@ -428,30 +414,43 @@ const RestaurantPage: React.FC<RestaurantPageProps> = ({ restaurantId }) => {
           name: details.name,
           address: details.address,
           rating: details.rating,
-          location: restaurantLocation,
-          county: details.county || '',
-          // Use optional chaining for townName and provide default
-          townName: (details as any).townName || details.county || '',
-          menuCount: details.menuCount || 0,
           
-          // Optional fields with proper null handling
+          // Location Information
+          latitude: details.latitude,
+          longitude: details.longitude,
+          county: details.county || '',
+          townName: details.townName || details.county || '',
+          
+          // Menu Information
+          menuCount: details.menuCount || 0,
+          hasMenu: Boolean(details.menuCount),
+          menuId: details.menuId,
+          menuImageUrl: details.menuImageUrl,
+          
+          // Media & Visual Content
+          imageUrl: details.imageUrl,
+          photoUrl: details.photoUrl,
+          photos: Array.from(allPhotos),
+          
+          // Contact & Business Details
           phone: details.phone || null,
           website: details.website || null,
           priceLevel: formatPriceLevel(details.priceLevel),
           openingHours: yelpData ? convertYelpHours(yelpData.hours) : null,
-          photos: Array.from(allPhotos),
           
-          // Required boolean flags
-          hasMenu: Boolean(details.menuCount),
+          // Integration Data
           hasGoogleData: false,
           hasYelpData: Boolean(yelpData),
+          yelpId: details.yelpId || null,
+          yelpRating: details.yelpRating || null,
+          placeId: details.placeId,
+          lastYelpSync: details.lastYelpSync,
+          
+          // State Management
           contribution: false,
           hasDetailsFetched: true,
-          
-          // Additional fields from RestaurantDocument
-          imageUrl: details.imageUrl,
-          yelpId: details.yelpId || null,
-          yelpRating: details.yelpRating || null
+          createdAt: details.createdAt,
+          lastUpdated: details.lastUpdated
         };
     
         // Update Yelp data if available
