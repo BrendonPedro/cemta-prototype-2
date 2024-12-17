@@ -1,3 +1,5 @@
+// app/utils/restaurantUtils.ts
+
 import { Restaurant } from '@/interfaces/restaurant/types';
 
 export const getRestaurantLink = (restaurant: Restaurant): string => {

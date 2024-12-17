@@ -29,7 +29,7 @@ import Combobox from "@/components/ui/Combobox"; // Use Combobox instead of Auto
 import { Input } from "@/components/ui/input"; // Import Input component
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { clientConfig } from '@/config/googleMapsConfig';
+import { googleMapsConfig } from '@/config/googleMapsConfig';
 
 interface MenuData {
   menuData: {
@@ -97,7 +97,7 @@ const MenuDetailsPage: React.FC<MenuDetailsPageProps> = ({ id }) => {
   const [signedImageUrl, setSignedImageUrl] = useState<string | null>(null);
   const [imageError, setImageError] = useState(false);
   const [isDetailsCollapsed, setIsDetailsCollapsed] = useState(false);
-  const { isLoaded } = useJsApiLoader(clientConfig);
+  const { isLoaded } = useJsApiLoader(googleMapsConfig);
 
   // Define fetchSignedUrl function
   const fetchSignedUrl = useCallback(

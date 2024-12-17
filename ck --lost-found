@@ -1,0 +1,61 @@
+[33m598a696[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mcemtateam[m[33m, [m[1;31morigin/cemtateam[m[33m)[m HEAD@{0}: checkout: moving from cemtateam to cemtateam
+[33m598a696[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mcemtateam[m[33m, [m[1;31morigin/cemtateam[m[33m)[m HEAD@{1}: reset: moving to HEAD
+[33m598a696[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mcemtateam[m[33m, [m[1;31morigin/cemtateam[m[33m)[m HEAD@{2}: checkout: moving from brendon-pt3 to cemtateam
+[33mb6280a7[m[33m ([m[1;31morigin/brendon-pt3[m[33m, [m[1;32mbrendon-pt3[m[33m)[m HEAD@{3}: reset: moving to HEAD
+[33mb6280a7[m[33m ([m[1;31morigin/brendon-pt3[m[33m, [m[1;32mbrendon-pt3[m[33m)[m HEAD@{4}: checkout: moving from cemtateam to brendon-pt3
+[33m598a696[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mcemtateam[m[33m, [m[1;31morigin/cemtateam[m[33m)[m HEAD@{5}: reset: moving to HEAD
+[33m598a696[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mcemtateam[m[33m, [m[1;31morigin/cemtateam[m[33m)[m HEAD@{6}: commit: fixed restaurntPage convertLocationFormat function to match restaurnt interface
+[33mfee2de7[m HEAD@{7}: commit: updated findrestaurants and map route logic
+[33mbb83117[m HEAD@{8}: commit: simplified find restaurants component
+[33m818c1b9[m HEAD@{9}: commit: Added user preferences logic to components
+[33madf97a0[m HEAD@{10}: commit: map pin update
+[33mf38ea57[m HEAD@{11}: commit: adjusted firebase services script to use one unified saverestaurant function to try and get one source of truth - this affected map pin somehow, look into
+[33m9b5d7e4[m HEAD@{12}: commit: cleaned up some of the code to use restaurant info as single source of truth and fixed anchor tags for viewing on google maps across components
+[33m7f96c4d[m HEAD@{13}: commit: fixed initialization of maps in restaurnats page - only initalizae and mount once
+[33m721b5b9[m HEAD@{14}: commit: Added imagehandling util component for managing image props across components
+[33m23b0e04[m HEAD@{15}: commit: fixed yelp images with sizes prop
+[33mb34aa1a[m HEAD@{16}: commit: added yelp helper function for converting location data
+[33m1f1016a[m HEAD@{17}: commit: adjusted next config and page.tsx in restaurants ui route for loading yelp images
+[33m8c4cb95[m HEAD@{18}: commit: updated restaurant interface, added new yelp key for cemtatwo account, adjusted yelp search route
+[33m790fff4[m HEAD@{19}: commit: Updates to look and feel of table in menudatadisplay for vertex output
+[33m59c5a06[m HEAD@{20}: commit: added more resonsive design to MenuDataDisplay for vertex output
+[33m508048f[m HEAD@{21}: commit: created a preferences component and wrapper for users and saved in slideoutmenu to access page
+[33m590fcb0[m HEAD@{22}: commit: optimized components until errorboundary
+[33m33177b5[m HEAD@{23}: commit: added use-geolocation hook for better state management in the AboutPage and moved restaurnt interface to types and out of firestore services script
+[33m88818ca[m HEAD@{24}: commit: reverted precisdion to 6 for nearby restaurnts - need to still fix precision for zoomed in - look at including more types like coffee (starbucks not reflecting), etc
+[33m972a49e[m HEAD@{25}: commit: replaced the deprecated marker and replaced with advancedmarker element from maps - also created mapID to use the advancedmarker and added in .env.local variables
+[33m25fb15d[m HEAD@{26}: commit: Added user marker on maps in findrestaurnts component
+[33m0f1136d[m HEAD@{27}: commit: updated restaurnt route to improve precision - used a grid key with a precision of 7 but kfc and zoomed in restaurnts are still not picking up, we should also include muser's current location with pin - slow loading because of search by radius and display onlyu shows after search - collections affected by new hash key?
+[33mce4777c[m HEAD@{28}: commit: Updated find restaunrts component to include operating hours upon map click - need to add user exact location and improve exactness of results - latest updates since last push request also resulted in slow processing - test with ethernet cable for increase internet speed
+[33md6fc71d[m HEAD@{29}: commit: expanded search radius, added zh-tw in restaurant/route.ts and created an excludeestablishment const
+[33m7ef8893[m HEAD@{30}: commit: cleaned up findrestaurnats by removing hard coded counties list and added location enabling
+[33mf69cb71[m HEAD@{31}: commit: improved user experience to findrestaurantandmenus component by imporving map loading state and column header clickability
+[33m540bd16[m HEAD@{32}: commit: consolidatied nearby restaurants and location routes to restaurants/route.ts
+[33mb6280a7[m[33m ([m[1;31morigin/brendon-pt3[m[33m, [m[1;32mbrendon-pt3[m[33m)[m HEAD@{33}: checkout: moving from brendon-pt3 to cemtateam
+[33mb6280a7[m[33m ([m[1;31morigin/brendon-pt3[m[33m, [m[1;32mbrendon-pt3[m[33m)[m HEAD@{34}: commit: Added trackApiUsage to firestore services script to track count
+[33maa16eea[m HEAD@{35}: commit: collections are adding to counties collection accordingly and counts are correct - yeahgit add .
+[33mf1371b5[m HEAD@{36}: commit: removed API call tracking for cached data
+[33m6f7f90b[m HEAD@{37}: commit: Still having an issue having counties collection add data along with other collections
+[33m374a8e4[m HEAD@{38}: reset: moving to origin/brendon-pt3
+[33m374a8e4[m HEAD@{39}: commit: Updated saverestaurant and verify functions in firestore but issue is not resolved - counties collection not fetching mroe data
+[33m287fd8f[m HEAD@{40}: commit: Adding queuing systemlogic and pagination to get unique counts wenbt more data is fetched - issue is not resolved for counties collection
+[33m00262bc[m HEAD@{41}: commit: Added queue management system to manage API costs
+[33md603dc3[m HEAD@{42}: commit: Updated the batch scripts in actions and api route
+[33m87469f6[m HEAD@{43}: commit: adjusted the saverestaurntdata function in firestore script - Only increments counts for new restaurants that aren't from cache
+[33ma21705a[m HEAD@{44}: commit: Added monitoring.ts script to UI in page.tsx and added monitoring in utilies folder - monitoring script can be deleted but first test
+[33m95254dd[m HEAD@{45}: commit: fixed monitoring component to work with functional components and addressed caching of all data box to only cache town(s) selected
+[33m2f62f61[m HEAD@{46}: commit: Still working on getting firestore collections consistent with data fetching and pulling - verify script is in progress to fix inconsistencies in future
+[33m60dbba1[m HEAD@{47}: commit: mapping out inconsistencies in firestore collections with database builder cache.ts and builder.ts files
+[33m830f7a7[m HEAD@{48}: commit: close to solving cache issue to have data stored in locationCache collection
+[33m062e5df[m HEAD@{49}: commit: Updated firebase services and gc config files to properly handle image urls and caching
+[33md04d55e[m HEAD@{50}: commit: SPlit storage routes to account for batch processing
+[33md803c36[m HEAD@{51}: commit: organized builder.ts script
+[33m57ccccf[m HEAD@{52}: commit: Added pause and stop functions and buttons to the UI when processing database building requests
+[33m0b70908[m HEAD@{53}: commit: Modified database building scripts for better api call and stats management
+[33m46249f5[m HEAD@{54}: commit: Added new logic to location.ts, menu upload (to work with new storage route), restaurantPage component, and database builder scripts have been updated)
+[33m0bd69af[m HEAD@{55}: commit: Added batch processing components and ui for processing and status checking in new counties structure
+[33m41eed8d[m HEAD@{56}: commit: added database-builder scripts with seperate workflow to build database
+[33me6a18e4[m HEAD@{57}: commit: Added restaurnst page and images to findrestaurnt component
+[33m5bb71b9[m HEAD@{58}: commit: linked restaurant images bucket to restaurantPage component - need to sort the business data out and link menus
+[33m4631893[m HEAD@{59}: commit: Cache logging and firestore update for locationCaches
+[33m53c5042[m HEAD@{60}: commit: updated caching

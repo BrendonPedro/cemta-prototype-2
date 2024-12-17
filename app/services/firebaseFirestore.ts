@@ -31,7 +31,7 @@ import { calculateDistance } from '@/app/utils/locationUtils'
 import type { UserPreferences } from "@/interfaces/users/user-preferences";
 import type { PlaceData } from "@googlemaps/google-maps-services-js";
 import { calculateMatchScore } from '@/app/utils/restaurantMatching';
-import { determineLocationDetails } from "./locationService";
+import { determineLocationDetails } from "@/app/services/locationService";
 
 // For the county/town creation part:
 type RestaurantDocData = WithFieldValue<DocumentData>;
@@ -283,7 +283,6 @@ export async function batchUpdateRestaurants(
     chunk.forEach(restaurant => {
       const ref = doc(db, 'restaurants', restaurant.id);
       batch.set(ref, {
-        // Use flat structure matching your Restaurant interface
         name: restaurant.name,
         address: restaurant.address,
         rating: restaurant.rating,
@@ -294,7 +293,8 @@ export async function batchUpdateRestaurants(
         menuCount: restaurant.menuCount || 0,
         hasMenu: !!restaurant.menuCount,
         hasDetailsFetched: true,
-        lastUpdated: new Date().toISOString()
+        lastUpdated: serverTimestamp(), // Use Firestore server timestamp
+        createdAt: restaurant.createdAt || serverTimestamp()
       }, { merge: true });
     });
 
@@ -536,11 +536,6 @@ export async function getVertexAiHistory(userId: string) {
   }));
 }
 
-// Function to set restaurant details in Firestore
-
-
-// Save restaurant details (rating and address) in Firestore
-
 
 // Get cached restaurant details from Firestore
 export async function getCachedRestaurantDetails(
@@ -548,17 +543,51 @@ export async function getCachedRestaurantDetails(
 ): Promise<Restaurant | null> {
   console.log(`🔍 [CACHE] Checking cache for restaurant: ${restaurantId}`);
   const restaurantRef = doc(db, "restaurants", restaurantId);
-  const docSnap = await getDoc(restaurantRef);
 
-  if (docSnap.exists()) {
-    console.log('💰 [SAVINGS] Found cached restaurant details');
-    return {
-      id: docSnap.id,
-      ...docSnap.data(),
-    } as Restaurant;
+  try {
+    const docSnap = await getDoc(restaurantRef);
+
+    if (docSnap.exists()) {
+      console.log('💰 [SAVINGS] Found cached restaurant details');
+      const data = docSnap.data();
+      
+      // Handle different timestamp formats
+      let lastUpdatedDate: Date;
+      if (data.lastUpdated?.toDate) {
+        // Firestore Timestamp
+        lastUpdatedDate = data.lastUpdated.toDate();
+      } else if (data.lastUpdated instanceof Date) {
+        // JavaScript Date
+        lastUpdatedDate = data.lastUpdated;
+      } else if (typeof data.lastUpdated === 'string') {
+        // ISO string
+        lastUpdatedDate = new Date(data.lastUpdated);
+      } else {
+        // Default to current time if no valid date found
+        lastUpdatedDate = new Date();
+      }
+
+      // Check if the cache is still valid
+      if (Date.now() - lastUpdatedDate.getTime() > CACHE_CONSTANTS.DURATION) {
+        console.log('⚠️ [CACHE] Restaurant data is stale');
+        return null;
+      }
+
+      // Format the data before returning
+      return {
+        id: docSnap.id,
+        ...data,
+        lastUpdated: lastUpdatedDate.toISOString(), // Standardize the format
+        createdAt: data.createdAt?.toDate?.() || data.createdAt || new Date(),
+      } as Restaurant;
+    }
+
+    console.log('💰 [COST] No cached data found for restaurant');
+    return null;
+  } catch (error) {
+    console.error('❌ [ERROR] Failed to fetch cached restaurant details:', error);
+    return null;
   }
-  console.log('💰 [COST] No cached data found for restaurant');
-  return null;
 }
 
 export function getLocationCacheKey(lat: number, lng: number): string {
@@ -591,19 +620,35 @@ export async function getCachedRestaurantsForLocation(
       const data = cacheDoc.data();
       const cachedAt = data.cachedAt?.toDate() || new Date(0);
       
+      // Add error handling for cache data
+      if (!data.restaurants || !Array.isArray(data.restaurants)) {
+        console.warn('Invalid cache data structure');
+        return null;
+      }
+
       // Check if cache is still valid
       if (Date.now() - cachedAt.getTime() < CONFIG.CACHE.DURATION) {
         console.log(`Cache hit for ${locationKey} - ${data.restaurants.length} restaurants`);
         return data.restaurants;
       } else {
         console.log(`Cache expired for ${locationKey}`);
+        // Clean up expired cache
+        try {
+          await deleteDoc(cacheRef);
+        } catch (cleanupError) {
+          console.warn('Failed to clean up expired cache:', cleanupError);
+        }
       }
-    } else {
-      console.log(`No cache found for ${locationKey}`);
     }
     return null;
   } catch (error) {
-    console.error('Error getting cache:', error);
+    console.error('Error accessing cache:', error);
+    // Attempt to recover by clearing the problematic cache entry
+    try {
+      await deleteDoc(cacheRef);
+    } catch (cleanupError) {
+      console.warn('Failed to clean up corrupted cache:', cleanupError);
+    }
     return null;
   }
 }
@@ -710,6 +755,7 @@ export async function saveCachedRestaurantsForLocation(
     throw error;
   }
 }
+
 
 // Function to get menus for multiple restaurants
 export async function getMenusForRestaurants(
@@ -926,38 +972,59 @@ export async function getCachedImageUrl(
   userId: string,
   fileName: string,
 ): Promise<string | null> {
-  const cacheKey = fileName.split('/').join('_');
-  const imageRef = doc(db, "users", userId, "imageCaches", cacheKey);
-  const docSnap = await getDoc(imageRef);
+  try {
+    const cacheKey = fileName.split('/').join('_');
+    const imageRef = doc(db, "users", userId, "imageCaches", cacheKey);
+    const docSnap = await getDoc(imageRef);
 
-  if (docSnap.exists()) {
-    const data = docSnap.data();
-    const cacheTime = data.cachedAt?.toMillis() || 0;
-    const CACHE_DURATION = 365 * 24 * 60 * 60 * 1000; // 365 days in milliseconds
+    if (docSnap.exists()) {
+      const data = docSnap.data();
+      const cacheTime = data.cachedAt?.toMillis() || 0;
 
-    if (Date.now() - cacheTime < CACHE_DURATION) {
-      return data.imageUrl;
+      if (Date.now() - cacheTime < CACHE_CONSTANTS.DURATION) {
+        // Validate the URL before returning
+        if (data.imageUrl && typeof data.imageUrl === 'string') {
+          return data.imageUrl;
+        }
+        // If URL is invalid, delete the cache entry
+        await deleteDoc(imageRef);
+      } else {
+        // Clean up expired cache
+        await deleteDoc(imageRef);
+      }
     }
-  }
 
-  return null;
+    return '/placeholder-restaurant.jpg'; // Return default image path instead of null
+  } catch (error) {
+    console.error('Error accessing image cache:', error);
+    return '/placeholder-restaurant.jpg'; // Return default image path on error
+  }
 }
 
+// Update saveImageUrlCache to validate URLs before saving
 export async function saveImageUrlCache(
   userId: string,
   fileName: string,
   imageUrl: string,
 ) {
-  // Create a flattened cache key from the file path
-  const cacheKey = fileName.split('/').join('_');
-  
-  const imageRef = doc(db, "users", userId, "imageCaches", cacheKey);
-  
-  await setDoc(imageRef, {
-    imageUrl,
-    originalPath: fileName, // Keep original path for reference
-    cachedAt: new Date(),
-  });
+  try {
+    if (!imageUrl || typeof imageUrl !== 'string') {
+      throw new Error('Invalid image URL');
+    }
+
+    const cacheKey = fileName.split('/').join('_');
+    const imageRef = doc(db, "users", userId, "imageCaches", cacheKey);
+    
+    await setDoc(imageRef, {
+      imageUrl,
+      originalPath: fileName,
+      cachedAt: serverTimestamp(),
+      lastValidated: serverTimestamp()
+    });
+  } catch (error) {
+    console.error('Error saving image cache:', error);
+    // Don't throw - let the application continue
+  }
 }
 
 export async function saveMenuImageReferences(

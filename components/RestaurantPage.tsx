@@ -272,24 +272,26 @@ const RestaurantContent: React.FC<RestaurantContentProps> = ({
   const renderMenusSection = () => (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
       {menus.map((menu) => (
-        <Link href={`/menu-details/${menu.id}`} key={menu.id}>
-          <Card className="overflow-hidden hover:shadow-lg transition-shadow">
-            <CardContent className="p-6">
-              <h3 className="text-xl font-semibold mb-4">{menu.menuName}</h3>
-              <div className="relative aspect-[4/3] w-full">
-                <Image
-                  {...getImageProps(
-                    menu.imageUrl || "/placeholder-restaurant.jpg",
-                    menu.menuName,
-                    'menu'
-                  )}
-                  fill
-                  className="rounded-lg object-cover"
-                />
-              </div>
-            </CardContent>
-          </Card>
-        </Link>
+        <div key={menu.id}> {/* Wrapper div instead of Link */}
+          <Link href={`/menu-details/${menu.id}`}>
+            <Card className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer">
+              <CardContent className="p-6">
+                <h3 className="text-xl font-semibold mb-4">{menu.menuName}</h3>
+                <div className="relative aspect-[4/3] w-full">
+                  <Image
+                    {...getImageProps(
+                      menu.imageUrl || "/placeholder-restaurant.jpg",
+                      menu.menuName,
+                      'menu'
+                    )}
+                    fill
+                    className="rounded-lg object-cover"
+                  />
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+        </div>
       ))}
     </div>
   );

@@ -15,7 +15,7 @@ import { Check, RefreshCw, ChevronDown, Info, MapPin, Star, Search } from "lucid
 import { motion } from "framer-motion";
 import { useAuth } from "@/components/AuthProvider";
 import { useAuth as useClerkAuth } from "@clerk/nextjs";
-import { useJsApiLoader, GoogleMap, MarkerClusterer, Libraries } from "@react-google-maps/api";
+import { useJsApiLoader, GoogleMap, MarkerClusterer } from "@react-google-maps/api";
 import {
   getMenuCountForRestaurant,
   getCachedRestaurantDetails,
@@ -58,13 +58,14 @@ import { calculateDistance } from "@/app/utils/locationUtils";
 import { CONFIG } from "@/lib/database-builder/config";
 import { Loader2 } from "lucide-react";
 import { CachedRestaurant, Restaurant } from "@/interfaces/restaurant/types";
+import { useMaps } from '@/app/contexts/MapsContext';
+import { 
+  googleMapsConfig, 
+  mapOptions, 
+  DEFAULT_CENTER 
+} from '@/config/googleMapsConfig';
 
 type LatLngLiteral = { lat: number; lng: number };
-
-const DEFAULT_CENTER = {
-  lat: 25.0330,
-  lng: 121.5654
-};
 
 const mapContainerStyle = {
   width: "100%",
@@ -76,34 +77,6 @@ declare global {
     google: typeof google;
   }
 }
-
-const GOOGLE_MAPS_LIBRARIES: Libraries = ["places", "marker"];
-const googleMapsConfig = {
-  id: "google-map-script",
-  googleMapsApiKey: process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY!,
-  version: "weekly",
-  libraries: GOOGLE_MAPS_LIBRARIES,
-  mapIds: [process.env.NEXT_PUBLIC_GOOGLE_MAPS_ID!],
-  region: "TW",
-  language: "zh-TW"
-};
-
-const mapOptions = {
-  mapId: process.env.NEXT_PUBLIC_GOOGLE_MAPS_ID,
-  disableDefaultUI: true,
-  clickableIcons: false,
-  minZoom: 8,
-  maxZoom: 20,
-  mapTypeControl: false,
-  fullscreenControl: false,
-  zoomControl: true,
-  streetViewControl: false,
-  tilt: 0,
-  heading: 0,
-  gestureHandling: "greedy" as const,
-  draggableCursor: "pointer",
-  draggingCursor: "grabbing"
-};
 
 interface AdvancedMarkerProps {
   position: LatLngLiteral;
@@ -176,7 +149,22 @@ const getGoogleMapsUrl = (restaurant: Restaurant) => {
   return `https://www.google.com/maps/search/${searchQuery}/@${restaurant.latitude},${restaurant.longitude},17z`;
 };
 
-const MapWithErrorBoundary = ({
+interface MapWithErrorBoundaryProps {
+  center: LatLngLiteral;
+  handleMapClick: (e: google.maps.MapMouseEvent) => void;
+  handleMapLoad: (map: google.maps.Map) => void;
+  restaurants: Restaurant[];
+  locationEnabled: boolean;
+  userLocation: LatLngLiteral | null;
+  pinLocation: LatLngLiteral | null;
+  isSameLocation: (loc1: LatLngLiteral | null, loc2: LatLngLiteral | null) => boolean;
+  handleMarkerClick: (restaurant: Restaurant, position: LatLngLiteral) => void;
+  selectedMarker: string | null;
+  mapRef: React.RefObject<google.maps.Map | null>;
+  googleMapsConfig: typeof googleMapsConfig;
+}
+
+const MapWithErrorBoundary: React.FC<MapWithErrorBoundaryProps> = ({
   center,
   handleMapClick,
   handleMapLoad,
@@ -188,18 +176,7 @@ const MapWithErrorBoundary = ({
   handleMarkerClick,
   selectedMarker,
   mapRef,
-}: {
-  center: LatLngLiteral;
-  handleMapClick: (event: google.maps.MapMouseEvent) => void;
-  handleMapLoad: (map: google.maps.Map) => void;
-  restaurants: Restaurant[];
-  locationEnabled: boolean;
-  userLocation: LatLngLiteral | null;
-  pinLocation: LatLngLiteral | null;
-  isSameLocation: (loc1: LatLngLiteral | null, loc2: LatLngLiteral | null) => boolean;
-  handleMarkerClick: (restaurant: Restaurant, position: LatLngLiteral) => void;
-  selectedMarker: string | null;
-  mapRef: React.RefObject<google.maps.Map | null>;
+  googleMapsConfig,
 }) => {
   const { isLoaded, loadError } = useJsApiLoader(googleMapsConfig);
 
@@ -327,6 +304,16 @@ export function FindRestaurantsAndMenus() {
     counties: new Set<string>()
   });
 
+  const { 
+    isLoaded,
+    loadError,
+    userLocation: contextUserLocation,
+    locationEnabled: contextLocationEnabled,
+    currentLocation,
+    setCurrentLocation,
+    toggleLocation 
+  } = useMaps();
+
   const updateLocationStats = (restaurants: Restaurant[]) => {
     const newStats = {
       towns: new Set<string>(),
@@ -435,34 +422,18 @@ export function FindRestaurantsAndMenus() {
   
       try {
         if (geoError || !position || !position.coords) {
-          console.log('Using default location (Taipei)');
-          setUserLocation(null);
-          setCenter(DEFAULT_CENTER);
-          setPinLocation(DEFAULT_CENTER);
-          setLocationEnabled(false);
-          await fetchNearbyRestaurants(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng);
+          console.log('Using default location');
+          toggleLocation(false); // Use MapsContext toggle
+          setPinLocation(currentLocation); // Use MapsContext location
+          await fetchNearbyRestaurants(currentLocation.lat, currentLocation.lng);
           return;
         }
   
         const { latitude, longitude } = position.coords;
         console.log('Setting coordinates:', { latitude, longitude });
-  
-        // Check Taiwan bounds
-        if (latitude < 21.9 || latitude > 25.3 || longitude < 120.0 || longitude > 122.0) {
-          console.warn('Using default Taipei location');
-          setUserLocation(null);
-          setCenter(DEFAULT_CENTER);
-          setPinLocation(DEFAULT_CENTER);
-          setLocationEnabled(false);
-          await fetchNearbyRestaurants(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng);
-          return;
-        }
-  
-        const newLocation = { lat: latitude, lng: longitude };
-        setUserLocation(newLocation);
-        setCenter(newLocation);
-        setPinLocation(newLocation);
-        setLocationEnabled(true);
+        
+        toggleLocation(true); // Enable location in MapsContext
+        setPinLocation({ lat: latitude, lng: longitude });
         await fetchNearbyRestaurants(latitude, longitude);
       } catch (error) {
         console.error('Initialization error:', error);
@@ -473,7 +444,7 @@ export function FindRestaurantsAndMenus() {
     };
   
     initLocation();
-  }, [position, geoError, userId, firebaseToken, authLoading]);
+  }, [position, geoError, userId, firebaseToken, authLoading, currentLocation, toggleLocation]);
 
 
   const handleLocationToggle = async (enabled: boolean) => {
@@ -562,26 +533,17 @@ export function FindRestaurantsAndMenus() {
     }
   }, [restaurants, userLocation]);
 
-  const handleMapClick = useCallback(
-    debounce(async (event: google.maps.MapMouseEvent) => {
-      const latLng = event.latLng;
-      if (!latLng) return;
-      
-      const newLat = latLng.lat();
-      const newLng = latLng.lng();
-      
-      setCenter({ lat: newLat, lng: newLng });
-      setPinLocation({ lat: newLat, lng: newLng });
-      
-      setFocusedRestaurant(null);
-      setSelectedMarker(null);
-      
-      // Set loading state before fetching
-      setIsLoading(true);
-      await fetchNearbyRestaurants(newLat, newLng);
-    }, 300),
-    [fetchNearbyRestaurants]
-  );
+  const handleMapClick = useCallback((e: google.maps.MapMouseEvent) => {
+    if (e.latLng) {
+      const newLocation = {
+        lat: e.latLng.lat(),
+        lng: e.latLng.lng()
+      };
+      setPinLocation(newLocation);
+      setCurrentLocation(newLocation);
+      fetchNearbyRestaurants(newLocation.lat, newLocation.lng);
+    }
+  }, [setCurrentLocation, fetchNearbyRestaurants]);
 
   const isSameLocation = (loc1: LatLngLiteral | null, loc2: LatLngLiteral | null): boolean => {
     if (!loc1 || !loc2) return false;
@@ -840,6 +802,8 @@ export function FindRestaurantsAndMenus() {
   };
 
   const isLastPage = currentPage === 1 || restaurants.length <= 10;
+
+  const displayedRestaurants = restaurants.slice(currentPage * 20, (currentPage + 1) * 20);
 
    return (
     <div className="h-full flex flex-col relative">
@@ -1202,6 +1166,7 @@ export function FindRestaurantsAndMenus() {
               handleMarkerClick={handleMarkerClick}
               selectedMarker={selectedMarker}
               mapRef={mapRef}
+              googleMapsConfig={googleMapsConfig}
             />
             
             <div className="mt-4 space-y-4">

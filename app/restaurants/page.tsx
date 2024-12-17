@@ -5,18 +5,18 @@
 import React, { useState, useEffect } from "react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Search, MapPin, Star, Info } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { searchRestaurants } from "@/app/services/firebaseFirestore";
-import type { EnhancedSearchResult } from "@/app/services/firebaseFirestore";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { GoogleMap, useJsApiLoader, Marker } from "@react-google-maps/api";
 import ErrorBoundary from "@/components/ErrorBoundary";
-import { getImageProps } from "@/app/utils/imageHandling";
+import { getRestaurantImageProps, handleImageError } from "@/app/utils/imageHandling";
 import { getRestaurantLink } from "@/app/utils/restaurantUtils";
+import { getImageProps } from "@/app/utils/imageHandling";
 
 // Types and Interfaces
 import { 
@@ -79,6 +79,69 @@ const RestaurantSkeleton: React.FC = () => (
     </div>
   </Card>
 );
+
+// Component: Restaurant Card - matching the style from AboutPage
+const RestaurantCard = ({ restaurant }: { restaurant: Restaurant }) => {
+  const handleMapClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    window.open(
+      `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+        `${restaurant.name} ${restaurant.address}`
+      )}`,
+      '_blank',
+      'noopener,noreferrer'
+    );
+  };
+
+  return (
+    <Link 
+      href={getRestaurantLink(restaurant)}
+      prefetch={false}
+      className="group"
+    >
+      <Card className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer">
+        <div className="relative h-48">
+          <Image
+            {...getImageProps(restaurant.imageUrl, restaurant.name, 'card')}
+            fill
+            onError={handleImageError}
+            unoptimized={restaurant.imageUrl?.includes('yelp')}
+          />
+
+          {restaurant.hasYelpData && (
+            <div className="absolute top-2 right-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
+              Yelp
+            </div>
+          )}
+        </div>
+        <CardContent className="p-6">
+          <h3 className="text-xl font-semibold mb-2 line-clamp-1">
+            {restaurant.name}
+          </h3>
+          <div className="flex items-center text-gray-600 mb-2">
+            <button
+              onClick={handleMapClick}
+              className="group mr-2 p-1 hover:bg-gray-100 rounded-full transition-all duration-200"
+            >
+              <MapPin className="h-4 w-4 flex-shrink-0 text-gray-600 hover:text-customTeal transition-all duration-200 transform group-hover:scale-125" />
+            </button>
+            <div className="flex flex-col">
+              <span className="line-clamp-1">{restaurant.county}</span>
+              <span className="line-clamp-2 text-sm">{restaurant.address}</span>
+            </div>
+          </div>
+          {restaurant.rating && restaurant.rating > 0 && (
+            <div className="flex items-center">
+              <Star className="h-4 w-4 text-yellow-400 mr-1 flex-shrink-0" />
+              <span>{restaurant.rating.toFixed(1)}</span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </Link>
+  );
+};
 
 function RestaurantsPage() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -397,60 +460,7 @@ function RestaurantsPage() {
     [...Array(6)].map((_, i) => <RestaurantSkeleton key={i} />)
   ) : restaurants.length > 0 ? (
     restaurants.map((restaurant) => (
-      <Link 
-        href={getRestaurantLink(restaurant)}
-        key={restaurant.id}
-        className="group"
-        prefetch={false}
-      >
-        <Card className="overflow-hidden hover:shadow-lg transition-shadow duration-300 cursor-pointer">
-          <div className="relative h-48">
-            <Image
-              {...getImageProps(restaurant.imageUrl, restaurant.name, 'card')}
-              fill
-              onError={(e) => {
-                const img = e.target as HTMLImageElement;
-                img.src = '/placeholder-restaurant.jpg';
-              }}
-              unoptimized={restaurant.imageUrl?.includes('yelp')}
-            />
-
-            {restaurant.hasYelpData && (
-              <div className="absolute top-2 right-2 bg-black bg-opacity-50 text-white text-xs px-2 py-1 rounded">
-                Yelp
-              </div>
-            )}
-          </div>
-          <div className="p-6">
-          <h3 className="text-xl font-semibold mb-2 line-clamp-1">
-              {restaurant.name}  
-            </h3>
-            <div className="flex items-center text-gray-600 mb-2">
-              <a 
-                href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-                  `${restaurant.name} ${restaurant.address}`
-                )}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-                className="group"
-              >
-                <MapPin className="h-4 w-4 mr-2 flex-shrink-0 hover:text-customTeal transition-all duration-200 transform group-hover:scale-125" />
-              </a>
-              <div className="flex flex-col">
-                <span className="line-clamp-1">{restaurant.county}</span>
-                <span className="line-clamp-2 text-sm">{restaurant.address}</span>
-              </div>
-            </div>
-            {restaurant.rating && restaurant.rating > 0 && (
-              <div className="flex items-center">
-                <Star className="h-4 w-4 text-yellow-400 mr-1 flex-shrink-0" />
-                <span>{restaurant.rating.toFixed(1)}</span>
-              </div>
-            )}
-          </div>
-        </Card>
-      </Link>
+      <RestaurantCard key={restaurant.id} restaurant={restaurant} />
     ))
   ) : searchTerm ? (
     <div className="col-span-full text-center text-gray-500">
