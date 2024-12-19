@@ -352,6 +352,7 @@ async function processPlaceDetails(
       yelpRating: imageData.yelpData?.rating || null,
       hasYelpData: !!imageData.yelpData,
       priceLevel: details.price_level?.toString() || null,
+      hasDetailsFetched: true 
     };
 
     await saveRestaurant(enhancedRestaurant, {

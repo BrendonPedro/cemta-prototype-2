@@ -64,6 +64,7 @@ import {
   mapOptions, 
   DEFAULT_CENTER 
 } from '@/config/googleMapsConfig';
+import { useRestaurantHandler } from '@/hooks/use-restaurant-handler';
 
 type LatLngLiteral = { lat: number; lng: number };
 
@@ -271,7 +272,6 @@ export function FindRestaurantsAndMenus() {
     watchPosition: false
   });
 
-  const mapRef = useRef<google.maps.Map | null>(null);
   const { userId } = useClerkAuth();
   const { firebaseToken, loading: authLoading, error: authError } = useAuth();
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
@@ -279,23 +279,17 @@ export function FindRestaurantsAndMenus() {
   const [nameFilter, setNameFilter] = useState("all");
   const [menuCountFilter, setMenuCountFilter] = useState("all");
   const [ratingFilter, setRatingFilter] = useState("all");
-  const [center, setCenter] = useState<LatLngLiteral>(DEFAULT_CENTER);
-  const [pinLocation, setPinLocation] = useState<LatLngLiteral | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(0);
-  const [focusedRestaurant, setFocusedRestaurant] = useState<Restaurant | null>(null);
   const router = useRouter();
   const [isLoadingMenu, setIsLoadingMenu] = useState(false);
   const [showWarning, setShowWarning] = useState(false);
   const [selectedRestaurant, setSelectedRestaurant] = useState<Restaurant | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
-  const [selectedMarker, setSelectedMarker] = useState<string | null>(null);
   const [isCacheLoading, setIsCacheLoading] = useState(false);
   const [isApiLoading, setIsApiLoading] = useState(false);
-  const [userLocation, setUserLocation] = useState<LatLngLiteral | null>(null);
-  const [locationEnabled, setLocationEnabled] = useState(false);
   const [locationStats, setLocationStats] = useState<{
     towns: Set<string>;
     counties: Set<string>;
@@ -304,14 +298,38 @@ export function FindRestaurantsAndMenus() {
     counties: new Set<string>()
   });
 
+  const restaurantHandler = firebaseToken ? useRestaurantHandler(firebaseToken) : null;
+
+  const {
+    focusedRestaurant,
+    selectedMarker,
+    handleTableClick,
+    handleMarkerClick,
+    resetFocus,
+    mapRef
+  } = restaurantHandler ?? {
+    focusedRestaurant: null,
+    selectedMarker: null,
+    handleTableClick: () => {},
+    handleMarkerClick: () => {},
+    resetFocus: () => {},
+    mapRef: { current: null }
+  };
+
   const { 
     isLoaded,
     loadError,
-    userLocation: contextUserLocation,
-    locationEnabled: contextLocationEnabled,
+    toggleLocation,
     currentLocation,
     setCurrentLocation,
-    toggleLocation 
+    userLocation,
+    setUserLocation, // Add this
+    locationEnabled,
+    setLocationEnabled,
+    setPinLocation,
+    pinLocation,
+    center,
+    setCenter
   } = useMaps();
 
   const updateLocationStats = (restaurants: Restaurant[]) => {
@@ -341,11 +359,11 @@ export function FindRestaurantsAndMenus() {
         (menuCountFilter === "0" && restaurant.menuCount === 0) ||
         (menuCountFilter === "1-3" && restaurant.menuCount >= 1 && restaurant.menuCount <= 3) ||
         (menuCountFilter === "4+" && restaurant.menuCount >= 4);
-
+  
       return matchesName && matchesRating && matchesMenuCount;
     });
-
-    setFilteredRestaurants(filtered.slice(currentPage * 10, (currentPage + 1) * 10));
+  
+    setFilteredRestaurants(filtered.slice(currentPage * 20, (currentPage + 1) * 20));
   }, [restaurants, nameFilter, ratingFilter, menuCountFilter, currentPage]);
 
   const fetchNearbyRestaurants = useCallback(async (lat: number, lng: number) => {
@@ -448,32 +466,13 @@ export function FindRestaurantsAndMenus() {
 
 
   const handleLocationToggle = async (enabled: boolean) => {
-    console.log('Location toggle:', enabled);
+    toggleLocation(enabled); // Use MapsContext
     
-    if (enabled) {
-      // If we don't currently have a good position, try using position again
-      if (position && position.coords) {
-        const { latitude, longitude } = position.coords;
-        console.log('Enabling location from position:', { latitude, longitude });
-        const newLocation = { lat: latitude, lng: longitude };
-        setUserLocation(newLocation);
-        setCenter(newLocation);
-        setPinLocation(newLocation);
-        setLocationEnabled(true);
-        await fetchNearbyRestaurants(latitude, longitude);
-        setLocationError(null);
-      } else {
-        setLocationError('Unable to get current location');
-        setLocationEnabled(false);
-      }
+    if (enabled && position?.coords) {
+      const { latitude, longitude } = position.coords;
+      await fetchNearbyRestaurants(latitude, longitude);
     } else {
-      console.log('Switching to default location');
-      setLocationEnabled(false);
-      setUserLocation(null);
-      setCenter(DEFAULT_CENTER);
-      setPinLocation(DEFAULT_CENTER);
       await fetchNearbyRestaurants(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng);
-      setLocationError(null);
     }
   };
   
@@ -539,8 +538,7 @@ export function FindRestaurantsAndMenus() {
         lat: e.latLng.lat(),
         lng: e.latLng.lng()
       };
-      setPinLocation(newLocation);
-      setCurrentLocation(newLocation);
+      setCurrentLocation(newLocation); // Use MapsContext
       fetchNearbyRestaurants(newLocation.lat, newLocation.lng);
     }
   }, [setCurrentLocation, fetchNearbyRestaurants]);
@@ -550,55 +548,6 @@ export function FindRestaurantsAndMenus() {
     return Math.abs(loc1.lat - loc2.lat) < 0.000001 && 
            Math.abs(loc1.lng - loc2.lng) < 0.000001;
   };
-
-  const handleMarkerClick = useCallback(async (
-    restaurant: Restaurant, 
-    position: LatLngLiteral
-  ) => {
-    try {
-      setFocusedRestaurant(restaurant);
-      setSelectedMarker(restaurant.id);
-      setCenter(position); 
-      
-      if (mapRef.current) {
-        mapRef.current.panTo(position);
-        mapRef.current.setZoom(16);
-      }
-
-      if (!restaurant.hasDetailsFetched) {
-        console.log(`💰 [COST] Fetching details for restaurant: ${restaurant.name}`);
-        const response = await fetch(
-          `/api/restaurants?lat=${position.lat}&lng=${position.lng}&id=${restaurant.id}&type=details`,
-          {
-            headers: {
-              Authorization: `Bearer ${firebaseToken}`,
-            },
-          }
-        );
-
-        if (!response.ok) {
-          console.warn('Failed to fetch additional restaurant details');
-          return;
-        }
-
-        const data = await response.json();
-        if (data.restaurant) {
-          const updatedRestaurant = {
-            ...data.restaurant,
-            hasDetailsFetched: true
-          };
-          
-          setRestaurants(prev => prev.map(r => 
-            r.id === restaurant.id ? updatedRestaurant : r
-          ));
-          setFocusedRestaurant(updatedRestaurant);
-        }
-      }
-      
-    } catch (error) {
-      console.error('Error in handleMarkerClick:', error);
-    }
-  }, [firebaseToken]);
 
   const handleRequestMenu = async (
     restaurantId: string,
@@ -736,17 +685,9 @@ export function FindRestaurantsAndMenus() {
     router.push(`/menu-details/${restaurantId}`);
   };
 
-  const handleRestaurantClick = useCallback((restaurant: Restaurant) => {
-    const newCenter = { lat: restaurant.latitude, lng: restaurant.longitude };
-    setCenter(newCenter);
-    setPinLocation(newCenter);
-    setFocusedRestaurant(restaurant);
-    setSelectedMarker(restaurant.id);
-    if (mapRef.current) mapRef.current.setZoom(16);
-  }, []);
 
   const handleRestaurantNameClick = (restaurant: Restaurant) => {
-    handleRestaurantClick(restaurant);
+    handleTableClick(restaurant); // Use function from useRestaurantHandler
     const position = { lat: restaurant.latitude, lng: restaurant.longitude };
     setCenter(position);
     if (mapRef.current) {
@@ -754,9 +695,6 @@ export function FindRestaurantsAndMenus() {
     }
   };
 
-  const resetFocus = () => {
-    setFocusedRestaurant(null);
-  };
 
   useEffect(() => {
     handleFilter();
@@ -1026,7 +964,7 @@ export function FindRestaurantsAndMenus() {
                       <TableRow
                         key={`${restaurant.id}-${index}`}
                         className="hover:bg-gray-100 cursor-pointer"
-                        onClick={() => handleRestaurantClick(restaurant)}
+                        onClick={() => handleTableClick(restaurant)}
                       >
                         <TableCell className="w-2/5">
                           <div className="flex items-center gap-2">
@@ -1123,27 +1061,27 @@ export function FindRestaurantsAndMenus() {
               </Table>
             )}
 
-            <div className="flex justify-between mt-4">
-      <Button
-        onClick={handlePrevPage}
-        disabled={currentPage === 0}
-        className="bg-customTeal hover:bg-customTeal/90 text-white"
-      >
-        Previous
-      </Button>
-      <span>
-        Showing {currentPage * 10 + 1}-
-        {Math.min((currentPage + 1) * 10, restaurants.length)} of{" "}
-        {restaurants.length}
-      </span>
-      <Button
-        onClick={handleNextPage}
-        disabled={(currentPage + 1) * 10 >= restaurants.length}
-        className="bg-customTeal hover:bg-customTeal/90 text-white"
-      >
-        Next
-      </Button>
-    </div>
+          <div className="flex justify-between mt-4">
+            <Button
+              onClick={() => setCurrentPage((prev) => Math.max(prev - 1, 0))}
+              disabled={currentPage === 0}
+              className="bg-customTeal hover:bg-customTeal/90 text-white"
+            >
+              Previous
+            </Button>
+            <span>
+              Showing {currentPage * 20 + 1}-
+              {Math.min((currentPage + 1) * 20, restaurants.length)} of{" "}
+              {restaurants.length}
+            </span>
+            <Button
+              onClick={() => setCurrentPage((prev) => prev + 1)}
+              disabled={(currentPage + 1) * 20 >= restaurants.length}
+              className="bg-customTeal hover:bg-customTeal/90 text-white"
+            >
+              Next
+            </Button>
+          </div>
           </CardContent>
         </Card>
 
@@ -1155,19 +1093,19 @@ export function FindRestaurantsAndMenus() {
           </CardHeader>
           <CardContent>
             <MapWithErrorBoundary
-              center={center}
-              handleMapClick={handleMapClick}
-              handleMapLoad={handleMapLoad}
-              restaurants={restaurants}
-              locationEnabled={locationEnabled}
-              userLocation={userLocation}
-              pinLocation={pinLocation}
-              isSameLocation={isSameLocation}
-              handleMarkerClick={handleMarkerClick}
-              selectedMarker={selectedMarker}
-              mapRef={mapRef}
-              googleMapsConfig={googleMapsConfig}
-            />
+                center={currentLocation} // Use MapsContext
+                handleMapClick={handleMapClick}
+                handleMapLoad={handleMapLoad}
+                restaurants={restaurants}
+                locationEnabled={locationEnabled} // Use MapsContext
+                userLocation={userLocation} // Use MapsContext
+                pinLocation={currentLocation} // Use MapsContext
+                isSameLocation={isSameLocation}
+                handleMarkerClick={handleMarkerClick}
+                selectedMarker={selectedMarker}
+                mapRef={mapRef}
+                googleMapsConfig={googleMapsConfig}
+              />
             
             <div className="mt-4 space-y-4">
               {!focusedRestaurant ? (

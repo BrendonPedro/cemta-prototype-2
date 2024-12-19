@@ -9,7 +9,8 @@ import {
   query, 
   where,
   increment,
-  Timestamp 
+  Timestamp,
+  serverTimestamp 
 } from "firebase/firestore";
 import { Client, Language, AddressType, PlaceType1, PlacesNearbyRanking } from "@googlemaps/google-maps-services-js";
 import { uploadImageToBucket } from "./gcpBucketStorage";
@@ -20,7 +21,7 @@ import geohash from "ngeohash";
 import { saveRestaurant } from "./firebaseFirestore";
 import { measureAPICall, checkRateLimit } from '@/app/utils/apiUtils';
 import { saveCachedRestaurantsForLocation, getCachedRestaurantsForLocation } from "./firebaseFirestore";
-import { counties, getNearbyTowns, getTownsByCounty } from '@/lib/data/counties';
+import { counties, getAllTowns, getNearbyTowns, getTownsByCounty } from '@/lib/data/counties';
 import { getImageUrl } from './gcpBucketStorage';
 import { EnhancedCountyData, EnhancedTownData } from '@/lib/data/counties';
 import { calculateDistance } from '@/app/utils/locationUtils';
@@ -105,10 +106,9 @@ interface LocationCache {
 // -----CACHE CONSTANTS-----
 
 // Constants
-const EARTH_RADIUS_KM = 6371;
-const DEFAULT_LOCATION: LocationDetails = {
-  county: 'Unknown County',
-  townName: 'Unknown Town'
+export const DEFAULT_LOCATION: LocationDetails = {
+  county: '台北市', // preferred default
+  townName: '大安區' // preferred default
 };
 
 const CACHE_CONFIG = {
@@ -298,22 +298,6 @@ async function processImagesInBatches(
   return results;
 }
 
-//Calculates the distance between two points on Earth using the Haversine formula
-function calculateHaversineDistance(point1: Coordinates, point2: Coordinates): number {
-  const toRadians = (degrees: number) => degrees * Math.PI / 180;
-  
-  const dLat = toRadians(point2.lat - point1.lat);
-  const dLon = toRadians(point2.lng - point1.lng);
-  
-  const a = 
-    Math.sin(dLat/2) * Math.sin(dLat/2) +
-    Math.cos(toRadians(point1.lat)) * Math.cos(toRadians(point2.lat)) * 
-    Math.sin(dLon/2) * Math.sin(dLon/2);
-    
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return EARTH_RADIUS_KM * c;
-}
-
 // ----CORE LOCATION FUNCTIONS-----
 
 //Determines the nearest county and town based on provided coordinates
@@ -323,21 +307,14 @@ export async function determineLocationDetails(lat: number, lng: number): Promis
       throw new Error('Invalid coordinates provided');
     }
 
-    if (!verifyTaiwanCoordinates(lat, lng)) {
-      console.warn('Coordinates outside Taiwan bounds:', { lat, lng });
-      return DEFAULT_LOCATION;
-    }
-
-    // Get nearby towns directly using the utility function
-    const nearbyTowns = getNearbyTowns(lat, lng, 20); // Search within 20km radius
-
+    // First try: Local data with wider radius
+    const nearbyTowns = getNearbyTowns(lat, lng, 50); // 50km radius
     if (nearbyTowns.length > 0) {
-      const closestTown = nearbyTowns[0]; // Already sorted by distance
-      console.log('Location match found:', {
+      const closestTown = nearbyTowns[0];
+      console.log('Found location in local data:', {
         town: closestTown.name,
         county: closestTown.countyName,
-        distance: Math.round(closestTown.distance * 1000), // Convert to meters
-        coordinates: { lat, lng }
+        distance: Math.round(closestTown.distance * 1000)
       });
       
       return {
@@ -346,60 +323,105 @@ export async function determineLocationDetails(lat: number, lng: number): Promis
       };
     }
 
-    // Fallback: manual search through all counties and towns
-    let nearestLocation = {
-      town: null as (EnhancedTownData & { countyName: string }) | null,
-      distance: Infinity
-    };
+    // Second try: Google Geocoding API
+    console.log('Local data miss, trying Google Geocoding');
+    const client = new Client({});
+    
+    const response = await client.reverseGeocode({
+      params: {
+        latlng: { lat, lng },
+        key: process.env.GOOGLE_MAPS_API_KEY!,
+        language: Language.en,
+        result_type: [
+          AddressType.administrative_area_level_2,
+          AddressType.locality,
+          AddressType.sublocality_level_1
+        ]
+      },
+    });
 
-    for (const county of counties) {
-      for (const town of county.towns) {
-        const distance = calculateDistance(
-          lat, 
-          lng, 
-          town.location.lat, 
-          town.location.lng
-        );
+    if (response.data.results?.length) {
+      const result = response.data.results[0];
+      const components = result.address_components;
 
-        if (distance < nearestLocation.distance) {
-          nearestLocation = {
-            town: { ...town, countyName: county.name },
-            distance
-          };
+      let county = components?.find(c => 
+        c.types.includes(AddressType.administrative_area_level_2)
+      )?.long_name;
+
+      let town = components?.find(c => 
+        c.types.includes(AddressType.locality) ||
+        c.types.includes(AddressType.sublocality_level_1)
+      )?.long_name;
+
+      // If we got anything from Google, use it
+      if (county || town) {
+        console.log('Found location from Google:', { county, town });
+        
+        // If we only got one piece, try to fill in the other from our data
+        if (!county || !town) {
+          const nearestMatch = getNearbyTowns(lat, lng, 100)[0]; // Wider radius for filling gaps
+          county = county || nearestMatch?.countyName;
+          town = town || nearestMatch?.name;
         }
+
+        // Cache this result for future use
+        await saveLocationToCache(lat, lng, {
+          county: county!,
+          townName: town!
+        });
+
+        return {
+          county: county!,
+          townName: town!
+        };
       }
     }
 
-    // Use nearest location if within 20km
-    if (nearestLocation.town && nearestLocation.distance < 20) {
-      console.log('Using nearest location:', {
-        county: nearestLocation.town.countyName,
-        town: nearestLocation.town.name,
-        distance: Math.round(nearestLocation.distance * 1000),
-        coordinates: { lat, lng }
-      });
+    // Last resort: Find nearest match from our data regardless of distance
+    const allTowns = getAllTowns();
+    let nearest = allTowns.reduce((nearest, current) => {
+      const distance = calculateDistance(
+        lat, 
+        lng, 
+        current.location.lat, 
+        current.location.lng
+      );
+      return distance < nearest.distance ? { town: current, distance } : nearest;
+    }, { town: allTowns[0], distance: Infinity });
 
-      return {
-        county: nearestLocation.town.countyName,
-        townName: nearestLocation.town.name
-      };
-    }
-
-    console.warn('Location determination failed:', {
-      coordinates: { lat, lng },
-      nearestDistance: Math.round(nearestLocation.distance * 1000)
+    console.log('Using nearest known location:', {
+      county: nearest.town.countyName,
+      town: nearest.town.name,
+      distance: Math.round(nearest.distance * 1000)
     });
-    
-    return DEFAULT_LOCATION;
+
+    return {
+      county: nearest.town.countyName,
+      townName: nearest.town.name
+    };
 
   } catch (error) {
-    console.error('Error in determineLocationDetails:', {
-      error: error instanceof Error ? error.message : String(error),
-      coordinates: { lat, lng },
-      stack: error instanceof Error ? error.stack : undefined
-    });
+    console.error('Error determining location:', error);
+    // Even on error, return the nearest known location instead of DEFAULT_LOCATION
+    const nearest = getNearbyTowns(lat, lng, Infinity)[0];
+    return {
+      county: nearest.countyName,
+      townName: nearest.name
+    };
+  }
+}
 
-    return DEFAULT_LOCATION;
+// Helper function to cache location data
+async function saveLocationToCache(lat: number, lng: number, location: LocationDetails) {
+  const cacheKey = calculateGridKey(lat, lng);
+  try {
+    await setDoc(doc(db, 'locationCache', cacheKey), {
+      ...location,
+      timestamp: serverTimestamp(), 
+      coordinates: { lat, lng }
+    });
+  } catch (error) {
+    console.error('Failed to cache location:', error);
   }
 }
 
