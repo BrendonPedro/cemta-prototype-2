@@ -316,20 +316,17 @@ export function FindRestaurantsAndMenus() {
     mapRef: { current: null }
   };
 
-  const { 
-    isLoaded,
-    loadError,
-    toggleLocation,
-    currentLocation,
+  const {
+    state: {
+      locations: { current, user, pin, center },
+      settings: { enabled }
+    },
+    setUserLocation,
     setCurrentLocation,
-    userLocation,
-    setUserLocation, // Add this
-    locationEnabled,
-    setLocationEnabled,
+    setCenter,
     setPinLocation,
-    pinLocation,
-    center,
-    setCenter
+    setLocationEnabled,
+    toggleLocation
   } = useMaps();
 
   const updateLocationStats = (restaurants: Restaurant[]) => {
@@ -442,8 +439,8 @@ export function FindRestaurantsAndMenus() {
         if (geoError || !position || !position.coords) {
           console.log('Using default location');
           toggleLocation(false); // Use MapsContext toggle
-          setPinLocation(currentLocation); // Use MapsContext location
-          await fetchNearbyRestaurants(currentLocation.lat, currentLocation.lng);
+          setPinLocation(current); // Use MapsContext location
+          await fetchNearbyRestaurants(current.lat, current.lng);
           return;
         }
   
@@ -462,7 +459,7 @@ export function FindRestaurantsAndMenus() {
     };
   
     initLocation();
-  }, [position, geoError, userId, firebaseToken, authLoading, currentLocation, toggleLocation]);
+  }, [position, geoError, userId, firebaseToken, authLoading, current, toggleLocation]);
 
 
   const handleLocationToggle = async (enabled: boolean) => {
@@ -504,7 +501,7 @@ export function FindRestaurantsAndMenus() {
           : 'Unable to refresh location. Please try again.'
       );
 
-      if (!userLocation) {
+      if (!user) {
         // fallback to default if no user location
         setLocationEnabled(false);
         setCenter(DEFAULT_CENTER);
@@ -524,13 +521,13 @@ export function FindRestaurantsAndMenus() {
       restaurants.forEach((r) => {
         bounds.extend({ lat: r.latitude, lng: r.longitude });
       });
-      if (userLocation) bounds.extend(userLocation);
+      if (user) bounds.extend(user);
       map.fitBounds(bounds, { top: 50, right: 50, bottom: 50, left: 50 });
     } else {
-      map.setCenter(userLocation || DEFAULT_CENTER);
+      map.setCenter(user || DEFAULT_CENTER);
       map.setZoom(14);
     }
-  }, [restaurants, userLocation]);
+  }, [restaurants, user]);
 
   const handleMapClick = useCallback((e: google.maps.MapMouseEvent) => {
     if (e.latLng) {
@@ -767,12 +764,12 @@ export function FindRestaurantsAndMenus() {
           
           <div className="flex items-center space-x-2">
             <Switch
-              checked={locationEnabled}
+              checked={enabled}
               onCheckedChange={handleLocationToggle}
               className="data-[state=checked]:bg-customTeal"
             />
             <span className="text-sm text-gray-600">
-              Location Services {locationEnabled ? 'Enabled' : 'Disabled'}
+              Location Services {enabled ? 'Enabled' : 'Disabled'}
             </span>
           </div>
         </div>
@@ -780,7 +777,7 @@ export function FindRestaurantsAndMenus() {
         <div className="flex items-center space-x-2">
           <MapPin className="h-5 w-5 text-customTeal" />
           <span className="text-sm text-gray-600">
-            {locationEnabled ? 'Using precise location' : 'Using default location'}
+            {enabled ? 'Using precise location' : 'Using default location'}
           </span>
         </div>
       </div>
@@ -854,7 +851,7 @@ export function FindRestaurantsAndMenus() {
                   <Search className="h-12 w-12 text-gray-400" />
                   <h3 className="text-lg font-semibold text-gray-700">No Restaurants Found</h3>
                   <p className="text-gray-600 max-w-md">
-                    {locationEnabled 
+                    {enabled 
                       ? "We couldn't find any restaurants near your current location. Try adjusting your search area or refreshing the page."
                       : "Enable location services to find restaurants near you, or try refreshing the page."}
                   </p>
@@ -1093,13 +1090,13 @@ export function FindRestaurantsAndMenus() {
           </CardHeader>
           <CardContent>
             <MapWithErrorBoundary
-                center={currentLocation} // Use MapsContext
+                center={current} // Use MapsContext
                 handleMapClick={handleMapClick}
                 handleMapLoad={handleMapLoad}
                 restaurants={restaurants}
-                locationEnabled={locationEnabled} // Use MapsContext
-                userLocation={userLocation} // Use MapsContext
-                pinLocation={currentLocation} // Use MapsContext
+                locationEnabled={enabled} // Use MapsContext
+                userLocation={user} // Use MapsContext
+                pinLocation={current} // Use MapsContext
                 isSameLocation={isSameLocation}
                 handleMarkerClick={handleMarkerClick}
                 selectedMarker={selectedMarker}

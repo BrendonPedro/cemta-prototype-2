@@ -28,7 +28,7 @@ export default function RootLayout({
       <html lang="en">
         <body 
           className={`${inter.className} font-sans`}
-          data-new-gr-c-s-check-loaded="14.1091.0"
+          data-new-gr-c-s-check-loaded="14.1092.0"
           data-gr-ext-installed=""
         >
           <MapsProvider>
