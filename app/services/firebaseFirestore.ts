@@ -31,7 +31,7 @@ import { calculateDistance } from '@/app/utils/locationUtils'
 import type { UserPreferences } from "@/interfaces/users/user-preferences";
 import type { PlaceData } from "@googlemaps/google-maps-services-js";
 import { calculateMatchScore } from '@/app/utils/restaurantMatching';
-import { DEFAULT_LOCATION, determineLocationDetails } from "@/app/services/locationService";
+import { mapCache } from "@/app/services/mapCacheService";
 
 // For the county/town creation part:
 type RestaurantDocData = WithFieldValue<DocumentData>;
@@ -596,16 +596,33 @@ export function getLocationCacheKey(lat: number, lng: number): string {
 }
 
 export const CACHE_CONSTANTS = {
-  COLLECTION_NAME: CONFIG.FIRESTORE.COLLECTIONS.LOCATION_CACHE,
+  COLLECTION_NAME: CONFIG.CACHE.STRATEGY.FIRESTORE.COLLECTIONS.LOCATIONS,
   QUEUE_COLLECTION: CONFIG.FIRESTORE.COLLECTIONS.PROCESSING_QUEUE,
   API_USAGE_COLLECTION: CONFIG.FIRESTORE.COLLECTIONS.API_USAGE,
   METRICS_COLLECTION: CONFIG.FIRESTORE.COLLECTIONS.PROCESSING_METRICS,
-  DURATION: CONFIG.CACHE.DURATION,
+  DURATION: CONFIG.CACHE.STRATEGY.FIRESTORE.TTL,
   GEOHASH_PRECISION: CONFIG.CACHE.GEOHASH.LOCATION_PRECISION
 };
 
-const CACHE_DURATION = CONFIG.CACHE.DURATION || 365 * 24 * 60 * 60 * 1000;
 const SAVE_DEBOUNCE = 2000; // 2 seconds
+
+export async function getCachedRestaurantsForLocation(
+  lat: number, 
+  lng: number
+): Promise<CachedRestaurant[] | null> {
+  const locationKey = getLocationCacheKey(lat, lng);
+  try {
+    const cached = await mapCache.get(locationKey);
+    if (cached?.restaurants) {
+      console.log(`Cache hit for ${locationKey} - ${cached.restaurants.length} restaurants`);
+      return cached.restaurants;
+    }
+    return null;
+  } catch (error) {
+    console.error('Error accessing cache:', error);
+    return null;
+  }
+}
 
 export async function saveCachedRestaurantsForLocation(
   lat: number,
@@ -613,19 +630,9 @@ export async function saveCachedRestaurantsForLocation(
   newRestaurants: CachedRestaurant[],
 ): Promise<void> {
   const locationKey = getLocationCacheKey(lat, lng);
-  const cacheRef = doc(db, CACHE_CONSTANTS.COLLECTION_NAME, locationKey);
-
   try {
-    // Get existing cache
-    const cacheDoc = await getDoc(cacheRef);
-    let existingRestaurants: CachedRestaurant[] = [];
-
-    if (cacheDoc.exists()) {
-      existingRestaurants = cacheDoc.data().restaurants || [];
-      console.log(`Cache hit for ${locationKey} - ${existingRestaurants.length} restaurants`);
-    } else {
-      console.log(`Cache miss for ${locationKey}`);
-    }
+    const existing = await mapCache.get(locationKey);
+    const existingRestaurants = existing?.restaurants || [];
 
     // Create maps for both Google and Yelp IDs
     const seenGoogleIds = new Set<string>();
@@ -659,9 +666,9 @@ export async function saveCachedRestaurantsForLocation(
       console.log(`- New unique restaurants: ${newRestaurants.length}`);
       console.log(`- Total after merge: ${mergedRestaurants.length}`);
 
-      // Save all restaurants to cache
-      await setDoc(cacheRef, {
-        restaurants: sortedRestaurants, // Save all restaurants, not just 20
+      // Save to both memory and Firestore cache
+      await mapCache.set(locationKey, {
+        restaurants: sortedRestaurants,
         latitude: lat,
         longitude: lng,
         cachedAt: serverTimestamp(),
@@ -680,43 +687,113 @@ export async function saveCachedRestaurantsForLocation(
   }
 }
 
-export async function getCachedRestaurantsForLocation(
-  lat: number,
-  lng: number
-): Promise<CachedRestaurant[] | null> {
-  const locationKey = getLocationCacheKey(lat, lng);
-  const cacheRef = doc(db, CACHE_CONSTANTS.COLLECTION_NAME, locationKey);
-  
+async function getLocationCacheValidity(
+  lat: number, 
+  lng: number,
+  cacheKey: string
+): Promise<{ isValid: boolean; reason?: string }> {
   try {
-    const cacheDoc = await getDoc(cacheRef);
-    if (cacheDoc.exists()) {
-      const data = cacheDoc.data();
-      const cachedAt = data.cachedAt?.toDate() || new Date(0);
-      
-      if (!data.restaurants || !Array.isArray(data.restaurants)) {
-        console.warn('Invalid cache data structure');
-        return null;
-      }
-
-      if (Date.now() - cachedAt.getTime() < CONFIG.CACHE.DURATION) {
-        console.log(`Cache hit for ${locationKey} - ${data.restaurants.length} restaurants`);
-        return data.restaurants; // Return all cached restaurants
-      } else {
-        console.log(`Cache expired for ${locationKey}`);
-        try {
-          await deleteDoc(cacheRef);
-        } catch (cleanupError) {
-          console.warn('Failed to clean up expired cache:', cleanupError);
-        }
-      }
+    const cached = await mapCache.get(cacheKey);
+    
+    if (!cached) {
+      return { isValid: false, reason: 'no-cache' };
     }
-    return null;
+
+    const now = Date.now();
+    
+    // Check if cache has expired
+    if (cached.expiresAt < now) {
+      return { isValid: false, reason: 'expired' };
+    }
+
+    // Check if location is too far from cached center
+    const distance = calculateDistance(
+      lat,
+      lng,
+      cached.latitude,
+      cached.longitude
+    );
+
+    if (distance > CONFIG.SEARCH.PRECISE.RADIUS) {
+      return { isValid: false, reason: 'too-far' };
+    }
+
+    return { isValid: true };
   } catch (error) {
-    console.error('Error accessing cache:', error);
-    return null;
+    console.error('Error checking cache validity:', error);
+    return { isValid: false, reason: 'error' };
   }
 }
 
+async function mergeCachedRestaurants(
+  existingRestaurants: CachedRestaurant[],
+  newRestaurants: CachedRestaurant[]
+): Promise<CachedRestaurant[]> {
+  const merged = new Map<string, CachedRestaurant>();
+  
+  // Add existing restaurants first
+  existingRestaurants.forEach(restaurant => {
+    merged.set(restaurant.id, {
+      ...restaurant,
+      lastAccessed: new Date().toISOString()
+    });
+  });
+
+  // Merge in new restaurants, preserving firstCached if it exists
+  newRestaurants.forEach(restaurant => {
+    const existing = merged.get(restaurant.id);
+    merged.set(restaurant.id, {
+      ...restaurant,
+      firstCached: existing?.firstCached || new Date().toISOString(),
+      lastAccessed: new Date().toISOString()
+    });
+  });
+
+  return Array.from(merged.values());
+}
+
+export const updateCacheEntry = async (
+  lat: number,
+  lng: number,
+  restaurants: CachedRestaurant[],
+  force: boolean = false
+): Promise<void> => {
+  const cacheKey = getLocationCacheKey(lat, lng);
+  
+  try {
+    const validity = await getLocationCacheValidity(lat, lng, cacheKey);
+    
+    if (!validity.isValid || force) {
+      const now = new Date();
+      await mapCache.set(cacheKey, {
+        geohash: cacheKey,
+        latitude: lat,
+        longitude: lng,
+        restaurants,
+        firstCached: now,
+        lastUpdated: now,
+        expiresAt: new Date(now.getTime() + CONFIG.CACHE.DURATION)
+      });
+    } else {
+      // Merge with existing cache
+      const cached = await mapCache.get(cacheKey);
+      if (cached?.restaurants) {
+        const mergedRestaurants = await mergeCachedRestaurants(
+          cached.restaurants,
+          restaurants
+        );
+        await mapCache.set(cacheKey, {
+          ...cached,
+          restaurants: mergedRestaurants,
+          lastUpdated: new Date()
+        });
+      }
+    }
+  } catch (error) {
+    console.error('Error updating cache entry:', error);
+    throw error;
+  }
+};
 
 // Function to get menus for multiple restaurants
 export async function getMenusForRestaurants(

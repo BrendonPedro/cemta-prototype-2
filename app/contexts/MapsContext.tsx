@@ -1,10 +1,13 @@
 'use client';
 
-import { createContext, useContext, useCallback, useReducer } from 'react';
+import { createContext, useContext, useCallback, useReducer, useEffect } from 'react';
 import { useJsApiLoader } from '@react-google-maps/api';
 import { googleMapsConfig, DEFAULT_CENTER, validateTaiwanCoordinates } from '@/config/googleMapsConfig';
 import { useGeolocation } from '@/hooks/use-geolocation';
 import { LatLngLiteral } from '@googlemaps/google-maps-services-js';
+import { mapCache } from "@/app/services/mapCacheService";
+import { getLocationCacheKey } from '../services/firebaseFirestore';
+import { CONFIG } from '@/lib/database-builder/config';
 
 interface MapState {
   locations: {
@@ -26,6 +29,20 @@ type MapAction =
   | { type: 'RESET_TO_DEFAULT' }
   | { type: 'TOGGLE_LOCATION'; payload: boolean };
 
+const validateLocation = (location: LatLngLiteral | null): LatLngLiteral => {
+  if (!location || !isFinite(location.lat) || !isFinite(location.lng)) {
+    console.warn('Invalid location, using default center:', location);
+    return DEFAULT_CENTER;
+  }
+  
+  if (!validateTaiwanCoordinates(location.lat, location.lng)) {
+    console.warn('Location outside Taiwan bounds, using default center');
+    return DEFAULT_CENTER;
+  }
+  
+  return location;
+};
+
 const initialState: MapState = {
   locations: {
     current: DEFAULT_CENTER,
@@ -40,26 +57,34 @@ const initialState: MapState = {
 
 function mapReducer(state: MapState, action: MapAction): MapState {
   switch (action.type) {
-    case 'SET_USER_LOCATION':
+    case 'SET_USER_LOCATION': {
+      const validatedLocation = action.payload ? validateLocation(action.payload) : null;
       return {
         ...state,
-        locations: { ...state.locations, user: action.payload }
+        locations: { ...state.locations, user: validatedLocation }
       };
-    case 'SET_CURRENT_LOCATION':
+    }
+    case 'SET_CURRENT_LOCATION': {
+      const validatedLocation = validateLocation(action.payload);
       return {
         ...state,
-        locations: { ...state.locations, current: action.payload }
+        locations: { ...state.locations, current: validatedLocation }
       };
-    case 'SET_PIN':
+    }
+    case 'SET_PIN': {
+      const validatedLocation = action.payload ? validateLocation(action.payload) : null;
       return {
         ...state,
-        locations: { ...state.locations, pin: action.payload }
+        locations: { ...state.locations, pin: validatedLocation }
       };
-    case 'SET_CENTER':
+    }
+    case 'SET_CENTER': {
+      const validatedLocation = validateLocation(action.payload);
       return {
         ...state,
-        locations: { ...state.locations, center: action.payload }
+        locations: { ...state.locations, center: validatedLocation }
       };
+    }
     case 'RESET_TO_DEFAULT':
       return {
         ...initialState,
@@ -91,40 +116,92 @@ const MapsContext = createContext<MapsContextType | null>(null);
 
 export function MapsProvider({ children }: { children: React.ReactNode }) {
   const { isLoaded, loadError } = useJsApiLoader(googleMapsConfig);
-  const { position } = useGeolocation();
+  const { position } = useGeolocation({
+    enableHighAccuracy: true,
+    timeout: CONFIG.API.DELAY_BETWEEN_CALLS,
+    maximumAge: CONFIG.CACHE.STRATEGY.MEMORY.TTL,
+    watchPosition: false
+  });
+  
   const [state, dispatch] = useReducer(mapReducer, initialState);
 
-  const setUserLocation = useCallback((location: LatLngLiteral | null) => {
-    dispatch({ type: 'SET_USER_LOCATION', payload: location });
+  // Validate coordinates helper
+  const isValidCoordinate = useCallback((location: LatLngLiteral): boolean => {
+    return (
+      location &&
+      typeof location.lat === 'number' &&
+      typeof location.lng === 'number' &&
+      isFinite(location.lat) &&
+      isFinite(location.lng) &&
+      validateTaiwanCoordinates(location.lat, location.lng)
+    );
   }, []);
+
+  const setUserLocation = useCallback((location: LatLngLiteral | null) => {
+    if (location && !isValidCoordinate(location)) {
+      console.warn('Invalid user location:', location);
+      return;
+    }
+    dispatch({ type: 'SET_USER_LOCATION', payload: location });
+  }, [isValidCoordinate]);
 
   const setCurrentLocation = useCallback((location: LatLngLiteral) => {
+    if (!isValidCoordinate(location)) {
+      console.warn('Invalid current location:', location);
+      return;
+    }
     dispatch({ type: 'SET_CURRENT_LOCATION', payload: location });
-  }, []);
+  }, [isValidCoordinate]);
 
   const setCenter = useCallback((location: LatLngLiteral) => {
+    if (!isValidCoordinate(location)) {
+      console.warn('Invalid center location:', location);
+      return;
+    }
     dispatch({ type: 'SET_CENTER', payload: location });
-  }, []);
+  }, [isValidCoordinate]);
 
   const setPinLocation = useCallback((location: LatLngLiteral | null) => {
+    if (location && !isValidCoordinate(location)) {
+      console.warn('Invalid pin location:', location);
+      return;
+    }
     dispatch({ type: 'SET_PIN', payload: location });
-  }, []);
+  }, [isValidCoordinate]);
+
   const setLocationEnabled = useCallback((enabled: boolean) => {
     dispatch({ type: 'TOGGLE_LOCATION', payload: enabled });
   }, []);
 
-  const toggleLocation = useCallback((enabled: boolean) => {
+  const toggleLocation = useCallback(async (enabled: boolean) => {
     try {
       dispatch({ type: 'TOGGLE_LOCATION', payload: enabled });
       
       if (enabled && position?.coords) {
         const { latitude, longitude } = position.coords;
+        
         if (validateTaiwanCoordinates(latitude, longitude)) {
           const newLocation = { lat: latitude, lng: longitude };
-          dispatch({ type: 'SET_USER_LOCATION', payload: newLocation });
-          dispatch({ type: 'SET_CURRENT_LOCATION', payload: newLocation });
-          dispatch({ type: 'SET_CENTER', payload: newLocation });
-          dispatch({ type: 'SET_PIN', payload: newLocation });
+          const locationKey = getLocationCacheKey(latitude, longitude);
+          
+          const cachedData = await mapCache.get(locationKey);
+          
+          if (cachedData) {
+            const location = cachedData.location || cachedData;
+            if (isValidCoordinate(location)) {
+              dispatch({ type: 'SET_USER_LOCATION', payload: location });
+              dispatch({ type: 'SET_CURRENT_LOCATION', payload: location });
+              dispatch({ type: 'SET_CENTER', payload: location });
+              dispatch({ type: 'SET_PIN', payload: location });
+            }
+          } else {
+            await mapCache.set(locationKey, newLocation);
+            
+            dispatch({ type: 'SET_USER_LOCATION', payload: newLocation });
+            dispatch({ type: 'SET_CURRENT_LOCATION', payload: newLocation });
+            dispatch({ type: 'SET_CENTER', payload: newLocation });
+            dispatch({ type: 'SET_PIN', payload: newLocation });
+          }
         } else {
           console.warn('Location outside Taiwan bounds, using default center');
           dispatch({ type: 'RESET_TO_DEFAULT' });
@@ -136,7 +213,20 @@ export function MapsProvider({ children }: { children: React.ReactNode }) {
       console.error('Error toggling location:', error);
       dispatch({ type: 'RESET_TO_DEFAULT' });
     }
-  }, [position]);
+  }, [position, isValidCoordinate]);
+
+  // Add effect to validate position changes
+  useEffect(() => {
+    if (position?.coords) {
+      const { latitude, longitude } = position.coords;
+      if (validateTaiwanCoordinates(latitude, longitude)) {
+        const newLocation = { lat: latitude, lng: longitude };
+        if (state.settings.enabled && isValidCoordinate(newLocation)) {
+          setUserLocation(newLocation);
+        }
+      }
+    }
+  }, [position, state.settings.enabled, isValidCoordinate, setUserLocation]);
 
   return (
     <MapsContext.Provider value={{

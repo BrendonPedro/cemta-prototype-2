@@ -9,6 +9,16 @@ export interface Location {
     lat: number;
     lng: number;
   }
+
+  export interface LocationCache {
+    geohash: string;
+    latitude: number;
+    longitude: number;
+    restaurants: CachedRestaurant[];
+    firstCached: Date;
+    lastUpdated: Date;
+    expiresAt: Date;
+  }
   
   // Opening hours type used by restaurants
   export interface OpeningHours {
@@ -263,7 +273,7 @@ export interface Photo {
   export type YelpApiResponse = YelpSearchResponse | YelpErrorResponse;
 
 //-----CACHE-----
-export interface CachedRestaurant {
+export interface CachedRestaurant extends Restaurant { // Added cache-specific fields
   // Essential Information 
   id: string;
   name: string;
@@ -306,4 +316,9 @@ export interface CachedRestaurant {
   hasDetailsFetched?: boolean;
   createdAt?: string;
   lastUpdated?: string;
+
+  // Cache Management
+  firstCached?: string | Date;
+  lastAccessed?: string | Date;
+  geohash?: string;
 }

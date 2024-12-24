@@ -113,24 +113,30 @@ export default function AboutPage() {
   useEffect(() => {
     async function fetchRestaurants() {
       if (!position) return;
-
+    
       // Check cache first
       const cacheKey = `restaurants-${position.coords.latitude}-${position.coords.longitude}`;
       const cached = sessionStorage.getItem(cacheKey);
       
       if (cached) {
-        setRestaurants(JSON.parse(cached));
-        return;
+        try {
+          const parsedCache = JSON.parse(cached);
+          setRestaurants(parsedCache);
+          return;
+        } catch (e) {
+          console.warn('Cache parsing failed:', e);
+          sessionStorage.removeItem(cacheKey);
+        }
       }
-
+    
       setIsFetching(true);
       try {
         const headers: HeadersInit = {
           'Content-Type': 'application/json',
           ...(firebaseToken && { 'Authorization': `Bearer ${firebaseToken}` })
         };
-
-        const { data } = await axios.get(
+    
+        const response = await axios.get(
           `/api/restaurants`,
           {
             params: {
@@ -139,20 +145,44 @@ export default function AboutPage() {
               limit: 20,
               type: 'top_rated'
             },
-            headers
+            headers,
+            timeout: 10000 // 10 second timeout
           }
         );
-
-        const topRestaurants = data.restaurants
-          .sort((a: Restaurant, b: Restaurant) => b.rating - a.rating)
-          .slice(0, 9);
-
-        // Cache the results
-        sessionStorage.setItem(cacheKey, JSON.stringify(topRestaurants));
-        setRestaurants(topRestaurants);
+    
+        if (response.data?.restaurants?.length) {
+          const topRestaurants = response.data.restaurants
+            .sort((a: Restaurant, b: Restaurant) => b.rating - a.rating)
+            .slice(0, 9);
+    
+          // Clean the data before caching
+          const cleanRestaurants = topRestaurants.map((restaurant: Restaurant) => {
+            return Object.entries(restaurant).reduce((acc, [key, val]) => {
+              if (val !== undefined) {
+                acc[key] = val;
+              }
+              return acc;
+            }, {} as any);
+          });
+    
+          // Cache the clean results
+          try {
+            sessionStorage.setItem(cacheKey, JSON.stringify(cleanRestaurants));
+          } catch (e) {
+            console.warn('Cache storage failed:', e);
+          }
+    
+          setRestaurants(cleanRestaurants);
+        } else {
+          setRestaurants([]);
+        }
       } catch (err) {
         console.error("Error fetching restaurants:", err);
-        setError("Unable to fetch nearby restaurants. Please try again later.");
+        // More specific error message based on the error type
+        const errorMessage = axios.isAxiosError(err)
+          ? `API Error: ${err.response?.status === 500 ? 'Server error' : err.message}`
+          : "Unable to fetch nearby restaurants. Please try again later.";
+        setError(errorMessage);
         setRestaurants([]);
       } finally {
         setIsFetching(false);
@@ -306,6 +336,10 @@ export default function AboutPage() {
                   fill
                   sizes="(max-width: 768px) 100vw, 500px"
                   className="rounded-3xl shadow-2xl transform -rotate-3 hover:rotate-0 transition-all duration-300 object-cover"
+                  onError={(e) => {
+                    const img = e.target as HTMLImageElement;
+                    img.src = FALLBACK_IMAGE;
+                  }}
                 />
                 <div className="absolute top-4 right-4 bg-white bg-opacity-90 backdrop-blur-md rounded-full px-4 py-2 shadow-lg">
                   <span className="text-customTeal font-semibold">

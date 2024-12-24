@@ -18,13 +18,15 @@ import { getYelpBusinessWithPhotos } from "./yelpService";
 import { CachedRestaurant } from "@/interfaces/restaurant/types";
 import axios from 'axios';
 import geohash from "ngeohash";
-import { saveRestaurant } from "./firebaseFirestore";
+import { getLocationCacheKey, saveRestaurant } from "./firebaseFirestore";
 import { measureAPICall, checkRateLimit } from '@/app/utils/apiUtils';
 import { saveCachedRestaurantsForLocation, getCachedRestaurantsForLocation } from "./firebaseFirestore";
 import { counties, getAllTowns, getNearbyTowns, getTownsByCounty } from '@/lib/data/counties';
 import { getImageUrl } from './gcpBucketStorage';
 import { EnhancedCountyData, EnhancedTownData } from '@/lib/data/counties';
 import { calculateDistance } from '@/app/utils/locationUtils';
+import { validateTaiwanCoordinates } from "@/config/googleMapsConfig";
+import { mapCache } from "./mapCacheService";
 
 
 //-----INTERFACES-----
@@ -302,13 +304,36 @@ async function processImagesInBatches(
 
 //Determines the nearest county and town based on provided coordinates
 export async function determineLocationDetails(lat: number, lng: number): Promise<LocationDetails> {
+  // First normalize coordinates
+  const normalized = normalizeCoordinates(lat, lng);
+  if (!normalized) {
+    console.warn('Invalid coordinates, using nearest location');
+    const nearest = getNearbyTowns(lat, lng, Infinity)[0];
+    return {
+      county: nearest.countyName,
+      townName: nearest.name
+    };
+  }
+
+  // Check cache first
+  const cacheKey = getLocationCacheKey(lat, lng);
+  const isValidCache = await validateCachedLocation(lat, lng, cacheKey);
+  
+  if (isValidCache) {
+    const cached = await mapCache.get(cacheKey);
+    if (cached) return cached;
+  }
+
+  // Use optimized search radius for nearby locations
+  const searchRadius = getSearchRadius(normalized.lat, normalized.lng);
+  const nearbyTowns = getNearbyTowns(normalized.lat, normalized.lng, searchRadius);
+
   try {
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    if (!Number.isFinite(normalized.lat) || !Number.isFinite(normalized.lng)) {
       throw new Error('Invalid coordinates provided');
     }
 
     // First try: Local data with wider radius
-    const nearbyTowns = getNearbyTowns(lat, lng, 50); // 50km radius
     if (nearbyTowns.length > 0) {
       const closestTown = nearbyTowns[0];
       console.log('Found location in local data:', {
@@ -329,7 +354,7 @@ export async function determineLocationDetails(lat: number, lng: number): Promis
     
     const response = await client.reverseGeocode({
       params: {
-        latlng: { lat, lng },
+        latlng: { lat: normalized.lat, lng: normalized.lng },
         key: process.env.GOOGLE_MAPS_API_KEY!,
         language: Language.en,
         result_type: [
@@ -353,57 +378,23 @@ export async function determineLocationDetails(lat: number, lng: number): Promis
         c.types.includes(AddressType.sublocality_level_1)
       )?.long_name;
 
-      // If we got anything from Google, use it
-      if (county || town) {
-        console.log('Found location from Google:', { county, town });
-        
-        // If we only got one piece, try to fill in the other from our data
-        if (!county || !town) {
-          const nearestMatch = getNearbyTowns(lat, lng, 100)[0]; // Wider radius for filling gaps
-          county = county || nearestMatch?.countyName;
-          town = town || nearestMatch?.name;
-        }
-
-        // Cache this result for future use
-        await saveLocationToCache(lat, lng, {
-          county: county!,
-          townName: town!
-        });
-
-        return {
-          county: county!,
-          townName: town!
-        };
+      if (county && town) {
+        return { county, townName: town };
       }
     }
 
-    // Last resort: Find nearest match from our data regardless of distance
-    const allTowns = getAllTowns();
-    let nearest = allTowns.reduce((nearest, current) => {
-      const distance = calculateDistance(
-        lat, 
-        lng, 
-        current.location.lat, 
-        current.location.lng
-      );
-      return distance < nearest.distance ? { town: current, distance } : nearest;
-    }, { town: allTowns[0], distance: Infinity });
-
-    console.log('Using nearest known location:', {
-      county: nearest.town.countyName,
-      town: nearest.town.name,
-      distance: Math.round(nearest.distance * 1000)
-    });
-
+    // Final fallback: Use nearest known location
+    console.warn('Geocoding failed, using nearest known location');
+    const nearest = getNearbyTowns(normalized.lat, normalized.lng, Infinity)[0];
     return {
-      county: nearest.town.countyName,
-      townName: nearest.town.name
+      county: nearest.countyName,
+      townName: nearest.name
     };
 
   } catch (error) {
     console.error('Error determining location:', error);
-    // Even on error, return the nearest known location instead of DEFAULT_LOCATION
-    const nearest = getNearbyTowns(lat, lng, Infinity)[0];
+    // Fallback to nearest known location
+    const nearest = getNearbyTowns(normalized.lat, normalized.lng, Infinity)[0];
     return {
       county: nearest.countyName,
       townName: nearest.name
@@ -411,18 +402,90 @@ export async function determineLocationDetails(lat: number, lng: number): Promis
   }
 }
 
-// Helper function to cache location data
-async function saveLocationToCache(lat: number, lng: number, location: LocationDetails) {
+// Helper to check if a cached location is still valid
+async function validateCachedLocation(
+  lat: number,
+  lng: number,
+  cacheKey: string
+): Promise<boolean> {
+  try {
+    const cached = await mapCache.get(cacheKey);
+    if (!cached) return false;
+
+    // Check distance from cache center
+    const distance = calculateDistance(
+      lat,
+      lng,
+      cached.latitude || cached.lat,
+      cached.longitude || cached.lng
+    );
+
+    // Valid if within 1km of cached center
+    return distance <= 1000;
+  } catch (error) {
+    console.error('Error validating cached location:', error);
+    return false;
+  }
+}
+
+// Helper to cache determined location with proper timestamps
+async function saveLocationToCache(
+  lat: number, 
+  lng: number, 
+  location: LocationDetails
+): Promise<void> {
   const cacheKey = calculateGridKey(lat, lng);
   try {
-    await setDoc(doc(db, 'locationCache', cacheKey), {
+    // Check if we already have a cache entry
+    const existing = await mapCache.get(cacheKey);
+    const now = new Date();
+
+    await mapCache.set(cacheKey, {
       ...location,
-      timestamp: serverTimestamp(), 
-      coordinates: { lat, lng }
+      latitude: lat,
+      longitude: lng,
+      geohash: cacheKey,
+      firstCached: existing?.firstCached || now,
+      lastAccessed: now,
+      timestamp: now,
+      expiresAt: new Date(now.getTime() + CACHE_CONFIG.LOCATION.DURATION)
     });
   } catch (error) {
     console.error('Failed to cache location:', error);
   }
+}
+
+// Helper to get optimal search radius based on population density
+function getSearchRadius(lat: number, lng: number): number {
+  const nearbyTowns = getNearbyTowns(lat, lng, 5); // Look within 5km
+  if (nearbyTowns.length === 0) return 4; // Default radius
+
+  // Use the closest town's search radius
+  return nearbyTowns[0].searchRadiusKm;
+}
+
+// Helper to check if coordinates need geocoding
+function needsGeocoding(lat: number, lng: number): boolean {
+  const nearbyTowns = getNearbyTowns(lat, lng, 2); // Very close radius
+  // Need geocoding if no very close towns found
+  return nearbyTowns.length === 0;
+}
+
+// Function to clean and normalize coordinates
+function normalizeCoordinates(lat: number, lng: number): { lat: number; lng: number } | null {
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return null;
+  }
+
+  // Round to 6 decimal places
+  const normalizedLat = Number(lat.toFixed(6));
+  const normalizedLng = Number(lng.toFixed(6));
+
+  if (!validateTaiwanCoordinates(normalizedLat, normalizedLng)) {
+    return null;
+  }
+
+  return { lat: normalizedLat, lng: normalizedLng };
 }
 
 // Image handling

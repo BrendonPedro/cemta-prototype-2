@@ -1,3 +1,5 @@
+'use client';
+
 import { useCallback, useState, useRef, useEffect } from "react";
 import { Restaurant } from "@/interfaces/restaurant/types";
 import { validateTaiwanCoordinates } from '@/config/googleMapsConfig';

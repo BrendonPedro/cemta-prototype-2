@@ -93,11 +93,11 @@ export const CONFIG = {
     DURATION: 365 * 24 * 60 * 60 * 1000, // 365 days while building DB
     STRATEGY: {
       MEMORY: {
-        TTL: 5 * 60 * 1000, // 5 minutes
+        TTL: 5 * 60 * 1000, // 5 minutes 
         MAX_ITEMS: 1000
       },
       FIRESTORE: {
-        TTL: 365 * 24 * 60 * 60 * 1000,
+        TTL: 365 * 24 * 60 * 60 * 1000, // 365 days while building DB
         COLLECTIONS: {
           LOCATIONS: COLLECTION_NAMES.LOCATION_CACHE,
           RESTAURANTS: COLLECTION_NAMES.RESTAURANTS,
