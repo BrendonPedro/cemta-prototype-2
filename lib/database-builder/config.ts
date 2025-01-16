@@ -10,7 +10,8 @@ const COLLECTION_NAMES = {
   METRICS_CACHE: 'cacheMetrics',
   PROCESSING_QUEUE: 'processingQueue',
   API_USAGE: 'apiQuotaUsage',
-  PROCESSING_METRICS: 'processingMetrics'
+  PROCESSING_METRICS: 'processingMetrics',
+  MAP_STATES: 'mapStates'
 } as const;
 
 export const CONFIG = {

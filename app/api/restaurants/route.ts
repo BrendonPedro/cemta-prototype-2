@@ -1,22 +1,10 @@
-// app/api/restaurants/route.ts
-
 import { NextResponse } from "next/server";
-import { 
-  batchUpdateRestaurants, 
-  getCachedRestaurantsForLocation, 
-  getLocationCacheKey, 
-  saveCachedRestaurantsForLocation,
-} from "@/app/services/firebaseFirestore";
-import { determineLocationDetails } from "@/app/services/locationService";
-import { fetchPreciseLocationResults } from "@/app/services/placeServices";
+import { getNearbyRestaurants } from "@/app/services/restaurant/restaurantService";
 import { validateTaiwanCoordinates } from "@/config/googleMapsConfig";
 import admin from "@/config/firebaseAdmin";
-import { Client } from "@googlemaps/google-maps-services-js";
 import type { DecodedIdToken } from "firebase-admin/auth";
 import { CONFIG } from "@/lib/database-builder/config";
 import { calculateDistance } from "@/app/utils/locationUtils";
-import type { SearchMetrics } from '@/lib/database-builder/types';
-import { CachedRestaurant } from "@/interfaces/restaurant/types";
 
 const RATE_LIMIT = {
   REQUESTS_PER_MINUTE: 60,
@@ -25,26 +13,9 @@ const RATE_LIMIT = {
 
 export async function GET(request: Request) {
   const startTime = Date.now();
-  const metrics: SearchMetrics = {
-    cachedCount: 0,
-    newPlaces: 0,
-    apiCalls: 0,
-    processingTime: 0,
-    totalResults: 0
-  };
 
   try {
-    // 1. Validate API key
-    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-    if (!apiKey) {
-      console.error('Google Maps API key is not configured');
-      return NextResponse.json(
-        { error: 'Server configuration error' },
-        { status: 500 }
-      );
-    }
-
-    // 2. Authentication
+    // 1. Authentication
     const authHeader = request.headers.get("authorization");
     if (!authHeader?.startsWith('Bearer ')) {
       return NextResponse.json(
@@ -69,7 +40,7 @@ export async function GET(request: Request) {
       );
     }
 
-    // 3. Parameter Validation
+    // 2. Parameter Validation
     const { searchParams } = new URL(request.url);
     const lat = Number(searchParams.get("lat"));
     const lng = Number(searchParams.get("lng"));
@@ -82,7 +53,7 @@ export async function GET(request: Request) {
       );
     }
 
-    // 4. Rate Limiting
+    // 3. Rate Limiting
     const rateRef = admin.firestore().collection('rateLimits').doc(decodedToken.uid);
     const now = Date.now();
     
@@ -102,115 +73,34 @@ export async function GET(request: Request) {
       }
     });
 
-    // 5. Check cache
-    const cachedRestaurants = await getCachedRestaurantsForLocation(lat, lng);
-    const existingIds = new Set<string>();
-    let combinedResults: CachedRestaurant[] = []; 
-    
-    if (cachedRestaurants?.length) {
-      cachedRestaurants.forEach(r => existingIds.add(r.id));
-      
-      const nearbyCached = cachedRestaurants.filter(restaurant => {
-        const distance = calculateDistance(
-          lat, lng, 
-          restaurant.latitude, 
-          restaurant.longitude
-        );
-        return distance <= CONFIG.SEARCH.PRECISE.RADIUS;
-      });
-
-      combinedResults = [...nearbyCached];
-      metrics.cachedCount = nearbyCached.length;
-    }
-
-    // 6. Fetch new results if needed
-    const client = new Client({});
-    const { results: newPlaces, apiCalls } = await fetchPreciseLocationResults(
-      lat,
+    // 4. Get restaurants using the new service
+    const { restaurants, metrics } = await getNearbyRestaurants(
+      lat, 
       lng,
-      client,
-      apiKey,
-      existingIds
+      authHeader.split('Bearer ')[1] // Use the actual token we extracted earlier
     );
 
-    metrics.apiCalls = apiCalls;
-    metrics.newPlaces = newPlaces.length;
+    // 5. Sort and limit results
+    const sortedResults = restaurants
+      .sort((a, b) => {
+        const distA = calculateDistance(lat, lng, a.latitude, a.longitude);
+        const distB = calculateDistance(lat, lng, b.latitude, b.longitude);
+        return distA - distB;
+      })
+      .slice(0, limit);
 
-    if (newPlaces.length > 0) {
-      // Process new places and add to cache
-      const processedResults: CachedRestaurant[] = await Promise.all(
-        newPlaces.map(async (place) => {
-          const { county, townName } = await determineLocationDetails(
-            place.geometry!.location.lat,
-            place.geometry!.location.lng
-          );
-
-          return {
-            id: place.place_id!,
-            name: place.name!,
-            address: place.vicinity!,
-            rating: place.rating || 0,
-            latitude: place.geometry!.location.lat,
-            longitude: place.geometry!.location.lng,
-            county,
-            townName,
-            menuCount: 0,
-            hasDetailsFetched: false,
-            hasMenu: false,
-            hasGoogleData: true,
-            hasYelpData: false,
-            createdAt: new Date().toISOString(),
-            lastUpdated: new Date().toISOString()
-          };
-        })
-      );
-
-      // Update cache with combined results
-      await saveCachedRestaurantsForLocation(
-        lat, 
-        lng, 
-        [...combinedResults, ...processedResults]
-      );
-
-      // Update Firestore
-      await batchUpdateRestaurants(processedResults);
-
-      // Add to combined results
-      combinedResults = [...combinedResults, ...processedResults];
-    }
-
-    // 7. Sort by distance and apply limit
-    const sortedResults: CachedRestaurant[] = combinedResults
-    .sort((a, b) => {
-      const distA = calculateDistance(lat, lng, a.latitude, a.longitude);
-      const distB = calculateDistance(lat, lng, b.latitude, b.longitude);
-      return distA - distB;
-    })
-    .slice(0, limit);
-
-  // 8. Get location details
-  const { county, townName } = await determineLocationDetails(lat, lng);
-  const gridKey = getLocationCacheKey(lat, lng);
-
-  return NextResponse.json({
-    restaurants: sortedResults,
-    county,
-    metadata: {
-      total: combinedResults.length,
-      returned: sortedResults.length,
-      gridKey,
-      metrics: {
-        apiCalls: metrics.apiCalls,
-        newRestaurants: metrics.newPlaces,
-        cachedRestaurants: metrics.cachedCount,
-        searchRadius: CONFIG.SEARCH.PRECISE.RADIUS,
-        cacheStatus: metrics.cachedCount > 0 ? 'hit' : 'miss',
-        processingTime: Date.now() - startTime,
-        totalResults: combinedResults.length
+    return NextResponse.json({
+      restaurants: sortedResults,
+      metadata: {
+        total: restaurants.length,
+        returned: sortedResults.length,
+        metrics: {
+          ...metrics,
+          searchRadius: CONFIG.SEARCH.PRECISE.RADIUS,
+          processingTime: Date.now() - startTime,
+        }
       }
-    }
-  });
-
+    });
 
   } catch (error) {
     console.error("Error processing request:", {

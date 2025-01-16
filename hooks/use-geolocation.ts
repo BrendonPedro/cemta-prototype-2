@@ -1,6 +1,7 @@
 // hooks/use-geolocation.ts
-
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { validateTaiwanCoordinates } from '@/config/googleMapsConfig';
+import { CONFIG } from '@/lib/database-builder/config';
 
 interface GeolocationState {
   position: GeolocationPosition | null;
@@ -24,8 +25,38 @@ export function useGeolocation(options: UseGeolocationOptions = {}) {
     timestamp: null
   });
   
-  const hasPosition = useRef(false);
-  const lastValidPosition = useRef<GeolocationPosition | null>(null);
+  const positionRef = useRef<GeolocationPosition | null>(null);
+  const watchIdRef = useRef<number>();
+
+  const handleSuccess = useCallback((position: GeolocationPosition) => {
+    const { latitude, longitude } = position.coords;
+    
+    if (validateTaiwanCoordinates(latitude, longitude)) {
+      positionRef.current = position;
+      setState({
+        position,
+        error: null,
+        isLoading: false,
+        timestamp: Date.now()
+      });
+    } else {
+      setState(prev => ({
+        position: positionRef.current,
+        error: new GeolocationPositionError(),
+        isLoading: false,
+        timestamp: prev.timestamp
+      }));
+    }
+  }, []);
+
+  const handleError = useCallback((error: GeolocationPositionError) => {
+    setState(prev => ({
+      position: positionRef.current,
+      error,
+      isLoading: false,
+      timestamp: prev.timestamp
+    }));
+  }, []);
 
   useEffect(() => {
     if (!navigator.geolocation) {
@@ -37,63 +68,38 @@ export function useGeolocation(options: UseGeolocationOptions = {}) {
       return;
     }
 
-    const validateTaiwanCoordinates = (lat: number, lng: number): boolean => {
-      return !(lat < 21.9 || lat > 25.3 || lng < 120.0 || lng > 122.0);
-    };
-
-    const onSuccess = (position: GeolocationPosition) => {
-      const { latitude, longitude } = position.coords;
-      
-      if (validateTaiwanCoordinates(latitude, longitude)) {
-        hasPosition.current = true;
-        lastValidPosition.current = position;
-        setState({
-          position,
-          error: null,
-          isLoading: false,
-          timestamp: Date.now()
-        });
-      } else {
-        // If coordinates are outside Taiwan, return last valid position or error
-        setState(prev => ({
-          position: lastValidPosition.current,
-          error: new GeolocationPositionError(),
-          isLoading: false,
-          timestamp: prev.timestamp
-        }));
-      }
-    };
-
-    const onError = (error: GeolocationPositionError) => {
-      setState(prev => ({
-        position: lastValidPosition.current,
-        error,
-        isLoading: false,
-        timestamp: prev.timestamp
-      }));
-    };
-
     const geolocationOptions: PositionOptions = {
       enableHighAccuracy: options.enableHighAccuracy ?? true,
-      timeout: options.timeout ?? 20000,
-      maximumAge: options.maximumAge ?? 0
+      timeout: options.timeout ?? CONFIG.API.DELAY_BETWEEN_CALLS,
+      maximumAge: options.maximumAge ?? CONFIG.CACHE.STRATEGY.MEMORY.TTL
     };
 
     if (options.watchPosition) {
-      const watchId = navigator.geolocation.watchPosition(
-        onSuccess, 
-        onError, 
+      watchIdRef.current = navigator.geolocation.watchPosition(
+        handleSuccess, 
+        handleError, 
         geolocationOptions
       );
-      return () => navigator.geolocation.clearWatch(watchId);
-    } else if (!hasPosition.current) {
-      navigator.geolocation.getCurrentPosition(onSuccess, onError, geolocationOptions);
-    }
+
+      return () => {
+        if (watchIdRef.current) {
+          navigator.geolocation.clearWatch(watchIdRef.current);
+        }
+      };
+    } 
+
+    navigator.geolocation.getCurrentPosition(
+      handleSuccess, 
+      handleError, 
+      geolocationOptions
+    );
   }, [
     options.enableHighAccuracy,
     options.timeout,
     options.maximumAge,
-    options.watchPosition
+    options.watchPosition,
+    handleSuccess,
+    handleError
   ]);
 
   return state;

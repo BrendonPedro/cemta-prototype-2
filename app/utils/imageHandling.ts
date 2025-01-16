@@ -1,7 +1,7 @@
 
 // app/utils/imageHandling.ts
 import { ImageType, ImageHandlingProps } from "@/interfaces/images/types";
-import { Restaurant } from "@/interfaces/restaurant/types";
+import { Restaurant } from "@/app/services/restaurant/types";
 
 const SIZES_BY_TYPE = {
   card: "(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw)",

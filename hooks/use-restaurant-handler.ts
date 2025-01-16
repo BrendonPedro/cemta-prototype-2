@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useState, useRef, useEffect } from "react";
-import { Restaurant } from "@/interfaces/restaurant/types";
+import { Restaurant } from "@/app/services/restaurant/types";
 import { validateTaiwanCoordinates } from '@/config/googleMapsConfig';
 import { CONFIG } from '@/lib/database-builder/config';
 import { getCachedRestaurantDetails } from '@/app/services/firebaseFirestore';

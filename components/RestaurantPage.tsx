@@ -26,7 +26,7 @@ import {
   CarouselNext,
   CarouselPrevious,
 } from "@/components/ui/carousel";
-import { getYelpBusinessWithPhotos } from "@/app/services/yelpService";
+import { getYelpBusinessWithPhotos } from "@/app/services/yelp/yelpService";
 import Link from "next/link";
 import {
   type Restaurant,
@@ -36,7 +36,7 @@ import {
   type MenuSummary,
   type YelpBusiness,
   type Location
-} from "@/interfaces/restaurant/types";
+} from "@/app/services/restaurant/types";
 import { getImageProps, handleImageError } from "@/app/utils/imageHandling";
 
 // ======= Helper Functions (outside all components) =======

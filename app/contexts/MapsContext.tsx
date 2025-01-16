@@ -5,9 +5,10 @@ import { useJsApiLoader } from '@react-google-maps/api';
 import { googleMapsConfig, DEFAULT_CENTER, validateTaiwanCoordinates } from '@/config/googleMapsConfig';
 import { useGeolocation } from '@/hooks/use-geolocation';
 import { LatLngLiteral } from '@googlemaps/google-maps-services-js';
-import { mapCache } from "@/app/services/mapCacheService";
+import { mapCache } from "@/app/services/cache/mapCacheService";
 import { getLocationCacheKey } from '../services/firebaseFirestore';
 import { CONFIG } from '@/lib/database-builder/config';
+import type { MapCacheEntry } from '@/app/services/cache/mapCacheService';
 
 interface MapState {
   locations: {
@@ -187,15 +188,29 @@ export function MapsProvider({ children }: { children: React.ReactNode }) {
           const cachedData = await mapCache.get(locationKey);
           
           if (cachedData) {
-            const location = cachedData.location || cachedData;
-            if (isValidCoordinate(location)) {
-              dispatch({ type: 'SET_USER_LOCATION', payload: location });
-              dispatch({ type: 'SET_CURRENT_LOCATION', payload: location });
-              dispatch({ type: 'SET_CENTER', payload: location });
-              dispatch({ type: 'SET_PIN', payload: location });
+            // Extract coordinates from cache entry
+            const coordinates = {
+              lat: cachedData.latitude,
+              lng: cachedData.longitude
+            };
+  
+            if (isValidCoordinate(coordinates)) {
+              dispatch({ type: 'SET_USER_LOCATION', payload: coordinates });
+              dispatch({ type: 'SET_CURRENT_LOCATION', payload: coordinates });
+              dispatch({ type: 'SET_CENTER', payload: coordinates });
+              dispatch({ type: 'SET_PIN', payload: coordinates });
             }
           } else {
-            await mapCache.set(locationKey, newLocation);
+            // Create a new cache entry with required fields
+            await mapCache.set(locationKey, {
+              coordinates: newLocation,
+              latitude: newLocation.lat,
+              longitude: newLocation.lng,
+              county: '', // Required by LocationResponse
+              townName: '', // Required by LocationResponse
+              restaurants: [], // Required by MapCacheEntry
+              geohash: locationKey,
+            });
             
             dispatch({ type: 'SET_USER_LOCATION', payload: newLocation });
             dispatch({ type: 'SET_CURRENT_LOCATION', payload: newLocation });

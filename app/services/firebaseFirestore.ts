@@ -26,12 +26,13 @@ import {
 import geohash from 'ngeohash';
 import { db } from "@/lib/database-builder/db";
 import { CONFIG } from '@/lib/database-builder/config';
-import type { Restaurant, CachedRestaurant, OpeningHours, MenuSummary, Photo, SaveRestaurantResult, SaveRestaurantOptions } from '@/interfaces/restaurant/types';
+import type { Restaurant, CachedRestaurant, OpeningHours, MenuSummary, Photo, SaveRestaurantResult, SaveRestaurantOptions } from '@/app/services/restaurant/types';
 import { calculateDistance } from '@/app/utils/locationUtils'
 import type { UserPreferences } from "@/interfaces/users/user-preferences";
 import type { PlaceData } from "@googlemaps/google-maps-services-js";
 import { calculateMatchScore } from '@/app/utils/restaurantMatching';
-import { mapCache } from "@/app/services/mapCacheService";
+import { mapCache } from "@/app/services/cache/mapCacheService";
+import { saveRestaurant } from "./restaurant/restaurantService";
 
 // For the county/town creation part:
 type RestaurantDocData = WithFieldValue<DocumentData>;
@@ -266,41 +267,6 @@ const SAVE_DEBOUNCE_TIME = 2000; // 2 seconds
 const VERIFICATION_INTERVAL = 30000; // 30 seconds
 const saveQueue = new Map<string, NodeJS.Timeout>();
 let lastVerificationTime = 0;
-
-export async function batchUpdateRestaurants(
-  restaurants: CachedRestaurant[],
-  signal?: AbortSignal
-): Promise<void> {
-  const chunkSize = 500;
-  for (let i = 0; i < restaurants.length; i += chunkSize) {
-    if (signal?.aborted) {
-      throw new Error('Operation aborted');
-    }
-
-    const chunk = restaurants.slice(i, Math.min(i + chunkSize, restaurants.length));
-    const batch = writeBatch(db);
-
-    chunk.forEach(restaurant => {
-      const ref = doc(db, 'restaurants', restaurant.id);
-      batch.set(ref, {
-        name: restaurant.name,
-        address: restaurant.address,
-        rating: restaurant.rating,
-        latitude: restaurant.latitude,
-        longitude: restaurant.longitude,
-        county: restaurant.county,
-        townName: restaurant.townName,
-        menuCount: restaurant.menuCount || 0,
-        hasMenu: !!restaurant.menuCount,
-        hasDetailsFetched: true,
-        lastUpdated: serverTimestamp(), // Use Firestore server timestamp
-        createdAt: restaurant.createdAt || serverTimestamp()
-      }, { merge: true });
-    });
-
-    await batch.commit();
-  }
-}
 
 
 export async function saveDocumentAiResults(
@@ -671,10 +637,14 @@ export async function saveCachedRestaurantsForLocation(
         restaurants: sortedRestaurants,
         latitude: lat,
         longitude: lng,
-        cachedAt: serverTimestamp(),
-        lastUpdated: serverTimestamp(),
-        expiresAt: new Date(Date.now() + CACHE_CONSTANTS.DURATION),
-        geohash: locationKey,
+        coordinates: { lat, lng },
+        county: existing?.county || '',
+        townName: existing?.townName || '',
+        timestamp: Date.now(),
+        firstCached: existing?.firstCached || Date.now(),
+        lastAccessed: Date.now(),
+        expiresAt: Date.now() + CACHE_CONSTANTS.DURATION,
+        geohash: locationKey
       });
 
       console.log(`Successfully updated collection: ${CACHE_CONSTANTS.COLLECTION_NAME}`);
@@ -751,49 +721,6 @@ async function mergeCachedRestaurants(
 
   return Array.from(merged.values());
 }
-
-export const updateCacheEntry = async (
-  lat: number,
-  lng: number,
-  restaurants: CachedRestaurant[],
-  force: boolean = false
-): Promise<void> => {
-  const cacheKey = getLocationCacheKey(lat, lng);
-  
-  try {
-    const validity = await getLocationCacheValidity(lat, lng, cacheKey);
-    
-    if (!validity.isValid || force) {
-      const now = new Date();
-      await mapCache.set(cacheKey, {
-        geohash: cacheKey,
-        latitude: lat,
-        longitude: lng,
-        restaurants,
-        firstCached: now,
-        lastUpdated: now,
-        expiresAt: new Date(now.getTime() + CONFIG.CACHE.DURATION)
-      });
-    } else {
-      // Merge with existing cache
-      const cached = await mapCache.get(cacheKey);
-      if (cached?.restaurants) {
-        const mergedRestaurants = await mergeCachedRestaurants(
-          cached.restaurants,
-          restaurants
-        );
-        await mapCache.set(cacheKey, {
-          ...cached,
-          restaurants: mergedRestaurants,
-          lastUpdated: new Date()
-        });
-      }
-    }
-  } catch (error) {
-    console.error('Error updating cache entry:', error);
-    throw error;
-  }
-};
 
 // Function to get menus for multiple restaurants
 export async function getMenusForRestaurants(
@@ -1099,124 +1026,6 @@ const dataWithDefaults = (data: Partial<Restaurant>, now: string): DocumentData 
   ...data
 });
 
-export async function saveRestaurant(
-  restaurantData: Partial<Restaurant>,
-  options: SaveRestaurantOptions = {}
-): Promise<SaveRestaurantResult> {
-  console.log(`💾 [STORAGE] Saving restaurant data: ${restaurantData.name}`);
-  const {
-    imageUrl,
-    incrementalUpdate = true,
-    batch: existingBatch,
-    updateCounts = true,
-    signal
-  } = options;
-
-  if (!restaurantData.id || !restaurantData.county || !restaurantData.townName) {
-    throw new Error('Missing required restaurant information (id, county, or townName)');
-  }
-
-  try {
-    if (signal?.aborted) {
-      throw new Error('Operation aborted');
-    }
-
-    const batch = existingBatch || writeBatch(db);
-    const now = new Date().toISOString();
-    
-    // References
-    const countyRef = doc(db, CONFIG.FIRESTORE.COLLECTIONS.COUNTIES, restaurantData.county);
-    const townRef = doc(db, `${CONFIG.FIRESTORE.COLLECTIONS.COUNTIES}/${restaurantData.county}/towns/${restaurantData.townName}`);
-    const restaurantRef = doc(db, CONFIG.FIRESTORE.COLLECTIONS.RESTAURANTS, restaurantData.id);
-    const townRestaurantRef = doc(db, `${CONFIG.FIRESTORE.COLLECTIONS.COUNTIES}/${restaurantData.county}/towns/${restaurantData.townName}/restaurants/${restaurantData.id}`);
-
-    // Check existing data
-    const [existingGlobalDoc, existingTownDoc] = await Promise.all([
-      getDoc(restaurantRef),
-      getDoc(townRestaurantRef)
-    ]);
-
-    const isNewGlobal = !existingGlobalDoc.exists();
-    const isNewTown = !existingTownDoc.exists();
-
-    // Prepare data
-    const firestoreData = dataWithDefaults({
-      ...restaurantData,
-      ...(imageUrl && { imageUrl })
-    }, now);
-
-    // Handle structure creation
-    if (isNewTown) {
-      const [countyDoc, townDoc] = await Promise.all([
-        getDoc(countyRef),
-        getDoc(townRef)
-      ]);
-
-      if (!countyDoc.exists()) {
-        const countyData: RestaurantDocData = {
-          name: restaurantData.county,
-          restaurantCount: 0,
-          lastUpdated: serverTimestamp(),
-          createdAt: serverTimestamp()
-        };
-        (batch as WriteBatch).set(countyRef, countyData);
-      }
-      
-      if (!townDoc.exists()) {
-        const townData: RestaurantDocData = {
-          name: restaurantData.townName,
-          restaurantCount: 0,
-          lastUpdated: serverTimestamp(),
-          createdAt: serverTimestamp()
-        };
-        (batch as WriteBatch).set(townRef, townData);
-      }
-    }
-
-    // Save restaurant data
-    const mergeOptions = { merge: incrementalUpdate };
-    (batch as WriteBatch).set(restaurantRef, firestoreData, mergeOptions);
-    (batch as WriteBatch).set(townRestaurantRef, firestoreData, mergeOptions);
-
-    // Update counts
-    if (updateCounts) {
-      const updateData: DocumentData = {
-        restaurantCount: increment(1),
-        lastUpdated: serverTimestamp()
-      };
-
-      if (isNewTown) {
-        (batch as WriteBatch).set(townRef, updateData, { merge: true });
-      }
-
-      if (isNewGlobal) {
-        (batch as WriteBatch).set(countyRef, updateData, { merge: true });
-      }
-    }
-
-    // Commit if we created the batch
-    if (!existingBatch) {
-      await batch.commit();
-    }
-
-    return {
-      success: true,
-      restaurantId: restaurantData.id,
-      updates: (isNewGlobal || isNewTown) ? {
-        countyCount: isNewGlobal ? 1 : 0,
-        townCount: isNewTown ? 1 : 0
-      } : undefined
-    };
-
-  } catch (error) {
-    console.error('Error saving restaurant:', error);
-    return {
-      success: false,
-      restaurantId: restaurantData.id,
-      error: error instanceof Error ? error.message : 'Unknown error'
-    };
-  }
-}
 
 async function saveRestaurantWithYelpData(
   restaurant: Restaurant,
@@ -1286,25 +1095,6 @@ export function transformPlaceToRestaurant(
   };
 }
 
-
-// Add this helper function to get a restaurant's data
-export async function getRestaurant(restaurantId: string): Promise<Restaurant | null> {
-  try {
-    const restaurantRef = doc(db, CONFIG.FIRESTORE.COLLECTIONS.RESTAURANTS, restaurantId);
-    const docSnap = await getDoc(restaurantRef);
-
-    if (docSnap.exists()) {
-      return {
-        id: docSnap.id,
-        ...docSnap.data()
-      } as Restaurant;
-    }
-    return null;
-  } catch (error) {
-    console.error('Error fetching restaurant:', error);
-    return null;
-  }
-}
 
 
 export const updateValidationStatus = async (

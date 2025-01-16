@@ -3,7 +3,7 @@
 import { db } from "@/config/firebaseConfig";
 import { doc, getDoc, setDoc } from "firebase/firestore";
 import axios from 'axios';
-import { YelpBusiness } from './firebaseFirestore';
+import { YelpBusiness } from '@/app/services/firebaseFirestore';
 
 interface YelpCache {
   data: YelpBusiness;

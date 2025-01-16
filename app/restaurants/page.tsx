@@ -26,7 +26,7 @@ import {
   YelpBusinessResponse,
   YelpSearchResponse,
   YelpApiResponse 
-} from '@/interfaces/restaurant/types';
+} from '@/app/services/restaurant/types';
 
 
 interface MapConfig {

@@ -19,11 +19,9 @@ import { useJsApiLoader, GoogleMap, MarkerClusterer } from "@react-google-maps/a
 import {
   getMenuCountForRestaurant,
   getCachedRestaurantDetails,
-  saveRestaurant,
   getCachedRestaurantsForLocation,
   saveCachedRestaurantsForLocation,
   checkExistingMenuForRestaurant,
-  batchUpdateRestaurants,
   getLocationCacheKey,
 } from "@/app/services/firebaseFirestore";
 import { useRouter } from 'next/navigation'; 
@@ -32,6 +30,7 @@ import Image from "next/image";
 import { getImageProps } from '@/app/utils/imageHandling';
 import { debounce } from "lodash";
 import { useGeolocation } from '@/hooks/use-geolocation';
+import { saveRestaurant } from '@/app/services/restaurant/restaurantService';
 
 import {
   Tooltip,
@@ -45,10 +44,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { getYelpBusinessWithPhotos } from "@/app/services/yelpService";
+import { getYelpBusinessWithPhotos } from "@/app/services/yelp/yelpService";
 import { MenuWarningDialog } from "@/components/ui/menu-warning-dialog";
 import axios from "axios";
-import { determineLocationDetails } from "@/app/services/locationService";
+import { determineLocation } from "@/app/services/location/locationService";
 import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertTriangle } from "lucide-react";
@@ -57,7 +56,7 @@ import { RestaurantDetails } from "@/app/shared/components/RestaurantDetails";
 import { calculateDistance } from "@/app/utils/locationUtils";
 import { CONFIG } from "@/lib/database-builder/config";
 import { Loader2 } from "lucide-react";
-import { CachedRestaurant, Restaurant } from "@/interfaces/restaurant/types";
+import { CachedRestaurant, Restaurant } from "@/app/services/restaurant/types";
 import { useMaps } from '@/app/contexts/MapsContext';
 import { 
   googleMapsConfig, 
@@ -65,8 +64,9 @@ import {
   DEFAULT_CENTER 
 } from '@/config/googleMapsConfig';
 import { useRestaurantHandler } from '@/hooks/use-restaurant-handler';
-import { mapCache } from "@/app/services/mapCacheService";
+import { mapCache } from "@/app/services/cache/mapCacheService";
 import { CacheVisualizer } from '@/components/maps/CacheVisualizer';
+import { mapStateCache } from "@/app/services/cache/mapStateCache";
 
 type LatLngLiteral = { lat: number; lng: number };
 
@@ -567,31 +567,31 @@ const handleRefreshLocation = async () => {
   }
 };
 
-  const handleMapLoad = useCallback(async (map: google.maps.Map) => {
-    mapRef.current = map;
-    // Check for cached map state
-    const cacheKey = 'last-map-state';
-    const cachedState = await mapCache.get(cacheKey); 
+const handleMapLoad = useCallback(async (map: google.maps.Map) => {
+  mapRef.current = map;
+  // Check for cached map state
+  const cacheKey = 'last-map-state';
+  const cachedState = await mapStateCache.get(cacheKey); 
+  
+  if (cachedState && restaurants.length === 0) {
+    map.setCenter(cachedState.center);
+    map.setZoom(cachedState.zoom);
+  } else if (restaurants.length > 0) {
+    const bounds = new google.maps.LatLngBounds();
+    restaurants.forEach((r) => {
+      bounds.extend({ lat: r.latitude, lng: r.longitude });
+    });
+    if (user) bounds.extend(user);
+    map.fitBounds(bounds, { top: 50, right: 50, bottom: 50, left: 50 });
     
-    if (cachedState && restaurants.length === 0) {
-      map.setCenter(cachedState.center);
-      map.setZoom(cachedState.zoom);
-    } else if (restaurants.length > 0) {
-      const bounds = new google.maps.LatLngBounds();
-      restaurants.forEach((r) => {
-        bounds.extend({ lat: r.latitude, lng: r.longitude });
-      });
-      if (user) bounds.extend(user);
-      map.fitBounds(bounds, { top: 50, right: 50, bottom: 50, left: 50 });
-      
-      // Cache the new state
-      await mapCache.set(cacheKey, { 
-        center: map.getCenter()?.toJSON(),
-        zoom: map.getZoom(),
-        timestamp: Date.now()
-      });
-    }
-  }, [restaurants, user]);
+    // Cache the new state
+    await mapStateCache.set(cacheKey, { 
+      center: map.getCenter()?.toJSON() || DEFAULT_CENTER,  // Provide default
+      zoom: map.getZoom() || 14,  // Provide default zoom
+      timestamp: new Date()
+    });
+  }
+}, [restaurants, user]);
    
 
   const handleMapClick = useCallback((e: google.maps.MapMouseEvent) => {
@@ -637,7 +637,7 @@ const handleRefreshLocation = async () => {
         longitude
       );
 
-      const { county, townName } = await determineLocationDetails(latitude, longitude);
+      const { county, townName } = await determineLocation(latitude, longitude);
 
       if (!yelpBusiness || !yelpBusiness.photos?.length) {
         setSelectedRestaurant({

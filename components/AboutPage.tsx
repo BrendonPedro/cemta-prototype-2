@@ -23,8 +23,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { useGeolocation } from '@/hooks/use-geolocation';
 
 // Types & Interfaces
-import { Restaurant } from "@/interfaces/restaurant/types";
-import { RestaurantCardProps } from "@/interfaces/restaurant/types";
+import { Restaurant, RestaurantCardProps } from "@/app/services/restaurant/types";
 
 
 // Constants

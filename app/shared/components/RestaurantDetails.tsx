@@ -1,7 +1,7 @@
 import { Star, MapPin, Clock, Info } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import type { Restaurant } from "@/interfaces/restaurant/types";
-import { OpeningHours } from "@/interfaces/restaurant/types";
+import type { Restaurant } from "@/app/services/restaurant/types";
+import { OpeningHours } from "@/app/services/restaurant/types";
 
 // Update the OperatingHours component props type
 interface OperatingHoursProps {
