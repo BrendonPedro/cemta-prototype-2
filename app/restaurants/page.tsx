@@ -12,21 +12,16 @@ import Link from "next/link";
 import { searchRestaurants } from "@/app/services/firebaseFirestore";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { GoogleMap, useJsApiLoader, Marker } from "@react-google-maps/api";
+import { GoogleMap } from "@react-google-maps/api";  // Remove useJsApiLoader, Marker as they're not used
 import ErrorBoundary from "@/components/ErrorBoundary";
-import { getRestaurantImageProps, handleImageError } from "@/app/utils/imageHandling";
+import { getImageProps, handleImageError } from "@/app/utils/imageHandling"; // Removed duplicate imports
 import { getRestaurantLink } from "@/app/utils/restaurantUtils";
-import { getImageProps } from "@/app/utils/imageHandling";
+import { mapStateCache } from "@/app/services/cache/mapStateCache"; // mapCache isn't used
+import { determineLocation } from "@/app/services/location/locationService";
+import { getNearbyRestaurants } from "@/app/services/restaurant/restaurantService";
 
-// Types and Interfaces
-import { 
-  Restaurant, 
-  Location, 
-  YelpErrorResponse,
-  YelpBusinessResponse,
-  YelpSearchResponse,
-  YelpApiResponse 
-} from '@/app/services/restaurant/types';
+// Import types
+import type { Restaurant, Location } from '@/app/services/restaurant/types';
 
 
 interface MapConfig {
@@ -41,6 +36,7 @@ interface MapConfig {
 interface MapState {
   isLoaded: boolean;
   error: string | null;
+  zoom: number; // Add this
 }
 
 // Map Configuration
@@ -156,7 +152,8 @@ function RestaurantsPage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [mapState, setMapState] = useState<MapState>({
     isLoaded: false,
-    error: null
+    error: null,
+    zoom: MAP_CONFIG.defaultZoom // Add default zoom
   });
   const getImageUrl = (url: string | undefined): string => {
     if (!url) return "/placeholder-restaurant.jpg";
@@ -202,7 +199,8 @@ function RestaurantsPage() {
           console.log('Google Maps already loaded, skipping initialization');
           setMapState({
             isLoaded: true,
-            error: null
+            error: null,
+            zoom: MAP_CONFIG.defaultZoom
           });
           return;
         }
@@ -221,26 +219,48 @@ function RestaurantsPage() {
           version: "weekly",
           libraries: ["places"],
           mapIds: [data.mapId],
-          // Add a unique ID to prevent conflicts
           id: 'cemta-google-maps'
         });
   
+        // Wait for the map to load before setting isLoaded to true
         await loader.load();
+  
+        // Only set isLoaded after successful load
         setMapState({
           isLoaded: true,
-          error: null
+          error: null,
+          zoom: MAP_CONFIG.defaultZoom
         });
+  
       } catch (error) {
         console.error("Error loading map:", error);
         setMapState({
           isLoaded: false,
-          error: 'Failed to load map functionality'
+          error: 'Failed to load map functionality',
+          zoom: MAP_CONFIG.defaultZoom
         });
       }
     }
   
     initializeMap();
   }, []); // Empty dependency array means this only runs once on mount
+
+  useEffect(() => {
+    async function restoreMapState() {
+      const lastState = await mapStateCache.get('last-map-state');
+      if (lastState) {
+        setCenter(lastState.center);
+        setMapState(prev => ({
+          ...prev,
+          zoom: lastState.zoom
+        }));
+      }
+    }
+  
+    if (mapState.isLoaded) {
+      restoreMapState();
+    }
+  }, [mapState.isLoaded]);
 
   // Search term debouncing effect
   useEffect(() => {
@@ -286,67 +306,34 @@ function RestaurantsPage() {
     try {
       setLoading(true);
       setError(null);
+  
+      // First determine location details
+      const locationDetails = await determineLocation(lat, lng);
       
-      const response = await fetch(
-        `/api/yelp/search?latitude=${lat}&longitude=${lng}&limit=20`
+      // Get restaurants using our service
+      const { restaurants: nearbyRestaurants } = await getNearbyRestaurants(
+        lat,
+        lng,
+        null // No firebaseToken needed for public search
       );
   
-      const data = await response.json() as YelpApiResponse;
-  
-      if (!response.ok) {
-        // Check if it's an error response
-        if ('error' in data) {
-          throw new Error(data.error.description || 'Failed to fetch nearby restaurants');
-        }
-        throw new Error('Failed to fetch nearby restaurants');
-      }
-  
-      // Type guard for successful response
-      if (!('businesses' in data) || !Array.isArray(data.businesses)) {
-        throw new Error('Invalid response format from server');
-      }
-  
-      setRestaurants((prev) => {
-        const newRestaurants: Restaurant[] = data.businesses.map((r: YelpBusinessResponse) => ({
-          id: r.id,
-          name: r.name,
-          address: r.location?.address1 || 'Address unavailable',
-          rating: r.rating || 0,
-            
-            latitude: r.coordinates?.latitude || 0,
-            longitude: r.coordinates?.longitude || 0,
-         
-          county: r.location?.city || 'Location unavailable',
-          townName: r.location?.state || 'Unknown',  
-          menuCount: 0,
-          hasMenu: false,
-          hasGoogleData: false,
-          hasYelpData: true,
-          // Optional fields with null values
-          priceLevel: null,
-          phone: null,
-          website: null,
-          openingHours: null,
-          // Required basic fields
-          imageUrl: r.image_url || '/placeholder-restaurant.jpg',
-          contribution: false,
-          hasDetailsFetched: true
-        } satisfies Restaurant));
-      
-        // Filter out invalid restaurants
-        const validRestaurants = newRestaurants.filter(
-          r => r.latitude !== 0 && r.longitude !== 0
-        );
-      
-        const combined = [...prev, ...validRestaurants];
-        
+      setRestaurants(prevRestaurants => {
+        const combined = [...prevRestaurants, ...nearbyRestaurants];
         // Remove duplicates based on ID
         return Array.from(
-          new Map(combined.map((item) => [item.id, item])).values()
+          new Map(combined.map(item => [item.id, item])).values()
         );
       });
   
       setCenter({ lat, lng });
+  
+      // Cache map state
+      await mapStateCache.set('last-map-state', {
+        center: { lat, lng },
+        zoom: MAP_CONFIG.defaultZoom,
+        timestamp: new Date()
+      });
+  
     } catch (error) {
       console.error("Error fetching nearby restaurants:", error);
       setError(
@@ -419,18 +406,18 @@ function RestaurantsPage() {
         <Card className="p-4">
           {mapState.isLoaded && window.google ? (
             <GoogleMap
-              mapContainerStyle={MAP_CONFIG.containerStyle}
-              center={center}
-              zoom={MAP_CONFIG.defaultZoom}
-              onClick={handleMapClick}
-              options={{
-                disableDefaultUI: false,
-                clickableIcons: false,
-                mapTypeControl: false,
-                zoomControl: true,
-                mapId: process.env.NEXT_PUBLIC_GOOGLE_MAPS_ID // Add map ID here
-              }}
-            >
+            mapContainerStyle={MAP_CONFIG.containerStyle}
+            center={center}
+            zoom={mapState.zoom} // Use the state value here
+            onClick={handleMapClick}
+            options={{
+              disableDefaultUI: false,
+              clickableIcons: false,
+              mapTypeControl: false,
+              zoomControl: true,
+              mapId: process.env.NEXT_PUBLIC_GOOGLE_MAPS_ID
+            }}
+          >
               {/* ... Markers ... */}
             </GoogleMap>
           ) : mapState.error ? (

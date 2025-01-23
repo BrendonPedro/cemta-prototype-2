@@ -6,21 +6,35 @@ import { validateTaiwanCoordinates } from '@/config/googleMapsConfig';
 import { CONFIG } from '@/lib/database-builder/config';
 import { getCachedRestaurantDetails } from '@/app/services/firebaseFirestore';
 
-export function useRestaurantHandler(firebaseToken: string) {
+const defaultHandler = {
+  focusedRestaurant: null,
+  selectedMarker: null,
+  handleTableClick: () => {},
+  handleMarkerClick: () => {},
+  resetFocus: () => {},
+  mapRef: { current: null }
+};
+
+export function useRestaurantHandler(firebaseToken: string | null) {
+  // Early return if no token
+  if (!firebaseToken) {
+    return defaultHandler;
+  }
+
+  // All hooks need to be called unconditionally
   const [focusedRestaurant, setFocusedRestaurant] = useState<Restaurant | null>(null);
   const [selectedMarker, setSelectedMarker] = useState<string | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
   const restaurantCache = useRef<Map<string, { data: Restaurant; timestamp: number }>>(new Map());
 
-  // Add cache cleanup effect
   useEffect(() => {
     const cleanup = () => {
       const now = Date.now();
-      for (const [id, entry] of restaurantCache.current.entries()) {
+      restaurantCache.current.forEach((entry, id) => {
         if (now - entry.timestamp > CONFIG.CACHE.DURATION) {
           restaurantCache.current.delete(id);
         }
-      }
+      });
     };
 
     const interval = setInterval(cleanup, CONFIG.PROCESSING.VERIFICATION_INTERVAL);

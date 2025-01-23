@@ -34,7 +34,17 @@ function generateFilePath(parts: string[]): string {
 }
 
 export function getImageUrl(fileName: string, bucketName: string): string {
-  return `https://storage.googleapis.com/${bucketName}/${fileName}`;
+  // Map old bucket names to new ones
+  const bucketMap: Record<string, string> = {
+    'menu_documentai_labeled_cemta': 'new-menu-documentai-labeled',
+    'menu_uploads_original_cemta': 'new-menu-uploads-original',
+    'menu_uploads_processed_cemta': 'new-menu-uploads-processed',
+    'restaurant_images_cemta': 'new-restaurant-images',
+    'menu_uploads_yelp_cemta': 'new-menu-uploads-yelp'
+  };
+
+  const newBucketName = bucketMap[bucketName] || bucketName;
+  return `https://storage.googleapis.com/${newBucketName}/${fileName}`;
 }
 
 async function uploadWithRetry(

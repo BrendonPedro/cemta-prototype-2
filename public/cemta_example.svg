@@ -1,0 +1,76 @@
+<!-- SAMPLE LOGO SVG (approximate) -->
+<svg
+  version="1.1"
+  xmlns="http://www.w3.org/2000/svg"
+  width="300"
+  height="100"
+  viewBox="0 0 300 100"
+>
+  <!-- 
+    "Teal-like" color #0f766e is a built-in Tailwind teal-700.
+    Adjust fill/stroke as desired.
+  -->
+  <title>CEMTA Logo Example</title>
+  
+  <!-- Group for swirl + fork -->
+  <g id="plate-fork" transform="translate(50,50)">
+    <!-- Outer swirl (ellipse) -->
+    <ellipse
+      rx="40"
+      ry="20"
+      fill="none"
+      stroke="#0f766e"
+      stroke-width="3"
+    />
+    <!-- Inner swirl (rotated ellipse) -->
+    <ellipse
+      rx="36"
+      ry="16"
+      fill="none"
+      stroke="#0f766e"
+      stroke-width="3"
+      transform="rotate(15)"
+    />
+
+    <!-- Simple Fork Path (approximation) -->
+    <path
+      d="
+        M 0 -10     <!-- top of fork -->
+        L 0 -20     <!-- fork handle upward -->
+        L 3 -20
+        L 3 -10
+        M 0 -20     <!-- small tines up top -->
+        L 0 -23
+        M 1 -20
+        L 1 -23
+        M 2 -20
+        L 2 -23
+      "
+      stroke="#0f766e"
+      stroke-width="2"
+      fill="none"
+    />
+  </g>
+  
+  <!-- "CEMTA" text -->
+  <text
+    id="cemta-text"
+    x="95"
+    y="57"
+    fill="url(#tealGradient)"   <!-- optional gradient fill (defined below) -->
+    font-family="Verdana, sans-serif"
+    font-size="38"
+    font-weight="bold"
+  >
+    CEMTA
+  </text>
+  
+  <!-- Optional linear gradient for the text if you want that "sleek" look -->
+  <defs>
+    <linearGradient id="tealGradient" x1="0" y1="0" x2="1" y2="0">
+      <!-- adjust colors as needed -->
+      <stop offset="0%" stop-color="#0f766e" />
+      <stop offset="100%" stop-color="#000000" />
+    </linearGradient>
+  </defs>
+</svg>

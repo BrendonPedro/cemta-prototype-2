@@ -1,5 +1,4 @@
 // config/firebaseAdmin.ts
-
 import admin from "firebase-admin";
 import { readFileSync } from "fs";
 
@@ -15,8 +14,11 @@ if (!admin.apps.length) {
     );
 
     admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-      databaseURL: `https://${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}.firebaseio.com`,
+      credential: admin.credential.cert({
+        ...serviceAccount,
+        projectId: "cemta-prototype-3", // Keep original Firebase project ID
+      }),
+      databaseURL: `https://cemta-prototype-3.firebaseio.com`, // Original Firebase
     });
     console.log("Firebase Admin SDK initialized successfully");
   } catch (error) {

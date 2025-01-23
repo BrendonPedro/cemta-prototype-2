@@ -24,7 +24,7 @@ import { GoogleMap, Marker, useJsApiLoader } from "@react-google-maps/api";
 import { ChevronUp, ChevronDown } from "lucide-react";
 import ValidationBadge from "@/app/shared/components/ValidationBadge";
 import { useUser } from "@clerk/nextjs";
-import MenuSearch from "@/components/MenuSearch";
+import MenuSearch from "@/components/old_components/MenuSearch";
 import Combobox from "@/components/ui/Combobox"; // Use Combobox instead of Autocomplete
 import { Input } from "@/components/ui/input"; // Import Input component
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";

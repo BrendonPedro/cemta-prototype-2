@@ -1,5 +1,3 @@
-// app/(marketing)/layout.tsx
-
 "use client";
 
 import React, { useState } from "react";
@@ -29,20 +27,23 @@ const MarketingLayout = ({ children, showBackgroundImage = true }: Props) => {
     pathname.startsWith(path)
   );
 
+  // Check if we're on the homepage
+  const isHomepage = pathname === "/";
+
   return (
-    <div className="min-h-screen flex flex-col bg-gradient-to-br from-customTeal to-white">
+    <div className={`min-h-screen flex flex-col ${isHomepage ? 'bg-white' : 'bg-gradient-to-br from-customTeal to-white'}`}>
       <Header />
       <div className="flex flex-grow">
         {shouldShowSidebar && (
           <SidebarWrapper onSidebarToggle={handleSidebarToggle} />
         )}
         <main
-          className={`flex-grow flex justify-center ${
-            shouldShowSidebar ? "" : "items-center"
+          className={`flex-grow flex ${
+            shouldShowSidebar ? "" : "items-start"
           }`}
         >
           <div
-            className={`w-full px-4 sm:px-6 lg:px-8 py-6
+            className={`w-full
             ${
               shouldShowSidebar ? (isSidebarCollapsed ? "ml-20" : "ml-64") : ""
             } 
@@ -59,7 +60,7 @@ const MarketingLayout = ({ children, showBackgroundImage = true }: Props) => {
                 />
               </div>
             )}
-            <div className="relative z-10 w-full max-w-7xl mx-auto">
+            <div className={`relative z-10 w-full ${!isHomepage && 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6'}`}>
               {children}
             </div>
           </div>

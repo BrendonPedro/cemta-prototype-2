@@ -1,0 +1,60 @@
+<svg viewBox="0 0 800 600" xmlns="http://www.w3.org/2000/svg">
+  <!-- Phone Frame -->
+  <rect x="300" y="50" width="300" height="500" rx="30" fill="#fff" stroke="#000" stroke-width="8"/>
+  
+  <!-- Menu Items -->
+  <g id="menu-items">
+    <!-- First item: 炒飯 / chǎofàn / Fried Rice -->
+    <rect x="320" y="100" width="260" height="80" rx="5" fill="#f0f0f0"/>
+    <text x="340" y="135" font-family="Arial" font-size="16" fill="#333">炒飯</text>
+    <text x="340" y="150" font-family="Arial" font-size="14" fill="#888">chǎofàn</text>
+    <text x="340" y="165" font-family="Arial" font-size="14" fill="#666">Fried Rice</text>
+
+    <!-- Second item: 牛肉麵 / niúròu miàn / Beef Noodle Soup -->
+    <rect x="320" y="180" width="260" height="80" rx="5" fill="#f0f0f0"/>
+    <text x="340" y="215" font-family="Arial" font-size="16" fill="#333">牛肉麵</text>
+    <text x="340" y="230" font-family="Arial" font-size="14" fill="#888">niúròu miàn</text>
+    <text x="340" y="245" font-family="Arial" font-size="14" fill="#666">Beef Noodle Soup</text>
+
+    <!-- Third item: 小籠包 / xiǎolóngbāo / Soup Dumplings -->
+    <rect x="320" y="260" width="260" height="80" rx="5" fill="#f0f0f0"/>
+    <text x="340" y="295" font-family="Arial" font-size="16" fill="#333">小籠包</text>
+    <text x="340" y="310" font-family="Arial" font-size="14" fill="#888">xiǎolóngbāo</text>
+    <text x="340" y="325" font-family="Arial" font-size="14" fill="#666">Soup Dumplings</text>
+  </g>
+
+  <!-- Translation Lines (unchanged) -->
+  <g id="translation-animation">
+    <path d="M580 130 H 650" stroke="#00cc88" stroke-width="2">
+      <animate 
+        attributeName="stroke-dasharray" 
+        values="0,100;100,0" 
+        dur="2s" 
+        repeatCount="indefinite"
+      />
+    </path>
+    <path d="M580 200 H 650" stroke="#00cc88" stroke-width="2">
+      <animate 
+        attributeName="stroke-dasharray" 
+        values="0,100;100,0" 
+        dur="2s" 
+        begin="0.3s" 
+        repeatCount="indefinite"
+      />
+    </path>
+    <path d="M580 270 H 650" stroke="#00cc88" stroke-width="2">
+      <animate 
+        attributeName="stroke-dasharray" 
+        values="0,100;100,0" 
+        dur="2s" 
+        begin="0.6s" 
+        repeatCount="indefinite"
+      />
+    </path>
+  </g>
+
+  <!-- Camera Frame -->
+  <rect x="320" y="350" width="260" height="180" rx="10" fill="#f8f8f8" stroke="#ddd" stroke-width="2"/>
+  <circle cx="450" cy="440" r="50" fill="#00cc88" opacity="0.1"/>
+  <path d="M425 440 L475 440 M450 415 L450 465" stroke="#00cc88" stroke-width="4"/>
+</svg>

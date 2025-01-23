@@ -105,11 +105,20 @@
 }
 
 .welcome-message {
-  font-size: 1.5rem; /* Adjust as necessary */
+  font-size: 1.5rem;
   color: #000000a0; 
-  white-space: nowrap;
-  overflow: hidden;
-  border-right: 0.15em solid; /* Cursor effect */
+  white-space: normal;
+  overflow: visible;
+  width: 100%;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-20px); }
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
 }
 
 @keyframes blink-caret {
@@ -118,12 +127,19 @@
     border-color: transparent;
   }
   50% {
-    border-color: #008080; /* Custom Teal */
+    border-color: #000000; /* Custom Teal */
   }
 }
 
-.typing {
-  animation: blink-caret 0.75s step-end infinite;
+.typing, .typing-complete {
+  display: inline-block;
+  max-width: 100%;
+  white-space: nowrap;
+}
+
+.typing-complete {
+  border-right: none;
+  animation: none;
 }
 
 .cemta-title {

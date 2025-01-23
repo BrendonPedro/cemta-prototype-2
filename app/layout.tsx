@@ -26,15 +26,13 @@ export default function RootLayout({
   return (
     <ClerkProvider>
       <html lang="en">
-        <body 
-          className={`${inter.className} font-sans`}
-          data-new-gr-c-s-check-loaded="14.1092.0"
-          data-gr-ext-installed=""
-        >
-          <MapsProvider>
-            <AuthProvider>{children}</AuthProvider>
-            <Toaster />
-          </MapsProvider>
+        <body className={inter.className}>
+          <AuthProvider>
+            <MapsProvider>
+              {children}
+            </MapsProvider>
+          </AuthProvider>
+          <Toaster />
         </body>
       </html>
     </ClerkProvider>

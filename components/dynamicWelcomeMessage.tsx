@@ -7,14 +7,14 @@ import React, { useState, useEffect, useCallback } from "react";
 
 // Component Props Interface
 interface DynamicWelcomeMessageProps {
-  username?: string | null;
-  className?: string;
-  isSignedIn?: boolean;
+  username: string | null;
+  isSignedIn: boolean;
+  isLoading: boolean;
 }
 
 // Constants for animation configuration
 const TYPING_SPEED = 100; // milliseconds per character
-const DEFAULT_MESSAGE = "Welcome! Please sign in.";
+const DEFAULT_MESSAGE = "Welcome Guest! A World of Food Awaits.";
 
 /**
  * DynamicWelcomeMessage Component
@@ -22,50 +22,73 @@ const DEFAULT_MESSAGE = "Welcome! Please sign in.";
  */
 const DynamicWelcomeMessage: React.FC<DynamicWelcomeMessageProps> = ({
   username,
-  className = '',
-  isSignedIn = false
+  isSignedIn,
+  isLoading
 }) => {
   const [displayedText, setDisplayedText] = useState("");
+  const [isTypingComplete, setIsTypingComplete] = useState(false);
+  const [messageToType, setMessageToType] = useState<string>("");
   
-  // Determine the message based on auth state
-  const fullText = isSignedIn && username 
-    ? `Welcome, ${username}!`
-    : DEFAULT_MESSAGE;
-
-  // Typing animation effect
+  // Set the message with a delay to ensure auth state is stable
   useEffect(() => {
+    if (isLoading) return;
+
+    // Add a delay before starting to type
+    const delayTimer = setTimeout(() => {
+      const newMessage = isSignedIn && username 
+        ? `Welcome, ${username}!`
+        : DEFAULT_MESSAGE;
+      setMessageToType(newMessage);
+    }, 1000); // 1 second delay
+
+    return () => clearTimeout(delayTimer);
+  }, [isLoading, isSignedIn, username]);
+
+  // Start typing animation only after we have a stable message
+  useEffect(() => {
+    if (!messageToType) return;
+
     let index = 0;
     let isAnimating = true;
 
-    // Reset text when message changes
     setDisplayedText("");
+    setIsTypingComplete(false);
 
-    // Create the typing interval
     const intervalId = setInterval(() => {
       if (!isAnimating) return;
 
-      setDisplayedText(fullText.slice(0, index + 1));
+      setDisplayedText(messageToType.slice(0, index + 1));
       index++;
 
-      // Clear interval when animation is complete
-      if (index === fullText.length) {
+      if (index === messageToType.length) {
         clearInterval(intervalId);
+        setIsTypingComplete(true);
       }
     }, TYPING_SPEED);
 
-    // Cleanup function to prevent memory leaks
     return () => {
       isAnimating = false;
       clearInterval(intervalId);
     };
-  }, [fullText]);
+  }, [messageToType]);
+
+  // Show empty state while waiting for initial delay
+  if (isLoading || !messageToType) {
+    return (
+      <div className="mt-2 text-md font-medium text-black max-w-[400px] flex-wrap welcome-message">
+        <span className="opacity-0">.</span>
+      </div>
+    );
+  }
 
   return (
     <div 
-      className={`mt-2 text-md font-medium text-black max-w-[400px] flex-wrap welcome-message ${className}`}
+      className="mt-2 text-md font-medium text-black max-w-[400px] flex-wrap welcome-message"
       aria-live="polite"
     >
-      <span className="typing">{displayedText}</span>
+      <span className={`${isTypingComplete ? 'typing-complete' : 'typing'}`}>
+        {displayedText}
+      </span>
     </div>
   );
 };

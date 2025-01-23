@@ -279,16 +279,19 @@ const MapWithErrorBoundary: React.FC<MapWithErrorBoundaryProps> = ({
 };
 
 export function FindRestaurantsAndMenus() {
-  const initRef = useRef(false);
-  const { position, error: geoError, isLoading: geoLoading } = useGeolocation({
-    enableHighAccuracy: true,
-    timeout: 20000,
-    maximumAge: 0,
-    watchPosition: false
+  // Add locationStats state with other state declarations
+  const [locationStats, setLocationStats] = useState<{
+    towns: Set<string>;
+    counties: Set<string>;
+  }>({
+    towns: new Set<string>(),
+    counties: new Set<string>()
   });
 
-  const { userId } = useClerkAuth();
-  const { firebaseToken, loading: authLoading, error: authError } = useAuth();
+  // Add router initialization with other hooks
+  const router = useRouter();
+
+  // Move all useState declarations to the top
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [filteredRestaurants, setFilteredRestaurants] = useState<Restaurant[]>([]);
   const [nameFilter, setNameFilter] = useState("all");
@@ -298,22 +301,32 @@ export function FindRestaurantsAndMenus() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(0);
-  const router = useRouter();
   const [isLoadingMenu, setIsLoadingMenu] = useState(false);
   const [showWarning, setShowWarning] = useState(false);
   const [selectedRestaurant, setSelectedRestaurant] = useState<Restaurant | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [isCacheLoading, setIsCacheLoading] = useState(false);
   const [isApiLoading, setIsApiLoading] = useState(false);
-  const [locationStats, setLocationStats] = useState<{
-    towns: Set<string>;
-    counties: Set<string>;
-  }>({
-    towns: new Set<string>(),
-    counties: new Set<string>()
+  
+  // Refs
+  const initRef = useRef(false);
+
+  // Hooks
+  const { position, error: geoError, isLoading: geoLoading } = useGeolocation({
+    enableHighAccuracy: true,
+    timeout: 20000,
+    maximumAge: 0,
+    watchPosition: false
   });
 
-  const restaurantHandler = firebaseToken ? useRestaurantHandler(firebaseToken) : null;
+  const { userId } = useClerkAuth();
+  const { firebaseToken, loading: authLoading, error: authError } = useAuth();
+  const maps = useMaps();
+
+  // Restaurant handler - only use after auth is loaded
+  const restaurantHandler = useRestaurantHandler(
+    !authLoading && firebaseToken ? firebaseToken : null
+  );
 
   const {
     focusedRestaurant,
@@ -342,7 +355,7 @@ export function FindRestaurantsAndMenus() {
     setPinLocation,
     setLocationEnabled,
     toggleLocation
-  } = useMaps();
+  } = maps;
 
   const updateLocationStats = (restaurants: Restaurant[]) => {
     const newStats = {
@@ -806,7 +819,7 @@ const handleMapLoad = useCallback(async (map: google.maps.Map) => {
   const displayedRestaurants = restaurants.slice(currentPage * 20, (currentPage + 1) * 20);
 
    return (
-    <div className="h-full flex flex-col relative">
+    <div className="h-full flex flex-col relative pt-20">
       <div className="flex justify-between items-center mb-4 px-4 py-2 bg-white rounded-lg shadow">
         <div className="flex items-center space-x-4">
           <TooltipProvider>
@@ -836,6 +849,18 @@ const handleMapLoad = useCallback(async (map: google.maps.Map) => {
             <span className="text-sm text-gray-600">
               Location Services {enabled ? 'Enabled' : 'Disabled'}
             </span>
+            <div className="flex justify-end items-center">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger>
+                    <Info className="h-5 w-5 text-customTeal cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Toggle location services to control location precision</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </div>
           </div>
         </div>
   
@@ -885,18 +910,7 @@ const handleMapLoad = useCallback(async (map: google.maps.Map) => {
                 <span className="text-customTeal">Nearby Restaurants</span>
               </motion.span>
             </CardTitle>
-            <div className="flex justify-end items-center mb-4">
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger>
-                    <Info className="h-6 w-6 text-customTeal" />
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Toggle location services above to control location precision</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </div>
+            
           </CardHeader>
           <CardContent className="relative">
             {(isApiLoading || isCacheLoading) && (

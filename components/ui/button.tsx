@@ -68,7 +68,9 @@ const buttonVariants = cva(
         cemta2:
           "bg-gradient-to-r from-primary to-secondary text-white hover:opacity-90",
         nextButton3:
-          "relative overflow-visible rounded-full hover:-translate-y-1 px-12 shadow-xl bg-customTeal2 text-white after:content-[''] after:absolute after:rounded-full after:inset-0 after:bg-customTeal2/60 after:z-[-1] after:transition after:!duration-500 hover:after:scale-150 hover:after:opacity-0",
+          "relative overflow-visible rounded-full hover:-translate-y-1 px-12 shadow-xl bg-black text-white after:content-[''] after:absolute after:rounded-full after:inset-0 after:bg-customTeal2/60 after:z-[-1] after:transition after:!duration-500 hover:after:scale-150 hover:after:opacity-0",
+        nextButton4:
+          "relative overflow-visible rounded-full px-12 shadow-xl bg-customTeal text-white transition-all duration-300 after:content-[''] after:absolute after:rounded-full after:inset-0 after:bg-black after:z-[-1] after:transition after:!duration-500 hover:after:scale-150 hover:after:opacity-0 active:scale-95 active:shadow-inner disabled:bg-customTeal/70 disabled:cursor-wait transform",
       },
 
       size: {
