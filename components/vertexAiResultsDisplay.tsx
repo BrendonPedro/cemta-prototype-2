@@ -1,6 +1,6 @@
 // components/vertexAiResultsDisplay.tsx
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Collapsible,
   CollapsibleTrigger,
@@ -36,14 +36,33 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertCircle, RefreshCw } from "lucide-react";
-import {
+
+import MenuDataDisplay from "./MenuDataDisplay";
+import type { 
   MenuData,
   MenuItem,
-  MenuCategory,
+  Category,
   RestaurantInfo,
+  MenuItemName,
+  MenuDetails,
+  MenuDescription
+} from "@/app/services/menu/types";
+import ValidationBadge from "@/app/shared/components/ValidationBadge";
+import {
   HistoryItem,
 } from "@/app/services/firebaseFirestore";
-import MenuDataDisplay from "./MenuDataDisplay";
+
+interface RawMenuItem {
+  name: MenuItemName;
+  description?: MenuDescription;
+  prices?: {
+    regular?: string;
+    small?: string;
+    medium?: string;
+    large?: string;
+    xl?: string;
+  };
+}
 
 interface VertexAiResultsDisplayProps {
   userId: string;
@@ -51,60 +70,66 @@ interface VertexAiResultsDisplayProps {
   isCached: boolean;
   onReprocess: (id: string) => void;
   processingError: string | null;
-  existingMenuInfo: any | null;
+  existingMenuInfo: MenuDetails | null;
   menuName: string;
 }
 
 function normalizeMenuData(data: any): MenuData {
   // Transform categories from object to array if needed
   const categories = Array.isArray(data.categories) 
-    ? data.categories 
-    : Object.values(data.categories || {}).map((category: any) => ({
-        name: category.name || { original: '', english: '', pinyin: '' },
-        items: Array.isArray(category.items) 
-          ? category.items 
-          : Object.values(category.items || {}).map((item: any) => ({
-              name: item.name,
-              description: item.description || { original: '', english: '' },
-              prices: typeof item.prices === 'object' 
-                ? Object.entries(item.prices).reduce((acc, [key, value]) => ({
-                    ...acc,
-                    [key]: value?.toString() || ''
-                  }), {})
-                : {},
-              popular: !!item.popular,
-              chef_recommended: !!item.chef_recommended,
-              spice_level: item.spice_level?.toString() || '',
-              allergy_alert: item.allergy_alert || '',
-              upgrades: Array.isArray(item.upgrades) ? item.upgrades : [],
-              notes: item.notes || ''
-            }))
-      }));
-
-       // Normalize restaurant info
-  const restaurantInfo = {
-    name: typeof data.restaurant_info?.name === 'string' 
-      ? { original: data.restaurant_info.name, english: '' }
-      : data.restaurant_info?.name || { original: '', english: '' },
-    address: typeof data.restaurant_info?.address === 'string'
-      ? { original: data.restaurant_info.address, english: '' }
-      : data.restaurant_info?.address || { original: '', english: '' },
-    operating_hours: data.restaurant_info?.operating_hours || '',
-    phone_number: data.restaurant_info?.phone_number || '',
-    website: data.restaurant_info?.website || '',
-    social_media: data.restaurant_info?.social_media || '',
-    description: typeof data.restaurant_info?.description === 'string'
-      ? { original: data.restaurant_info.description, english: '' }
-      : data.restaurant_info?.description || { original: '', english: '' },
-    additional_notes: data.restaurant_info?.additional_notes || ''
-  };
+    ? data.categories.map((category: any) => ({
+        name: typeof category.name === 'string' 
+          ? { original: category.name, english: '', pinyin: '' }
+          : category.name,
+        items: category.items.map((item: any) => ({
+          name: typeof item.name === 'string'
+            ? { original: item.name, english: '', pinyin: '' }
+            : item.name,
+          description: typeof item.description === 'string'
+            ? { original: item.description, english: '' }
+            : item.description,
+          price: item.price ? {
+            amount: Number(item.price.amount),
+            currency: String(item.price.currency)
+          } : undefined,
+          // ... other item fields
+        }))
+      }))
+    : [];
 
   return {
-    restaurant_info: restaurantInfo,
-    categories: categories,
+    restaurant_info: {
+      name: typeof data.restaurant_info?.name === 'string' 
+        ? { original: data.restaurant_info.name, english: '', pinyin: '' }
+        : data.restaurant_info?.name || { original: '', english: '', pinyin: '' },
+      address: typeof data.restaurant_info?.address === 'string'
+        ? { original: data.restaurant_info.address, english: '', pinyin: '' }
+        : data.restaurant_info?.address || { original: '', english: '', pinyin: '' },
+      description: typeof data.restaurant_info?.description === 'string'
+        ? { original: data.restaurant_info.description, english: '', pinyin: '' }
+        : data.restaurant_info?.description || { original: '', english: '', pinyin: '' },
+      operating_hours: data.restaurant_info?.operating_hours || '',
+      phone_number: data.restaurant_info?.phone_number || '',
+      website: data.restaurant_info?.website || '',
+      social_media: data.restaurant_info?.social_media || '',
+      additional_notes: data.restaurant_info?.additional_notes || '',
+      validation_status: data.restaurant_info?.validation_status
+    },
+    categories,
     other_info: data.other_info || ''
   };
 }
+
+const OrderSummary: React.FC<{ total: string; itemCount: number }> = ({ total, itemCount }) => (
+  <div className="fixed bottom-4 right-4 bg-background border rounded-lg shadow-lg p-4">
+    <div className="text-sm text-muted-foreground">
+      Selected Items: {itemCount}
+    </div>
+    <div className="text-lg font-semibold">
+      Total: ${total}
+    </div>
+  </div>
+);
 
 const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
   userId,
@@ -141,122 +166,99 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
     message: string;
   } | null>(null);
   const [retryCount, setRetryCount] = useState(0);
+  const [restaurantInfo, setRestaurantInfo] = useState<RestaurantInfo | null>(null);
 
   useEffect(() => {
     const fetchResults = async () => {
-      if (existingMenuInfo) {
-        // Handle existing menu data
-        const normalizedData = normalizeMenuData(existingMenuInfo.menuData);
-        setMenuData(normalizedData);
-        setEditedMenuData(normalizedData);
-        setSelectedHistoryId(existingMenuInfo.id);
-        setLastUpdated(existingMenuInfo.timestamp);
-        setAlert({
-          type: "default",
-          message: "This menu already exists in the database.",
-        });
-        setIsLoading(false);
-      } else if (!latestProcessingId) {
-        setIsLoading(false);
-        setError(
-          "No processing ID available. Please try processing the image again.",
-        );
-        return;
-      } else {
+      try {
         setIsLoading(true);
-        setError(null);
+        if (!latestProcessingId) return;
 
-        try {
-          console.log("Fetching Vertex AI results...");
-          const results = await getVertexAiResults(userId, latestProcessingId);
-          console.log("Fetched results:", results);
+        const results = await getVertexAiResults(userId, latestProcessingId);
+        
+        if (results?.menuData) {
+          const processedMenuData: MenuData = {
+            restaurant_info: {
+              ...results.menuData.restaurant_info,
+              address: results.menuData.restaurant_info.address || {
+                original: '',
+                english: '',
+                pinyin: ''
+              },
+              description: {
+                original: results.menuData.restaurant_info.description?.original || '',
+                english: results.menuData.restaurant_info.description?.english || ''
+              }
+            },
+            categories: Array.isArray(results.menuData.categories) 
+              ? results.menuData.categories.map(category => ({
+                  ...category,
+                  items: Array.isArray(category.items)
+                    ? category.items.map((item: RawMenuItem) => ({
+                        ...item,
+                        prices: item.prices || { regular: '' },
+                        description: item.description || { original: '', english: '' }
+                      }))
+                    : Object.values(category.items as Record<string, RawMenuItem>).map(item => ({
+                        ...item,
+                        prices: item.prices || { regular: '' },
+                        description: item.description || { original: '', english: '' }
+                      }))
+                }))
+              : [],
+            items: results.menuData.items || [],
+            other_info: (results.menuData.other_info || '').trim()
+          };
 
-          if (results && results.menuData) {
-            const normalizedData = normalizeMenuData(results.menuData);
-            setMenuData(normalizedData);
-            setEditedMenuData(normalizedData);
-            setSelectedHistoryId(latestProcessingId);
-            setLastUpdated(results.timestamp || new Date().toISOString());
-
-            if (Array.isArray(results.menuData.categories)) {
-              setSelectedCategories(
-                results.menuData.categories.map(
-                  (cat: MenuCategory) => cat.name.original,
-                ),
-              );
-            } else {
-              console.error(
-                "Invalid categories structure:",
-                results.menuData.categories,
-              );
-              setError(
-                "Unexpected data structure in results: categories is not an array.",
-              );
-            }
-
-            if (isCached) {
-              setAlert({
-                type: "default",
-                message:
-                  "This menu data was retrieved from the cache. If you believe the data is stale, you can reprocess it.",
-              });
-            }
-          } else {
-            console.error("Invalid results structure:", results);
-            setError(
-              "No menu data found in the results or unexpected data structure.",
-            );
-          }
-        } catch (error: any) {
-          console.error("Error fetching Vertex AI results:", error);
-          setError(
-            `Failed to fetch Vertex AI results: ${error.message}. Please try again.`,
-          );
-
-          if (retryCount < 3) {
-            console.log(`Retrying in 5 seconds... (Attempt ${retryCount + 1})`);
-            setTimeout(() => {
-              setRetryCount((prevCount) => prevCount + 1);
-              fetchResults();
-            }, 5000);
-          }
-        } finally {
-          setIsLoading(false);
+          setMenuData(processedMenuData);
+          setRestaurantInfo(processedMenuData.restaurant_info);
+        } else {
+          setError('No menu data available');
         }
+      } catch (error) {
+        console.error('Error fetching results:', error);
+        setError('Failed to load menu data. Please try again.');
+      } finally {
+        setIsLoading(false);
       }
     };
 
-    fetchResults();
-  }, [userId, latestProcessingId, isCached, retryCount, existingMenuInfo]);
+    if (latestProcessingId) {
+      fetchResults();
+    }
+  }, [userId, latestProcessingId]);
 
   const handleReprocess = () => {
     // Implement reprocessing logic here
     console.log("Reprocessing menu...");
   };
 
-  const handleEdit = (
-    categoryIndex: number,
-    itemIndex: number,
-    field: keyof MenuItem,
-    value: string,
-  ) => {
-    if (!editedMenuData) return;
+const handleEdit = (
+  categoryIndex: number, 
+  itemIndex: number, 
+  field: keyof MenuItem, 
+  value: string | boolean
+) => {
+  if (!editedMenuData) return;
+  
+  const newMenuData = { ...editedMenuData };
+  const category = newMenuData.categories[categoryIndex];
+  const item = category.items[itemIndex];
 
-    const updatedMenuData = { ...editedMenuData };
-    const item = updatedMenuData.categories[categoryIndex].items[itemIndex];
+  switch (field) {
+    case 'popular':
+    case 'chef_recommended':
+      (item as any)[field] = Boolean(value);
+      break;
+    case 'prices':
+      item.prices = { regular: String(value) };
+      break;
+    default:
+      (item as any)[field] = String(value);
+  }
 
-    if (field === "name" || field === "description") {
-      (item[field] as any) = JSON.parse(value);
-    } else if (field === "prices") {
-      item.prices = JSON.parse(value);
-    } else if (field === "popular" || field === "chef_recommended") {
-      (item as any)[field] = value === "true";
-    } else {
-      (item as any)[field] = value;
-    }
-
-    setEditedMenuData(updatedMenuData);
-  };
+  setEditedMenuData(newMenuData);
+};
 
   const handleSave = async () => {
     if (selectedHistoryId && editedMenuData) {
@@ -277,9 +279,7 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
 
         if (Array.isArray(results.menuData.categories)) {
           setSelectedCategories(
-            results.menuData.categories.map(
-              (cat: MenuCategory) => cat.name.original,
-            ),
+            results.menuData.categories.map((cat: Category) => cat.name.original)
           );
         } else {
           console.error(
@@ -327,22 +327,22 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
   const calculateTotal = () => {
     if (!menuData) return "0.00";
     let total = 0;
+    
     menuData.categories.forEach((category) => {
       category.items.forEach((item) => {
         if (selectedItems.has(item.name.original)) {
-          const price = parseFloat(
-            item.prices?.regular ||
-              (item.prices && Object.values(item.prices)[0]) ||
-              "0",
-          );
-          if (!isNaN(price)) {
-            total += price;
+          if (item.prices?.regular) {
+            const amount = Number(item.prices.regular);
+            if (!isNaN(amount)) {
+              total += amount;
+            }
           }
         }
       });
     });
+  
     return total.toFixed(2);
-  };
+  }
 
   const renderRestaurantInfo = (info: RestaurantInfo) => (
     <Collapsible
@@ -375,12 +375,12 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
     itemIndex: number,
     categoryName?: string,
   ) => {
-    const priceDisplay = item.price
-      ? `${item.price.amount} ${item.price.currency}`
+    const priceDisplay = item.prices?.regular
+      ? `$${item.prices.regular}`
       : item.prices
         ? Object.entries(item.prices)
             .filter(([_, value]) => value && value !== "")
-            .map(([key, value]) => `${key}: ${value}`)
+            .map(([key, value]) => `${key}: $${value}`)
             .join(", ")
         : "N/A";
     // Add a check for empty categories
@@ -414,6 +414,20 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
 
     return (
       <TableRow key={`${categoryIndex}-${itemIndex}`}>
+        <TableCell>
+          <Checkbox
+            checked={selectedItems.has(item.name.original)}
+            onCheckedChange={(checked) => {
+              const newSelectedItems = new Set(selectedItems);
+              if (checked) {
+                newSelectedItems.add(item.name.original);
+              } else {
+                newSelectedItems.delete(item.name.original);
+              }
+              setSelectedItems(newSelectedItems);
+            }}
+          />
+        </TableCell>
         {showFullMenu && categoryName && <TableCell>{categoryName}</TableCell>}
         <TableCell>
           {isEditing ? (
@@ -424,7 +438,7 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
                   categoryIndex,
                   itemIndex,
                   "name",
-                  JSON.stringify({ ...item.name, original: e.target.value }),
+                  e.target.value,
                 )
               }
             />
@@ -441,7 +455,7 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
                   categoryIndex,
                   itemIndex,
                   "name",
-                  JSON.stringify({ ...item.name, pinyin: e.target.value }),
+                  e.target.value,
                 )
               }
             />
@@ -458,7 +472,7 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
                   categoryIndex,
                   itemIndex,
                   "name",
-                  JSON.stringify({ ...item.name, english: e.target.value }),
+                  e.target.value,
                 )
               }
             />
@@ -477,7 +491,7 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
                     categoryIndex,
                     itemIndex,
                     "popular",
-                    checked ? "true" : "false",
+                    checked || false
                   )
                 }
               />{" "}
@@ -490,7 +504,7 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
                     categoryIndex,
                     itemIndex,
                     "chef_recommended",
-                    checked ? "true" : "false",
+                    checked || false
                   )
                 }
               />{" "}
@@ -540,10 +554,7 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
                   categoryIndex,
                   itemIndex,
                   "description",
-                  JSON.stringify({
-                    ...item.description,
-                    english: e.target.value,
-                  }),
+                  e.target.value,
                 )
               }
             />
@@ -598,6 +609,16 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
     );
   };
 
+  const handleSelectItem = (itemName: string, selected: boolean) => {
+    const newSelectedItems = new Set(selectedItems);
+    if (selected) {
+      newSelectedItems.add(itemName);
+    } else {
+      newSelectedItems.delete(itemName);
+    }
+    setSelectedItems(newSelectedItems);
+  };
+
   if (isLoading) {
     return (
       <Card className="w-full mt-6">
@@ -638,7 +659,23 @@ const VertexAiResultsDisplay: React.FC<VertexAiResultsDisplayProps> = ({
       </Card>
     );
   }
-
-  return <MenuDataDisplay menuData={menuData ? normalizeMenuData(menuData) : null} menuName={menuName} />;
+  return (
+    <div className="relative">
+      <MenuDataDisplay
+        menuData={menuData}
+        menuName={menuName}
+        onSelectItem={handleSelectItem}
+        selectedItems={selectedItems}
+      />
+      
+      {selectedItems.size > 0 && (
+        <OrderSummary
+          total={calculateTotal()}
+          itemCount={selectedItems.size}
+        />
+      )}
+    </div>
+  );
 };
 export default VertexAiResultsDisplay;
+

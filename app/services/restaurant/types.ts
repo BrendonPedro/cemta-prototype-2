@@ -1,5 +1,6 @@
 import { Timestamp, WriteBatch } from 'firebase/firestore';
 import { CONFIG } from '@/lib/database-builder/config';
+import type { MenuData } from '@/app/services/menu/types';
 
 // Price level type for restaurants
 export type PriceLevel = '$' | '$$' | '$$$' | '$$$$';
@@ -123,30 +124,33 @@ export interface RestaurantCardProps {
 //-----MENU-----
 export interface MenuItemName {
   original: string;
+  english: string;
+  pinyin: string;
+}
+
+export interface MenuDescription {
+  original?: string;
   english?: string;
-  pinyin?: string;
+}
+
+export interface MenuItemPrice {
+  amount: number;
+  currency: string;
 }
 
 export interface MenuItem {
   name: MenuItemName;
-  description?: {
-    original: string;
-    english?: string;
+  description?: MenuDescription;
+  price?: MenuItemPrice;
+  prices?: {
+    [key: string]: string | number;
   };
-  price?: {
-    amount: string;
-    currency: string;
-  };
-  prices?: { [key: string]: string };
-  spice_level?: string;
   popular?: boolean;
   chef_recommended?: boolean;
+  spice_level?: string;
   allergy_alert?: string;
+  upgrades?: Array<{ name: string; price: string }>;
   notes?: string;
-  upgrades?: Array<{
-    name: string;
-    price: string;
-  }>;
 }
 
 export interface MenuCategory {
@@ -154,35 +158,33 @@ export interface MenuCategory {
   items: MenuItem[];
 }
 
-export interface MenuData {
-  restaurant_info: {
-    name: MenuItemName;
-    address: MenuItemName;
-    operating_hours?: string;
-    phone_number?: string;
-    website?: string;
-    social_media?: string;
-    description?: MenuItemName;
-    additional_notes?: string;
-  };
-  categories: MenuCategory[];
-  other_info?: string;
+export interface RestaurantInfo {
+  name: MenuItemName;
+  address: MenuItemName;
+  operating_hours?: string;
+  phone_number?: string;
+  website?: string;
+  social_media?: string;
+  description: MenuItemName;
+  additional_notes?: string;
+  validation_status?: "community" | "restaurant" | "validator" | "cemta";
 }
 
-// Menu Document in Firestore
-export interface MenuDocument {
+
+
+export interface MenuDetails {
   id: string;
   userId: string;
   restaurantId: string;
   menuName: string;
-  imageUrl: string;
+  imageUrl?: string;
   menuData: MenuData;
   timestamp: string | Date;
-  cached?: boolean;
-  processingId?: string;
+  restaurantName?: string;
+  restaurantValidated?: boolean;
+  validatorValidated?: boolean;
 }
 
-// For API Responses
 export interface MenuProcessingResponse {
   menuData: MenuData;
   processingId: string;
@@ -191,25 +193,22 @@ export interface MenuProcessingResponse {
   restaurantId: string;
 }
 
-// For Component Props
-export interface MenuDisplayProps {
-  menuData: MenuData | null;
-  menuName: string;
-  isEditing?: boolean;
-  onEdit?: (menuData: MenuData) => void;
+export interface SearchResult {
+  id: string;
+  restaurantName: string;
+  location: string;
+}
+
+export interface MenuSummary {
+  id: string;
+  menuName: string | { original: string; english: string };
+  imageUrl?: string;
+  timestamp: Date;
 }
 
 export interface Photo {
     url: string;
     source: "google" | "yelp";
-  }
-  
-  // Add MenuSummary interface
-  export interface MenuSummary {
-    id: string;
-    menuName: string;
-    imageUrl?: string;
-    timestamp: Date;
   }
   
   // Update YelpBusiness interface
@@ -321,4 +320,15 @@ export interface CachedRestaurant extends Restaurant { // Added cache-specific f
   firstCached?: string | Date;
   lastAccessed?: string | Date;
   geohash?: string;
+}
+
+export interface VertexAiResult {
+  menuData: MenuData;
+  processingId: string;
+  timestamp: string;
+  restaurantId: string;
+  restaurantName: string;
+  imageUrl: string | null;
+  restaurantValidated: boolean;
+  validatorValidated: boolean;
 }

@@ -85,7 +85,7 @@ export const AboutUs = () => {
         </motion.section>
 
         {/* Mission Section - White with teal accents */}
-        <section className="bg-gradient-to-bl from-white via-teal-50 to-teal-400 rounded-[3rem] mx-4 lg:mx-12 p-8 shadow-xl border border-teal-100">
+        <section className="bg-gradient-to-tl from-white via-teal-50 to-teal-400 rounded-[3rem] mx-4 lg:mx-12 p-8 shadow-xl border border-teal-100">
           <div className="container mx-auto px-4">
             <motion.div className="max-w-3xl mx-auto text-center">
               <h2 className="text-3xl font-bold bg-gradient-to-r from-teal-600 to-teal-800 bg-clip-text text-transparent mb-8">
@@ -113,7 +113,7 @@ export const AboutUs = () => {
         </section>
 
         {/* Team Section - Strong teal gradient */}
-        <section className="bg-gradient-to-br from-teal-400 via-teal-50 to-white rounded-[2.5rem] mx-4 lg:mx-12 p-8 shadow-xl">
+        <section className="bg-gradient-to-bl from-teal-400 via-teal-50 to-white rounded-[2.5rem] mx-4 lg:mx-12 p-8 shadow-xl">
           <div className="container mx-auto px-4">
             <motion.div className="text-center mb-12">
               <h2 className="text-3xl font-bold bg-gradient-to-r from-teal-600 to-teal-800 bg-clip-text text-transparent mb-4">
@@ -159,7 +159,7 @@ export const AboutUs = () => {
         </section>
 
         {/* Vision Section - Light gradient */}
-        <section className="bg-gradient-to-tr from-white via-teal-50 to-teal-400 rounded-[4rem] mx-4 lg:mx-12 p-8 shadow-xl mb-12">
+        <section className="bg-gradient-to-bl from-white via-teal-50 to-teal-400 rounded-[4rem] mx-4 lg:mx-12 p-8 shadow-xl mb-12">
           <div className="container mx-auto px-4">
             <motion.div className="max-w-3xl mx-auto text-center bg-gradient-to-br from-teal-50 to-white p-8 rounded-2xl shadow-lg">
               <h2 className="text-3xl font-bold bg-gradient-to-r from-teal-600 to-teal-800 bg-clip-text text-transparent mb-6">

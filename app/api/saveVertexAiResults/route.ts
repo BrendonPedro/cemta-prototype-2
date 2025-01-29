@@ -58,11 +58,26 @@ export async function POST(req: NextRequest) {
     const restaurantName = menuData?.restaurant_info?.name?.original || menuName;
     console.log("Using restaurant name:", restaurantName);
 
+    // Ensure categories are properly structured and preserve all data
+    const processedMenuData = {
+      ...menuData,
+      restaurant_info: {
+        ...menuData.restaurant_info,
+        name: menuData.restaurant_info?.name || { original: restaurantName },
+        phone_number: menuData.restaurant_info?.phone_number || '',
+        description: menuData.restaurant_info?.description || { original: '' }
+      },
+      categories: Array.isArray(menuData.categories) 
+        ? menuData.categories 
+        : Object.values(menuData.categories || {}),
+      other_info: menuData.other_info || ''
+    };
+
     // Save the data
     try {
-      await saveVertexAiResults(
+      const result = await saveVertexAiResults(
         decodedToken.uid,
-        menuData,
+        processedMenuData,
         menuId,
         restaurantId,
         menuName,
@@ -74,8 +89,7 @@ export async function POST(req: NextRequest) {
       
       return NextResponse.json({
         message: "Menu data saved successfully",
-        menuId,
-        restaurantName
+        ...result
       });
 
     } catch (error) {

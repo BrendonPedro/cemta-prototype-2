@@ -21,58 +21,73 @@ import MenuDataDisplay from "@/components/MenuDataDisplay";
 import { Spinner } from "@/components/ui/spinner";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { GoogleMap, Marker, useJsApiLoader } from "@react-google-maps/api";
-import { ChevronUp, ChevronDown } from "lucide-react";
+import { ChevronUp, ChevronDown, MapPin, Phone, Clock, Globe } from "lucide-react";
 import ValidationBadge from "@/app/shared/components/ValidationBadge";
 import { useUser } from "@clerk/nextjs";
-import MenuSearch from "@/components/old_components/MenuSearch";
+import MenuSearch from "@/components/MenuSearch";
 import Combobox from "@/components/ui/Combobox"; // Use Combobox instead of Autocomplete
 import { Input } from "@/components/ui/input"; // Import Input component
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { googleMapsConfig } from '@/config/googleMapsConfig';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import type { 
+  MenuData, 
+  MenuDetails, 
+  MenuSummary,
+  MenuItemName,
+  MenuDescription,
+} from "@/app/services/menu/types";
 
-interface MenuData {
-  menuData: {
-    restaurant_info: {
-      name: { original: string; english?: string };
-      address?: { original: string };
-      phone_number?: string;
-      operating_hours?: string;
-      validation_status?: "community" | "restaurant" | "validator" | "cemta";
-    };
-    categories: Array<{
-      name: { original: string; english?: string; pinyin?: string };
-      items: Array<{
-        name: { original: string; english?: string; pinyin?: string };
-        description?: { original?: string; english?: string };
-        price?: { amount: number; currency: string };
-      }>;
-    }>;
-    other_info?: string;
+interface RawMenuItem {
+  name: MenuItemName;
+  description?: MenuDescription;
+  prices?: {
+    regular?: string;
+    small?: string;
+    medium?: string;
+    large?: string;
+    xl?: string;
   };
-  imageUrl?: string;
-  timestamp?: string;
-  restaurantValidated?: boolean;
-  validatorValidated?: boolean;
-  restaurantName?: string; // Added restaurantName
-  restaurantId?: string;  
-}
-
-interface MenuSummary {
-  id: string;
-  menuName: string;
-  timestamp: Date; // You might want to use a more specific type here, like Date or string
 }
 
 interface MenuDetailsPageProps {
   id: string;
 }
 
+interface MenuDetailsState {
+  menuData: MenuDetails | null;
+  coordinates: { lat: number; lng: number } | null;
+  isLoading: boolean;
+  error: string | null;
+  isImageCollapsed: boolean;
+  restaurantNameInput: string;
+  restaurantSuggestions: string[];
+  isLoadingSuggestions: boolean;
+  alert: {
+    type: "default" | "destructive";
+    message: string;
+    lastUpdated?: string;
+  } | null;
+  isEditingName: boolean;
+  associatedMenus: MenuSummary[];
+  showLinkDialog: boolean;
+  franchiseOptions: string[];
+  selectedFranchise: string;
+  previewUrl: string | null;
+  signedImageUrl: string | null;
+  imageError: boolean;
+  isDetailsCollapsed: boolean;
+  showPreview: boolean;
+  activeTab: string;
+}
+
 const MenuDetailsPage: React.FC<MenuDetailsPageProps> = ({ id }) => {
   const router = useRouter();
   const { userId, firebaseToken } = useAuth();
   const { user } = useUser();
-  const [menuData, setMenuData] = useState<MenuData | null>(null);
+  const [menuData, setMenuData] = useState<MenuDetails | null>(null);
   const [coordinates, setCoordinates] = useState<{
     lat: number;
     lng: number;
@@ -98,6 +113,8 @@ const MenuDetailsPage: React.FC<MenuDetailsPageProps> = ({ id }) => {
   const [imageError, setImageError] = useState(false);
   const [isDetailsCollapsed, setIsDetailsCollapsed] = useState(false);
   const { isLoaded } = useJsApiLoader(googleMapsConfig);
+  const [showPreview, setShowPreview] = useState(true);
+  const [activeTab, setActiveTab] = useState<string>("menu");
 
   // Define fetchSignedUrl function
   const fetchSignedUrl = useCallback(
@@ -137,102 +154,106 @@ const MenuDetailsPage: React.FC<MenuDetailsPageProps> = ({ id }) => {
     }
   }, [menuData, fetchSignedUrl]);
 
-  const fetchMenuData = useCallback(
-    async (menuId: string) => {
-      if (!userId) return;
-      try {
-        setIsLoading(true);
-        const data = await getVertexAiResults(userId, menuId);
-        if (data) {
-          const restaurantValidated = data.restaurantValidated || false;
-          const validatorValidated = data.validatorValidated || false;
+  const fetchMenuData = useCallback(async (menuId: string) => {
+    if (!userId) return;
 
-          let validation_status:
-            | "community"
-            | "restaurant"
-            | "validator"
-            | "cemta" = "community";
-          if (restaurantValidated && validatorValidated) {
-            validation_status = "cemta";
-          } else if (validatorValidated) {
-            validation_status = "validator";
-          } else if (restaurantValidated) {
-            validation_status = "restaurant";
-          }
+    setIsLoading(true);
+    setError(null);
 
-          // Parse menuData if it's a string
-          let parsedMenuData =
-            typeof data.menuData === "string"
-              ? JSON.parse(data.menuData)
-              : data.menuData;
+    try {
+      const result = await getVertexAiResults(userId, menuId);
+      if (result) {
+        const menuDetails: MenuDetails = {
+          id: menuId,
+          userId: userId,
+          menuId: menuId,
+          restaurantId: result.restaurantId || menuId,
+          menuName: result.restaurantName || 'Untitled Menu',
+          menuData: {
+            restaurant_info: {
+              ...result.menuData.restaurant_info,
+              address: result.menuData.restaurant_info.address || {
+                original: '',
+                english: '',
+                pinyin: ''
+              },
+              description: {
+                original: result.menuData.restaurant_info.description?.original || '',
+                english: result.menuData.restaurant_info.description?.english || ''
+              }
+            },
+            categories: result.menuData.categories.map(category => ({
+              ...category,
+              items: Array.isArray(category.items) 
+                ? category.items.map((item: RawMenuItem) => ({
+                    ...item,
+                    prices: item.prices || { regular: '' },
+                    description: item.description || { original: '', english: '' }
+                  }))
+                : Object.values(category.items as Record<string, RawMenuItem>).map(item => ({
+                    ...item,
+                    prices: item.prices || { regular: '' },
+                    description: item.description || { original: '', english: '' }
+                  }))
+            })),
+            items: result.menuData.items || [],
+            other_info: (result.menuData.other_info || '').trim()
+          },
+          timestamp: result.timestamp || new Date().toISOString(),
+          ...(result.imageUrl && { imageUrl: result.imageUrl }),
+          restaurantName: result.restaurantName,
+          restaurantValidated: result.restaurantValidated,
+          validatorValidated: result.validatorValidated
+        };
 
-          // Ensure restaurant_info exists
-          if (!parsedMenuData.restaurant_info) {
-            parsedMenuData.restaurant_info = {};
-          }
+        setMenuData(menuDetails);
+        setRestaurantNameInput(result.restaurantName || result.menuData?.restaurant_info?.name?.original || '');
+        setPreviewUrl(result.imageUrl || null);
 
-          parsedMenuData.restaurant_info.validation_status = validation_status;
-
-          setMenuData({
-            ...data,
-            menuData: parsedMenuData,
-            restaurantValidated,
-            validatorValidated,
-          });
-          setRestaurantNameInput(
-            data.restaurantName ||
-            parsedMenuData.restaurant_info.name?.original ||
-            ""
-          );
-          setPreviewUrl(data.imageUrl || null);
-        } else {
-          setError("Menu data not found.");
+        // Set coordinates if address is available
+        if (result.menuData?.restaurant_info?.address?.original) {
+          const address = result.menuData.restaurant_info.address.original;
+          const geocodeAddress = async () => {
+            try {
+              const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+              if (!apiKey) {
+                console.error("Google Maps API key not set");
+                return;
+              }
+              const response = await fetch(
+                `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
+                  address
+                )}&key=${apiKey}`
+              );
+              const data = await response.json();
+              if (data.status === "OK") {
+                const location = data.results[0].geometry.location;
+                setCoordinates({ lat: location.lat, lng: location.lng });
+              } else {
+                console.error("Geocoding failed:", data.status);
+              }
+            } catch (error) {
+              console.error("Error geocoding address:", error);
+            }
+          };
+          geocodeAddress();
         }
-      } catch (error) {
-        console.error("Error fetching menu data:", error);
-        setError((error as Error).message || "Failed to fetch menu data");
-      } finally {
-        setIsLoading(false);
+      } else {
+        setError("No menu data found");
       }
-    },
-    [userId]
-  );
+    } catch (error) {
+      console.error("Error fetching menu data:", error);
+      setError("Failed to fetch menu data");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [userId]);
 
   useEffect(() => {
     if (id && userId) {
       fetchMenuData(id);
     }
   }, [id, userId, fetchMenuData]);
-
-  useEffect(() => {
-    if (menuData && menuData.menuData.restaurant_info.address?.original) {
-      const address = menuData.menuData.restaurant_info.address.original;
-      const geocodeAddress = async () => {
-        try {
-          const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-          if (!apiKey) {
-            console.error("Google Maps API key not set");
-            return;
-          }
-          const response = await fetch(
-            `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
-              address
-            )}&key=${apiKey}`
-          );
-          const data = await response.json();
-          if (data.status === "OK") {
-            const location = data.results[0].geometry.location;
-            setCoordinates({ lat: location.lat, lng: location.lng });
-          } else {
-            console.error("Geocoding failed:", data.status);
-          }
-        } catch (error) {
-          console.error("Error geocoding address:", error);
-        }
-      };
-      geocodeAddress();
-    }
-  }, [menuData]);
 
   useEffect(() => {
     if (menuData) {
@@ -303,11 +324,27 @@ const MenuDetailsPage: React.FC<MenuDetailsPageProps> = ({ id }) => {
     }
   };
 
+  const fetchAssociatedMenus = useCallback(async () => {
+    if (!menuData?.restaurantId) return;
+    
+    try {
+      const menus = await getMenusByRestaurantId(menuData.restaurantId);
+      setAssociatedMenus(menus.map(menu => ({
+        ...menu,
+        menuName: typeof menu.menuName === 'string' 
+          ? menu.menuName 
+          : `${menu.menuName.original}${menu.menuName.english ? ` - ${menu.menuName.english}` : ''}`
+      })));
+    } catch (error) {
+      console.error("Error fetching associated menus:", error);
+    }
+  }, [menuData?.restaurantId]);
+
   useEffect(() => {
     if (menuData?.restaurantId) {
-      getMenusByRestaurantId(menuData.restaurantId).then(setAssociatedMenus);
+      fetchAssociatedMenus();
     }
-  }, [menuData]);
+  }, [menuData, fetchAssociatedMenus]);
 
   const handleRestaurantNameChange = async () => {
     if (!restaurantNameInput.trim()) {
@@ -388,6 +425,14 @@ const MenuDetailsPage: React.FC<MenuDetailsPageProps> = ({ id }) => {
     }
   };
 
+  // Helper function to handle name fields
+  const getName = (name: MenuItemName | string): MenuItemName => {
+    if (typeof name === 'string') {
+      return { original: name, english: '', pinyin: '' };
+    }
+    return name;
+  };
+
   if (!id) {
     return <div>No menu ID provided</div>;
   }
@@ -439,224 +484,204 @@ const MenuDetailsPage: React.FC<MenuDetailsPageProps> = ({ id }) => {
 
   const validationStatus = restaurant_info.validation_status || "community";
 
+  const handleValidationUpdate = async (status: boolean) => {
+    if (!menuData?.id) return;
+
+    try {
+      await updateValidationStatus(menuData.id, {
+        restaurantValidated: status
+      });
+      setMenuData(prev => prev ? {
+        ...prev,
+        restaurantValidated: status
+      } : null);
+      setAlert({
+        type: "default",
+        message: `Menu ${status ? "validated" : "unvalidated"} successfully`,
+        lastUpdated: new Date().toISOString()
+      });
+    } catch (error) {
+      setAlert({
+        type: "destructive",
+        message: "Failed to update validation status"
+      });
+    }
+  };
+
   return (
-    <div className="menu-details-page">
-      <Card className="w-full mt-0">
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Menu Details</CardTitle>
-          <Button
-            variant="ghostTeal"
-            size="sm"
-            onClick={() => setIsDetailsCollapsed(!isDetailsCollapsed)}
-            aria-label={
-              isDetailsCollapsed
-                ? "Expand menu details"
-                : "Collapse menu details"
-            }
-          >
-            {isDetailsCollapsed ? (
-              <>
-                <ChevronDown className="mr-2 h-4 w-4" /> Expand Details
-              </>
-            ) : (
-              <>
-                <ChevronUp className="mr-2 h-4 w-4" /> Collapse Details
-              </>
-            )}
-          </Button>
+    <div className="container mx-auto p-4 space-y-6">
+      {/* Search Section */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Find Other Menus</CardTitle>
         </CardHeader>
         <CardContent>
-          <div
-            className={`transition-all duration-300 ease-in-out ${
-              isDetailsCollapsed ? "h-0 overflow-hidden" : "h-auto"
-            }`}
-          >
-            <div className="flex flex-col md:flex-row md:space-x-6 mb-6">
-              {/* Image Preview */}
-              <div className="w-full md:w-1/2">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Menu Preview</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    {signedImageUrl && (
-                      <div className="flex justify-center items-center bg-gray-100 rounded-lg p-2">
-                        {imageError ? (
-                          <div className="text-red-500">
-                            Failed to load image
-                          </div>
-                        ) : (
-                          <Image
-                            src={signedImageUrl}
-                            alt="Menu Preview"
-                            width={400}
-                            height={600}
-                            unoptimized
-                            loader={({ src }) => src}
-                            style={{
-                              objectFit: "contain",
-                              width: "auto",
-                              height: "auto",
-                              maxWidth: "100%",
-                              maxHeight: "60vh",
-                            }}
-                            className="max-w-full"
-                            onError={() => setImageError(true)}
-                          />
-                        )}
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Restaurant Info */}
-              <div className="w-full md:w-1/2 mt-4 md:mt-0">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>
-                      {menuData?.restaurantName || "Unknown Restaurant"}
-                    </CardTitle>
-                    {validationStatus && (
-                      <ValidationBadge status={validationStatus} />
-                    )}
-                  </CardHeader>
-                  <CardContent>
-                    {/* Restaurant Info */}
-                    <div className="space-y-2 mb-4">
-                      {menuData.menuData.restaurant_info.address?.original && (
-                        <p className="text-gray-700">
-                          <strong>Address:</strong>{" "}
-                          {menuData.menuData.restaurant_info.address.original}
-                        </p>
-                      )}
-                      {menuData.menuData.restaurant_info.phone_number && (
-                        <p className="text-gray-700">
-                          <strong>Phone:</strong>{" "}
-                          {menuData.menuData.restaurant_info.phone_number}
-                        </p>
-                      )}
-                      {menuData.menuData.restaurant_info.operating_hours && (
-                        <p className="text-gray-700">
-                          <strong>Operating Hours:</strong>{" "}
-                          {menuData.menuData.restaurant_info.operating_hours}
-                        </p>
-                      )}
-                      <p className="text-gray-600">
-                        <strong>Processed on:</strong>{" "}
-                        {timestamp
-                          ? format(new Date(timestamp), "PPpp")
-                          : "Unknown"}
-                      </p>
-                    </div>
-
-                    {/* Action Buttons */}
-                    <div className="space-y-2">
-                      {isEditingName ? (
-                        <div className="flex space-x-2">
-                          <Button onClick={handleRestaurantNameChange}>
-                            Save
-                          </Button>
-                          <Button
-                            variant="nextButton2"
-                            onClick={() => setIsEditingName(false)}
-                          >
-                            Cancel
-                          </Button>
-                        </div>
-                      ) : (
-                        <Button onClick={() => setIsEditingName(true)}>
-                          Edit Restaurant Name
-                        </Button>
-                      )}
-                      <Button
-                        onClick={handleReprocess}
-                        variant="default"
-                        className="w-full"
-                      >
-                        Update Menu
-                      </Button>
-                      {isAdminOrValidator && (
-                        <Button
-                          variant="primary"
-                          className="w-full"
-                          onClick={handleValidateMenu}
-                        >
-                          Validate Menu
-                        </Button>
-                      )}
-                      <Button
-                        onClick={() => setShowLinkDialog(true)}
-                        className="w-full"
-                      >
-                        Link to Franchise
-                      </Button>
-                    </div>
-
-                    {/* Map */}
-                    {isLoaded && coordinates && (
-                      <div className="mt-4">
-                        <div className="h-48 w-full">
-                          <GoogleMap
-                            mapContainerStyle={{
-                              width: "100%",
-                              height: "100%",
-                            }}
-                            center={coordinates}
-                            zoom={16}
-                          >
-                            <Marker position={coordinates} />
-                          </GoogleMap>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Search Functionality */}
-                    <div className="mt-6">
-                      <Card>
-                        <CardHeader>
-                          <CardTitle>Find Other Menus</CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <MenuSearch />
-                        </CardContent>
-                      </Card>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Alert Messages */}
-                {alert && (
-                  <Alert variant={alert.type} className="mt-4">
-                    <AlertTitle>
-                      {alert.type === "default" ? "Notice" : "Error"}
-                    </AlertTitle>
-                    <AlertDescription>{alert.message}</AlertDescription>
-                  </Alert>
-                )}
-              </div>
-            </div>
-
-            {/* Add a separator */}
-            <hr className="my-6 border-gray-200" />
-          </div>
-
-          {/* Menu Data Display */}
-          <div className="w-full mt-6">
-            <MenuDataDisplay
-              menuData={menuData!.menuData}
-              menuName={`${
-                menuData?.restaurantName ||
-                menuData?.menuData.restaurant_info.name.original
-              }${
-                menuData?.menuData.restaurant_info.name.english
-                  ? ` - ${menuData.menuData.restaurant_info.name.english}`
-                  : ""
-              }`}
-            />
-          </div>
+          <MenuSearch />
         </CardContent>
       </Card>
+
+      {/* Main Content */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Left Column - Menu Preview */}
+        <Card className="lg:sticky lg:top-4 h-fit">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <CardTitle>Menu Preview</CardTitle>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowPreview(!showPreview)}
+            >
+              {showPreview ? (
+                <>
+                  <ChevronUp className="h-4 w-4 mr-2" />
+                  Hide Preview
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="h-4 w-4 mr-2" />
+                  Show Preview
+                </>
+              )}
+            </Button>
+          </CardHeader>
+          {showPreview && imageUrl && (
+            <CardContent>
+              <div className="relative w-full h-[calc(100vh-300px)] min-h-[500px]">
+                <Image
+                  src={signedImageUrl || imageUrl}
+                  alt="Menu Preview"
+                  fill
+                  className="object-contain rounded-lg"
+                  onError={() => setImageError(true)}
+                />
+              </div>
+            </CardContent>
+          )}
+        </Card>
+
+        {/* Right Column - Menu Data Display */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Menu Analysis</CardTitle>
+            {validationStatus && <ValidationBadge status={validationStatus} />}
+          </CardHeader>
+          <CardContent>
+            <Tabs defaultValue="menu" className="w-full">
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="menu">Menu Items</TabsTrigger>
+                <TabsTrigger value="restaurant">Restaurant Info</TabsTrigger>
+                <TabsTrigger value="additional">Additional Info</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="menu" className="mt-4">
+                <ScrollArea className="h-[calc(100vh-300px)]">
+                  <MenuDataDisplay
+                    menuData={menuData?.menuData}
+                    menuName={`${
+                      menuData?.restaurantName ||
+                      getName(menuData?.menuData.restaurant_info.name).original
+                    }${
+                      getName(menuData?.menuData.restaurant_info.name).english
+                        ? ` - ${getName(menuData?.menuData.restaurant_info.name).english}`
+                        : ""
+                    }`}
+                  />
+                </ScrollArea>
+              </TabsContent>
+
+              <TabsContent value="restaurant" className="mt-4">
+                <div className="space-y-4">
+                  {restaurant_info.name && (
+                    <div className="flex items-start space-x-2">
+                      <Globe className="h-5 w-5 mt-1 text-muted-foreground" />
+                      <div>
+                        <div className="font-medium">{getName(restaurant_info.name).original}</div>
+                        {getName(restaurant_info.name).english && (
+                          <div className="text-sm text-muted-foreground">
+                            {getName(restaurant_info.name).english}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {restaurant_info.address && (
+                    <div className="flex items-start space-x-2">
+                      <MapPin className="h-5 w-5 mt-1 text-muted-foreground" />
+                      <div>
+                        <div className="font-medium">{restaurant_info.address.original}</div>
+                        {restaurant_info.address.english && (
+                          <div className="text-sm text-muted-foreground">
+                            {restaurant_info.address.english}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {restaurant_info.phone_number && (
+                    <div className="flex items-center space-x-2">
+                      <Phone className="h-5 w-5 text-muted-foreground" />
+                      <span>{restaurant_info.phone_number}</span>
+                    </div>
+                  )}
+
+                  {restaurant_info.operating_hours && (
+                    <div className="flex items-start space-x-2">
+                      <Clock className="h-5 w-5 mt-1 text-muted-foreground" />
+                      <div className="whitespace-pre-line">
+                        {restaurant_info.operating_hours}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Map */}
+                  {isLoaded && coordinates && (
+                    <div className="mt-4 h-[300px] w-full rounded-lg overflow-hidden">
+                      <GoogleMap
+                        mapContainerStyle={{
+                          width: "100%",
+                          height: "100%",
+                        }}
+                        center={coordinates}
+                        zoom={16}
+                      >
+                        <Marker position={coordinates} />
+                      </GoogleMap>
+                    </div>
+                  )}
+                </div>
+              </TabsContent>
+
+              <TabsContent value="additional" className="mt-4">
+                <div className="space-y-4">
+                  {restaurant_info.description?.original && (
+                    <div>
+                      <h3 className="font-medium mb-2">Description</h3>
+                      <p className="text-muted-foreground">
+                        {restaurant_info.description.original}
+                        {restaurant_info.description.english && (
+                          <span className="block mt-1 text-sm">
+                            {restaurant_info.description.english}
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  )}
+                  {restaurant_info.additional_notes && (
+                    <div>
+                      <h3 className="font-medium mb-2">Additional Notes</h3>
+                      <p className="text-muted-foreground">
+                        {restaurant_info.additional_notes}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </TabsContent>
+            </Tabs>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Link to Franchise Dialog */}
       <Dialog open={showLinkDialog} onOpenChange={setShowLinkDialog}>

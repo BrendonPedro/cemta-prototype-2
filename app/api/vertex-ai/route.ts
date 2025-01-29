@@ -22,6 +22,8 @@ import {
   assertStorage,
   assertBucket
 } from "@/config/googleCloudConfig";
+import type { VertexAiResult } from "@/app/services/restaurant/types";
+import type { MenuItem, Category } from '@/types/menuTypes';
 
 // Queue system
 const queue: (() => Promise<any>)[] = [];
@@ -52,7 +54,7 @@ function addToQueue(task: () => Promise<any>) {
 }
 
 // Initialize Vertex AI
-const projectId = "cemta-prototype-3";
+const projectId = "cemta4";
 const location = "us-central1";
 const modelId = "gemini-1.5-pro-002";
 
@@ -131,10 +133,31 @@ async function downloadImageFromGCS(imageUrl: string): Promise<Buffer> {
 }
 
 async function downloadImageFromUrl(url: string): Promise<Buffer> {
-  const response = await axios.get(url, {
-    responseType: "arraybuffer",
-  });
-  return Buffer.from(response.data);
+  try {
+    // Check if the URL is relative (starts with /)
+    if (url.startsWith('/')) {
+      // Convert to absolute URL using your domain
+      url = `${process.env.NEXT_PUBLIC_APP_URL}${url}`;
+      // Or use a default image if this is a placeholder
+      if (url.includes('placeholder')) {
+        url = `${process.env.NEXT_PUBLIC_APP_URL}/images/placeholder-restaurant.jpg`;
+      }
+    }
+
+    console.log('Downloading image from:', url);
+    const response = await axios.get(url, {
+      responseType: 'arraybuffer',
+      validateStatus: (status) => status === 200,
+    });
+
+    return Buffer.from(response.data, 'binary');
+  } catch (error) {
+    console.error('Error downloading image:', error);
+    if (axios.isAxiosError(error)) {
+      throw new Error(`Failed to download image: ${error.message}`);
+    }
+    throw error;
+  }
 }
 
 // Helper functions
@@ -545,82 +568,97 @@ Now, analyze the following image and output the JSON accordingly, capturing as m
 
             console.log("Processing menuId:", menuId);
 
-            try {
-              const cleanedMenuData = {
-                ...combinedMenuData,
-                restaurant_info: {
-                  ...combinedMenuData.restaurant_info,
-                  name: {
-                    original: restaurantName || menuName || "Unknown Restaurant",
-                    english: combinedMenuData.restaurant_info?.name?.english || ""
+            const cleanedMenuData = {
+              ...combinedMenuData,
+              categories: combinedMenuData.categories || [],
+              items: [], // Initialize empty items array
+              restaurant_info: {
+                ...combinedMenuData.restaurant_info,
+                name: {
+                  original: restaurantName || menuName || "Unknown Restaurant",
+                  english: combinedMenuData.restaurant_info?.name?.english || ""
+                }
+              }
+            };
+
+            // Process uncategorized items
+            const uncategorizedItems: MenuItem[] = [];
+            if (Array.isArray(combinedMenuData.categories)) {
+              combinedMenuData.categories.forEach((category: any) => {
+                if (!category.name || typeof category.name === 'string') {
+                  // If category doesn't have proper name structure, its items are uncategorized
+                  if (Array.isArray(category.items)) {
+                    uncategorizedItems.push(...(category.items as MenuItem[]));
+                  } else if ('price' in category) {
+                    // The category itself might be an item
+                    uncategorizedItems.push(category as MenuItem);
                   }
                 }
-              };
-
-              const saveData: SaveData = {
-                userId,
-                menuData: cleanedMenuData,
-                menuId,
-                restaurantId,
-                menuName,
-                imageUrl,
-                restaurantName: restaurantName || menuName || "Unknown Restaurant",
-              };
-
-              console.log("Saving menu data:", {
-                menuId,
-                restaurantId,
-                menuName,
-                restaurantName,
-                yelpId: saveData.yelpId
               });
-
-              const processingId = await saveVertexAiResults(
-                saveData.userId,
-                saveData.menuData,
-                saveData.menuId,
-                saveData.restaurantId,
-                saveData.menuName,
-                saveData.imageUrl,
-                saveData.restaurantName,
-                saveData.yelpId
-              );
-
-              await saveImageUrlCache(userId, menuName, processedImageUrl);
-              console.log("Successfully saved menu data with ID:", processingId);
-
-              resolve(
-                NextResponse.json(
-                  {
-                    menuData: combinedMenuData,
-                    processingId: menuId,
-                    apiCallCount,
-                    cached: false,
-                    timestamp: new Date().toISOString(),
-                    restaurantName,
-                    restaurantId
-                  },
-                  { status: 200 }
-                )
-              );
-            } catch (error) {
-              const errorMessage = getErrorDetails(error);
-              console.error("Error saving results:", errorMessage);
-              
-              resolve(
-                NextResponse.json(
-                  { 
-                    error: "Failed to save menu data",
-                    details: errorMessage,
-                    menuId,
-                    restaurantId,
-                    context: "Menu data save operation failed"
-                  },
-                  { status: 500 }
-                )
-              );
             }
 
+            // Add uncategorized items to the root items array
+            if (uncategorizedItems.length > 0) {
+              cleanedMenuData.items = uncategorizedItems;
+            }
+
+            // Ensure categories are properly structured
+            cleanedMenuData.categories = cleanedMenuData.categories
+              .filter((category: any) => category.name && typeof category.name === 'object')
+              .map((category: any): Category => ({
+                name: {
+                  original: typeof category.name === 'string' ? category.name : category.name.original,
+                  english: typeof category.name === 'string' ? category.name : (category.name.english || ''),
+                  pinyin: typeof category.name === 'string' ? '' : (category.name.pinyin || '')
+                },
+                items: Array.isArray(category.items) ? category.items as MenuItem[] : []
+              }));
+
+            const saveData: SaveData = {
+              userId,
+              menuData: cleanedMenuData,
+              menuId,
+              restaurantId,
+              menuName,
+              imageUrl,
+              restaurantName: restaurantName || menuName || "Unknown Restaurant",
+            };
+
+            console.log("Saving menu data:", {
+              menuId,
+              restaurantId,
+              menuName,
+              restaurantName,
+              yelpId: saveData.yelpId
+            });
+
+            const processingId = await saveVertexAiResults(
+              saveData.userId,
+              saveData.menuData,
+              saveData.menuId,
+              saveData.restaurantId,
+              saveData.menuName,
+              saveData.imageUrl,
+              saveData.restaurantName
+            );
+
+            await saveImageUrlCache(userId, menuName, processedImageUrl);
+            console.log("Successfully saved menu data with ID:", processingId);
+
+            const result: VertexAiResult = {
+              menuData: cleanedMenuData,
+              processingId: menuId,
+              timestamp: new Date().toISOString(),
+              restaurantId,
+              restaurantName,
+              imageUrl,
+              restaurantValidated: false,
+              validatorValidated: false
+            };
+
+            resolve(
+              NextResponse.json(result)
+            );
           } catch (error: any) {
             console.error("Error in Vertex AI processing:", error);
             let errorMessage = "An error occurred during processing";

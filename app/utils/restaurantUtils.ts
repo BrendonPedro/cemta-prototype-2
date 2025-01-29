@@ -1,6 +1,6 @@
 // app/utils/restaurantUtils.ts
 
-import { Restaurant } from '@/interfaces/restaurant/types';
+import type { Restaurant } from '@/app/services/restaurant/types';
 
 export const getRestaurantLink = (restaurant: Restaurant): string => {
   if (!restaurant.hasGoogleData && restaurant.hasYelpData) {

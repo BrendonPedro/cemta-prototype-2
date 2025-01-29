@@ -3,6 +3,8 @@
 import { doc, serverTimestamp, setDoc, updateDoc, getDoc } from "firebase/firestore";
 import { db } from "@/config/firebaseConfig";
 import { processedMenuBucket } from "@/config/googleCloudConfig";
+import type { VertexAiResult } from "@/app/services/restaurant/types";
+import type { MenuData } from "@/app/services/menu/types";
 
 interface MenuDataToSave {
   menuData: any;
@@ -22,14 +24,13 @@ interface MenuDataToSave {
 // Server-side function to save Vertex AI results
 export async function saveVertexAiResults(
   userId: string,
-  menuData: any,
+  menuData: MenuData,
   menuId: string,
   restaurantId: string,
   menuName: string,
   imageUrl: string,
   restaurantName: string,
-  yelpId?: string
-) {
+): Promise<VertexAiResult> {
   try {
     console.log("Starting saveVertexAiResults with:", {
       userId,
@@ -37,7 +38,6 @@ export async function saveVertexAiResults(
       restaurantId,
       menuName,
       restaurantName,
-      yelpId: yelpId || 'not provided'
     });
 
     const globalMenuRef = doc(db, "menus", menuId);
@@ -46,16 +46,15 @@ export async function saveVertexAiResults(
     const userContributionRef = doc(db, "users", userId, "contributions", menuId);
     const timestamp = new Date().toISOString();
 
-    // Create base data object with null for optional fields
-    const baseData: MenuDataToSave = {
+    const menuDetails: VertexAiResult = {
       menuData,
+      processingId: menuId,
       timestamp,
-      uploadedBy: userId,
-      imageUrl: imageUrl || '',
-      processedImageUrl: `gs://${processedMenuBucket?.name || ''}/${userId}/${menuId}_processed.png`,
-      restaurantName: restaurantName || menuName || 'Unnamed Restaurant',
-      menuSource: yelpId ? 'yelp' : 'user',
-      yelpId: yelpId || null, // Explicitly set to null if undefined
+      restaurantId,
+      restaurantName,
+      imageUrl,
+      restaurantValidated: false,
+      validatorValidated: false
     };
 
     // Clean the data object by removing any remaining undefined values
@@ -71,7 +70,7 @@ export async function saveVertexAiResults(
       return cleaned;
     };
 
-    const cleanedMenuData = cleanObject(baseData);
+    const cleanedMenuData = cleanObject(menuDetails);
     console.log("Cleaned menu data:", cleanedMenuData);
 
     // Save menu under restaurant with cleaned data
@@ -84,10 +83,10 @@ export async function saveVertexAiResults(
     }
 
     // Update restaurant document with Yelp info if available
-    if (yelpId) {
+    if (cleanedMenuData.yelpId) {
       try {
         await updateDoc(restaurantRef, {
-          yelpId,
+          yelpId: cleanedMenuData.yelpId,
           yelpLastUpdated: timestamp,
           menuSource: 'yelp'
         });
@@ -135,7 +134,7 @@ export async function saveVertexAiResults(
     }
 
     console.log("All save operations completed successfully");
-    return menuId;
+    return menuDetails;
 
   } catch (err) {
     const error = err instanceof Error ? err : new Error('An unknown error occurred');
@@ -143,6 +142,7 @@ export async function saveVertexAiResults(
     throw new Error(`Failed to save Vertex AI results: ${error.message}`);
   }
 }
+
 // Helper function to check if a menu exists
 export async function checkMenuExists(menuId: string): Promise<boolean> {
   try {

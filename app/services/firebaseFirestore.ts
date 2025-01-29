@@ -26,13 +26,20 @@ import {
 import geohash from 'ngeohash';
 import { db } from "@/lib/database-builder/db";
 import { CONFIG } from '@/lib/database-builder/config';
-import type { Restaurant, CachedRestaurant, OpeningHours, MenuSummary, Photo, SaveRestaurantResult, SaveRestaurantOptions } from '@/app/services/restaurant/types';
+import type { Restaurant, CachedRestaurant, OpeningHours, MenuSummary, Photo, SaveRestaurantResult, SaveRestaurantOptions, VertexAiResult } from '@/app/services/restaurant/types';
 import { calculateDistance } from '@/app/utils/locationUtils'
 import type { UserPreferences } from "@/interfaces/users/user-preferences";
 import type { PlaceData } from "@googlemaps/google-maps-services-js";
 import { calculateMatchScore } from '@/app/utils/restaurantMatching';
 import { mapCache } from "@/app/services/cache/mapCacheService";
 import { saveRestaurant } from "./restaurant/restaurantService";
+import type { 
+  MenuData,
+  MenuItem,
+  Category,
+  MenuItemName,
+  RestaurantInfo 
+} from '@/types/menuTypes';
 
 // For the county/town creation part:
 type RestaurantDocData = WithFieldValue<DocumentData>;
@@ -108,12 +115,6 @@ export interface RestaurantDetails {
 
 // ======= Menu Related Interfaces =======
 // (Used in VertexAiResultsDisplay.tsx and MenuDataDisplay.tsx)
-export interface MenuItemName {
-  original: string;
-  pinyin: string;
-  english: string;
-}
-
 export interface MenuItemDescription {
   original: string;
   english: string;
@@ -129,45 +130,10 @@ export interface MenuUpgrade {
   price: string;
 }
 
-// (Used in VertexAiResultsDisplay.tsx, MenuDataDisplay.tsx, and vertex-ai/route.ts)
-export interface MenuItem {
-  name: MenuItemName;
-  description: MenuItemDescription | null;
-  price?: MenuItemPrice;
-  prices?: { [key: string]: string };
-  image_url?: string;
-  dietary_info?: string[];
-  sizes?: { [key: string]: string };
-  popular: boolean;
-  chef_recommended: boolean;
-  spice_level: string;
-  allergy_alert: string;
-  upgrades: MenuUpgrade[];
-  notes: string;
-}
 
-export interface MenuCategory {
-  name: MenuItemName;
-  items: MenuItem[];
-}
 
-// (Used in VertexAiResultsDisplay.tsx and vertex-ai/route.ts)
-export interface RestaurantInfo {
-  name: { original: string; english: string } | string;
-  address: { original: string; english: string } | string;
-  operating_hours: string;
-  phone_number: string;
-  website: string;
-  social_media: string;
-  description: { original: string; english: string } | string;
-  additional_notes: string;
-}
 
-export interface MenuData {
-  restaurant_info: RestaurantInfo;
-  categories: MenuCategory[];
-  other_info: string;
-}
+
 
 // (Used across multiple components including VertexAiResultsDisplay.tsx and process-menu-image/route.ts)
 export interface MenuDetails {
@@ -230,8 +196,8 @@ export interface SearchResult {
 // (Used in VertexAiResultsDisplay.tsx)
 export interface HistoryItem {
   id: string;
-  menuName: string;
-  timestamp: Date;
+  timestamp: string;
+  menuData: MenuData;
 }
 
 // Used in restaurant/page.tsx and firestores
@@ -384,7 +350,7 @@ export function listenToLatestProcessingId(
   });
 }
 
-export async function getVertexAiResults(userId: string, menuId: string) {
+export async function getVertexAiResults(userId: string, menuId: string): Promise<VertexAiResult> {
   if (!menuId) {
     throw new Error("No menu ID provided");
   }
@@ -396,19 +362,29 @@ export async function getVertexAiResults(userId: string, menuId: string) {
 
   if (menuSnap.exists()) {
     const data = menuSnap.data();
+    console.log("Raw menu data from Firestore:", data);
+    
     if (data.userId === userId) {
       // If menuData is stored as a string, parse it
       const menuData = typeof data.menuData === 'string' ? JSON.parse(data.menuData) : data.menuData;
+      console.log("Processed menuData:", menuData);
+      
+      // Ensure categories is an array
+      if (menuData.categories && !Array.isArray(menuData.categories)) {
+        menuData.categories = Object.values(menuData.categories);
+      }
+
       return {
         menuData,
         processingId: menuSnap.id,
         timestamp: data.timestamp
           ? data.timestamp.toDate().toISOString()
           : new Date().toISOString(),
-        restaurantValidated: data.restaurantValidated || false,
-        validatorValidated: data.validatorValidated || false,
-        restaurantName: data.restaurantName || menuData?.restaurant_info?.name?.original,
+        restaurantId: data.restaurantId || menuId,
+        restaurantName: data.restaurantName || menuData?.restaurant_info?.name?.original || 'Untitled Menu',
         imageUrl: data.imageUrl || null,
+        restaurantValidated: data.restaurantValidated || false,
+        validatorValidated: data.validatorValidated || false
       };
     } else {
       console.error("Unauthorized access to menu data. User ID mismatch.");

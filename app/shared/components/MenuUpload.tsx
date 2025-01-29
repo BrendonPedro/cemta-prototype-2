@@ -28,6 +28,8 @@ const MenuUpload: React.FC<MenuUploadProps> = ({
       try {
         setError(null);
         setFile(selectedFile);
+        
+        // Create a full URL for the preview
         const preview = URL.createObjectURL(selectedFile);
         setPreviewUrl(preview);
         onFileChange(selectedFile);
@@ -37,46 +39,11 @@ const MenuUpload: React.FC<MenuUploadProps> = ({
         }
 
         setLoading(true);
-        console.log("Processing file:", {
-          name: selectedFile.name,
-          type: selectedFile.type,
-          size: selectedFile.size
-        });
-
-        // Check cache first
-        console.log("Checking image cache...");
-        const checkResponse = await fetch("/api/check-image-cache", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${firebaseToken}`,
-          },
-          body: JSON.stringify({ fileName: selectedFile.name }),
-        });
-
-        if (!checkResponse.ok) {
-          throw new Error(
-            `Cache check failed: ${checkResponse.status} ${checkResponse.statusText}`
-          );
-        }
-
-        const checkResult = await checkResponse.json();
-        console.log("Cache check result:", checkResult);
-
-        if (checkResult.exists) {
-          console.log("Using cached URL:", checkResult.url);
-          onUpload(checkResult.url, preview, selectedFile.name);
-          return;
-        }
-
-        // Prepare form data for new upload
-        console.log("Preparing new upload...");
+        
+        // Ensure we're using a full URL for the upload
         const formData = new FormData();
-
-        // Add the file with specific field name
         formData.append("file", selectedFile);
 
-        // Prepare and add metadata
         const metadata = {
           type: "menu",
           source: "user",
@@ -84,6 +51,8 @@ const MenuUpload: React.FC<MenuUploadProps> = ({
           contentType: selectedFile.type,
           restaurantId: restaurantId,
           uploadTimestamp: new Date().toISOString(),
+          // Add the full preview URL
+          previewUrl: preview
         };
 
         console.log("Upload metadata:", metadata);
@@ -127,7 +96,6 @@ const MenuUpload: React.FC<MenuUploadProps> = ({
       } catch (error) {
         console.error("Upload process failed:", error);
         setError(error instanceof Error ? error.message : "Upload failed");
-        // Cleanup preview URL on error
         if (previewUrl) {
           URL.revokeObjectURL(previewUrl);
           setPreviewUrl(null);
@@ -136,7 +104,7 @@ const MenuUpload: React.FC<MenuUploadProps> = ({
         setLoading(false);
       }
     },
-    [onFileChange, firebaseToken, onUpload, restaurantId, previewUrl]
+    [onFileChange, firebaseToken, onUpload, restaurantId]
   );
 
   // Cleanup preview URL on unmount

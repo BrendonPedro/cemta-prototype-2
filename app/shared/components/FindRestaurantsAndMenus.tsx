@@ -279,39 +279,7 @@ const MapWithErrorBoundary: React.FC<MapWithErrorBoundaryProps> = ({
 };
 
 export function FindRestaurantsAndMenus() {
-  // Add locationStats state with other state declarations
-  const [locationStats, setLocationStats] = useState<{
-    towns: Set<string>;
-    counties: Set<string>;
-  }>({
-    towns: new Set<string>(),
-    counties: new Set<string>()
-  });
-
-  // Add router initialization with other hooks
-  const router = useRouter();
-
-  // Move all useState declarations to the top
-  const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
-  const [filteredRestaurants, setFilteredRestaurants] = useState<Restaurant[]>([]);
-  const [nameFilter, setNameFilter] = useState("all");
-  const [menuCountFilter, setMenuCountFilter] = useState("all");
-  const [ratingFilter, setRatingFilter] = useState("all");
-  const [isLoading, setIsLoading] = useState(true);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [currentPage, setCurrentPage] = useState(0);
-  const [isLoadingMenu, setIsLoadingMenu] = useState(false);
-  const [showWarning, setShowWarning] = useState(false);
-  const [selectedRestaurant, setSelectedRestaurant] = useState<Restaurant | null>(null);
-  const [locationError, setLocationError] = useState<string | null>(null);
-  const [isCacheLoading, setIsCacheLoading] = useState(false);
-  const [isApiLoading, setIsApiLoading] = useState(false);
-  
-  // Refs
   const initRef = useRef(false);
-
-  // Hooks
   const { position, error: geoError, isLoading: geoLoading } = useGeolocation({
     enableHighAccuracy: true,
     timeout: 20000,
@@ -321,12 +289,31 @@ export function FindRestaurantsAndMenus() {
 
   const { userId } = useClerkAuth();
   const { firebaseToken, loading: authLoading, error: authError } = useAuth();
-  const maps = useMaps();
+  const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
+  const [filteredRestaurants, setFilteredRestaurants] = useState<Restaurant[]>([]);
+  const [nameFilter, setNameFilter] = useState("all");
+  const [menuCountFilter, setMenuCountFilter] = useState("all");
+  const [ratingFilter, setRatingFilter] = useState("all");
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(0);
+  const router = useRouter();
+  const [isLoadingMenu, setIsLoadingMenu] = useState(false);
+  const [showWarning, setShowWarning] = useState(false);
+  const [selectedRestaurant, setSelectedRestaurant] = useState<Restaurant | null>(null);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [isCacheLoading, setIsCacheLoading] = useState(false);
+  const [isApiLoading, setIsApiLoading] = useState(false);
+  const [locationStats, setLocationStats] = useState<{
+    towns: Set<string>;
+    counties: Set<string>;
+  }>({
+    towns: new Set<string>(),
+    counties: new Set<string>()
+  });
 
-  // Restaurant handler - only use after auth is loaded
-  const restaurantHandler = useRestaurantHandler(
-    !authLoading && firebaseToken ? firebaseToken : null
-  );
+  const restaurantHandler = firebaseToken ? useRestaurantHandler(firebaseToken) : null;
 
   const {
     focusedRestaurant,
@@ -355,7 +342,7 @@ export function FindRestaurantsAndMenus() {
     setPinLocation,
     setLocationEnabled,
     toggleLocation
-  } = maps;
+  } = useMaps();
 
   const updateLocationStats = (restaurants: Restaurant[]) => {
     const newStats = {
