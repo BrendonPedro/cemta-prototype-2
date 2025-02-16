@@ -26,7 +26,7 @@ import type {
   Category, 
   MenuData,
   MenuItemName 
-} from "@/types/menuTypes";
+} from "@/app/services/menu/types";
 
 interface MenuDataDisplayProps {
   menuData: MenuData | null;

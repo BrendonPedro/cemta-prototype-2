@@ -9,14 +9,16 @@ export interface RoleRequest {
 }
 
 export interface AuthContextType {
-    firebaseToken: string | null;
-    loading: boolean;
-    error: string | null;
-    userRole: UserRoleType;
-    roleRequest: RoleRequest | null;
-    userId: string | null;
-    updateUserRole?: (newRole: UserRoleType) => Promise<void>; // Add this
-  }
+  firebaseToken: string | null;
+  loading: boolean;
+  error: string | null;
+  userRole: UserRoleType;
+  roleRequest: RoleRequest | null;
+  userId: string | null;
+  updateUserRole: (newRole: UserRoleType) => Promise<void>;
+  getValidFirebaseToken: () => Promise<string | null>;
+  makeAuthenticatedRequest: (url: string, options?: RequestInit) => Promise<Response>;
+}
 
 export interface UserInfo {
     role: UserRoleType;

@@ -1,9 +1,3 @@
-/**
- * @file components/AuthProvider.tsx
- * @description Authentication context provider that integrates Clerk with Firebase
- * and manages user roles and permissions.
- */
-
 "use client";
 
 import React, { createContext, useContext, useEffect, useState, useMemo } from "react";
@@ -18,14 +12,11 @@ import {
   UserData 
 } from '@/interfaces/auth';
 
-// Create Authentication Context
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-// main component
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
-  // State Management
   const [firebaseToken, setFirebaseToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -33,14 +24,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [roleRequest, setRoleRequest] = useState<RoleRequest | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
 
-  // External Authentication Hooks
   const { getToken } = useClerkAuth();
   const { user } = useClerkUser();
 
-  /**
-   * Fetches user data from Firestore and updates local state
-   * @param userId - The unique identifier for the user
-   */
   const fetchUserData = async (userId: string) => {
     try {
       setUserId(userId);
@@ -58,10 +44,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  /**
-   * Updates user role in Firestore and local state
-   * @param newRole - The new role to be assigned to the user
-   */
   const updateUserRole = async (newRole: UserRoleType) => {
     if (!userId) return;
     
@@ -78,16 +60,63 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  /**
-   * Firebase Authentication Effect
-   * Handles authentication flow and user data fetching
-   */
+  const getValidFirebaseToken = async () => {
+    try {
+      if (!user) return null;
+      const customToken = await getToken({
+        template: "integration_firebase",
+      });
+      if (!customToken) return null;
+      
+      const userCredential = await signInWithCustomToken(auth, customToken);
+      const newToken = await userCredential.user.getIdToken();
+      setFirebaseToken(newToken);
+      return newToken;
+    } catch (error) {
+      console.error("Error refreshing token:", error);
+      setError("Failed to refresh authentication token");
+      return null;
+    }
+  };
+
+  const makeAuthenticatedRequest = async (url: string, options: RequestInit = {}) => {
+    try {
+      // First attempt with current token
+      const response = await fetch(url, {
+        ...options,
+        headers: {
+          ...options.headers,
+          Authorization: `Bearer ${firebaseToken}`,
+        },
+      });
+
+      // If token expired, get new token and retry once
+      if (response.status === 401) {
+        const newToken = await getValidFirebaseToken();
+        if (!newToken) throw new Error('Failed to refresh token');
+
+        // Retry with new token
+        return await fetch(url, {
+          ...options,
+          headers: {
+            ...options.headers,
+            Authorization: `Bearer ${newToken}`,
+          },
+        });
+      }
+
+      return response;
+    } catch (error) {
+      console.error('Request failed:', error);
+      throw error;
+    }
+  };
+
   useEffect(() => {
     const authenticateWithFirebase = async () => {
       setLoading(true);
 
       try {
-        // Reset state if no user
         if (!user) {
           setFirebaseToken(null);
           setUserRole(null);
@@ -96,7 +125,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           return;
         }
 
-        // Get Clerk token and authenticate with Firebase
         const customToken = await getToken({
           template: "integration_firebase",
         });
@@ -105,12 +133,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           throw new Error("Authentication failed: No custom token received");
         }
 
-        // Perform Firebase authentication using pre-initialized auth instance
         const userCredential = await signInWithCustomToken(auth, customToken);
         const idToken = await userCredential.user.getIdToken();
         setFirebaseToken(idToken);
 
-        // Fetch user data
         await fetchUserData(user.id);
 
       } catch (error) {
@@ -126,7 +152,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     authenticateWithFirebase();
   }, [getToken, user]);
 
-  // Memoize context value to prevent unnecessary rerenders
   const authContextValue = useMemo(
     () => ({
       firebaseToken,
@@ -135,12 +160,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       userRole,
       roleRequest,
       userId,
-      updateUserRole
+      updateUserRole,
+      getValidFirebaseToken,
+      makeAuthenticatedRequest
     }),
     [firebaseToken, loading, error, userRole, roleRequest, userId]
   );
 
-  // Error boundary for authenticated users
   if (error && user) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -156,11 +182,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   );
 };
 
-/**
- * Custom hook to access authentication context
- * @throws {Error} If used outside of AuthProvider
- * @returns {AuthContextType} The authentication context value
- */
 export const useAuth = (): AuthContextType => {
   const context = useContext(AuthContext);
   
@@ -173,24 +194,3 @@ export const useAuth = (): AuthContextType => {
   
   return context;
 };
-
-/**
- * @fileoverview
- * This AuthProvider component serves as a crucial authentication bridge between 
- * Clerk.js and Firebase, while also managing user roles and permissions.
- * 
- * Key Features:
- * - Integrates Clerk.js with Firebase Authentication
- * - Manages user roles and role request status
- * - Provides authentication context for the entire application
- * - Handles error states and loading states
- * 
- * Integration Points:
- * - Clerk.js (@clerk/nextjs)
- * - Firebase Authentication
- * - Firestore for user data
- * 
- * Usage:
- * Wrap the application with AuthProvider at a high level in the component tree
- * to provide authentication context to all child components.
- */

@@ -155,9 +155,9 @@ const MenuDetailsPage: React.FC<MenuDetailsPageProps> = ({ id }) => {
   }, [menuData, fetchSignedUrl]);
 
   const fetchMenuData = useCallback(async (menuId: string) => {
-    if (!userId) return;
+      if (!userId) return;
 
-    setIsLoading(true);
+        setIsLoading(true);
     setError(null);
 
     try {
@@ -213,31 +213,31 @@ const MenuDetailsPage: React.FC<MenuDetailsPageProps> = ({ id }) => {
         // Set coordinates if address is available
         if (result.menuData?.restaurant_info?.address?.original) {
           const address = result.menuData.restaurant_info.address.original;
-          const geocodeAddress = async () => {
-            try {
-              const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-              if (!apiKey) {
-                console.error("Google Maps API key not set");
-                return;
-              }
-              const response = await fetch(
-                `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
-                  address
-                )}&key=${apiKey}`
-              );
-              const data = await response.json();
-              if (data.status === "OK") {
-                const location = data.results[0].geometry.location;
-                setCoordinates({ lat: location.lat, lng: location.lng });
-              } else {
-                console.error("Geocoding failed:", data.status);
-              }
-            } catch (error) {
-              console.error("Error geocoding address:", error);
-            }
-          };
-          geocodeAddress();
+      const geocodeAddress = async () => {
+        try {
+          const apiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
+          if (!apiKey) {
+            console.error("Google Maps API key not set");
+            return;
+          }
+          const response = await fetch(
+            `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(
+              address
+            )}&key=${apiKey}`
+          );
+          const data = await response.json();
+          if (data.status === "OK") {
+            const location = data.results[0].geometry.location;
+            setCoordinates({ lat: location.lat, lng: location.lng });
+          } else {
+            console.error("Geocoding failed:", data.status);
+          }
+        } catch (error) {
+          console.error("Error geocoding address:", error);
         }
+      };
+      geocodeAddress();
+    }
       } else {
         setError("No menu data found");
       }
@@ -524,28 +524,28 @@ const MenuDetailsPage: React.FC<MenuDetailsPageProps> = ({ id }) => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Left Column - Menu Preview */}
         <Card className="lg:sticky lg:top-4 h-fit">
-          <CardHeader className="flex flex-row items-center justify-between">
+        <CardHeader className="flex flex-row items-center justify-between">
             <CardTitle>Menu Preview</CardTitle>
-            <Button
+          <Button
               variant="ghost"
-              size="sm"
+            size="sm"
               onClick={() => setShowPreview(!showPreview)}
             >
               {showPreview ? (
                 <>
                   <ChevronUp className="h-4 w-4 mr-2" />
                   Hide Preview
-                </>
-              ) : (
-                <>
+              </>
+            ) : (
+              <>
                   <ChevronDown className="h-4 w-4 mr-2" />
                   Show Preview
-                </>
-              )}
-            </Button>
-          </CardHeader>
+              </>
+            )}
+          </Button>
+        </CardHeader>
           {showPreview && imageUrl && (
-            <CardContent>
+        <CardContent>
               <div className="relative w-full h-[calc(100vh-300px)] min-h-[500px]">
                 <Image
                   src={signedImageUrl || imageUrl}
@@ -560,12 +560,12 @@ const MenuDetailsPage: React.FC<MenuDetailsPageProps> = ({ id }) => {
         </Card>
 
         {/* Right Column - Menu Data Display */}
-        <Card>
-          <CardHeader>
+                <Card>
+                  <CardHeader>
             <CardTitle>Menu Analysis</CardTitle>
             {validationStatus && <ValidationBadge status={validationStatus} />}
-          </CardHeader>
-          <CardContent>
+                  </CardHeader>
+                  <CardContent>
             <Tabs defaultValue="menu" className="w-full">
               <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="menu">Menu Items</TabsTrigger>
@@ -602,8 +602,8 @@ const MenuDetailsPage: React.FC<MenuDetailsPageProps> = ({ id }) => {
                           </div>
                         )}
                       </div>
-                    </div>
-                  )}
+                      </div>
+                    )}
 
                   {restaurant_info.address && (
                     <div className="flex items-start space-x-2">
@@ -613,7 +613,7 @@ const MenuDetailsPage: React.FC<MenuDetailsPageProps> = ({ id }) => {
                         {restaurant_info.address.english && (
                           <div className="text-sm text-muted-foreground">
                             {restaurant_info.address.english}
-                          </div>
+              </div>
                         )}
                       </div>
                     </div>
@@ -631,24 +631,24 @@ const MenuDetailsPage: React.FC<MenuDetailsPageProps> = ({ id }) => {
                       <Clock className="h-5 w-5 mt-1 text-muted-foreground" />
                       <div className="whitespace-pre-line">
                         {restaurant_info.operating_hours}
-                      </div>
+                        </div>
                     </div>
                   )}
 
-                  {/* Map */}
-                  {isLoaded && coordinates && (
+                    {/* Map */}
+                    {isLoaded && coordinates && (
                     <div className="mt-4 h-[300px] w-full rounded-lg overflow-hidden">
-                      <GoogleMap
-                        mapContainerStyle={{
-                          width: "100%",
-                          height: "100%",
-                        }}
-                        center={coordinates}
-                        zoom={16}
-                      >
-                        <Marker position={coordinates} />
-                      </GoogleMap>
-                    </div>
+                          <GoogleMap
+                            mapContainerStyle={{
+                              width: "100%",
+                              height: "100%",
+                            }}
+                            center={coordinates}
+                            zoom={16}
+                          >
+                            <Marker position={coordinates} />
+                          </GoogleMap>
+                        </div>
                   )}
                 </div>
               </TabsContent>
@@ -666,8 +666,8 @@ const MenuDetailsPage: React.FC<MenuDetailsPageProps> = ({ id }) => {
                           </span>
                         )}
                       </p>
-                    </div>
-                  )}
+                      </div>
+                    )}
                   {restaurant_info.additional_notes && (
                     <div>
                       <h3 className="font-medium mb-2">Additional Notes</h3>
@@ -675,12 +675,12 @@ const MenuDetailsPage: React.FC<MenuDetailsPageProps> = ({ id }) => {
                         {restaurant_info.additional_notes}
                       </p>
                     </div>
-                  )}
-                </div>
+                )}
+              </div>
               </TabsContent>
             </Tabs>
-          </CardContent>
-        </Card>
+        </CardContent>
+      </Card>
       </div>
 
       {/* Link to Franchise Dialog */}

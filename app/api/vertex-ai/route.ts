@@ -23,7 +23,7 @@ import {
   assertBucket
 } from "@/config/googleCloudConfig";
 import type { VertexAiResult } from "@/app/services/restaurant/types";
-import type { MenuItem, Category } from '@/types/menuTypes';
+import type { MenuItem, Category } from '@/app/services/menu/types';
 
 // Queue system
 const queue: (() => Promise<any>)[] = [];
@@ -56,7 +56,7 @@ function addToQueue(task: () => Promise<any>) {
 // Initialize Vertex AI
 const projectId = "cemta4";
 const location = "us-central1";
-const modelId = "gemini-1.5-pro-002";
+const modelId = "gemini-2.0-flash-001";
 
 // Constants
 const MAX_OUTPUT_TOKENS = 8192;

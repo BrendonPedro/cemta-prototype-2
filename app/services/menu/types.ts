@@ -1,4 +1,3 @@
-export * from '@/types/menuTypes';
 
 // Core menu item types
 export interface MenuItemName {

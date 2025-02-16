@@ -18,7 +18,7 @@ import type {
   Restaurant, 
   CachedRestaurant,
   SaveRestaurantOptions,
-  SaveRestaurantResult 
+  SaveRestaurantResult, 
 } from '@/app/services/restaurant/types';
 
 // Helper functions

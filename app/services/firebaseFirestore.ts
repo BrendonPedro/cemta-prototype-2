@@ -39,7 +39,7 @@ import type {
   Category,
   MenuItemName,
   RestaurantInfo 
-} from '@/types/menuTypes';
+} from '@/app/services/menu/types';
 
 // For the county/town creation part:
 type RestaurantDocData = WithFieldValue<DocumentData>;
