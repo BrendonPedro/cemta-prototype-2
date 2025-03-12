@@ -2,24 +2,8 @@
 
 import { NextResponse } from "next/server";
 import axios from "axios";
-import { YelpBusiness } from "@/app/services/firebaseFirestore";
+import type { YelpBusiness } from "@/app/services/yelp/types";
 import { EXCLUDED_ESTABLISHMENTS } from '@/app/constants/excludedEstablishments';
-
-interface YelpCategory {
-  alias: string;
-  title: string;
-}
-
-interface YelpSearchResponse {
-  businesses: YelpBusiness[];
-  total: number;
-  region: {
-    center: {
-      latitude: number;
-      longitude: number;
-    };
-  };
-}
 
 export async function GET(request: Request) {
   try {
@@ -45,7 +29,7 @@ export async function GET(request: Request) {
       return NextResponse.json(null);
     }
 
-    const response = await axios.get<YelpSearchResponse>(
+    const response = await axios.get<YelpBusiness[]>(
       "https://api.yelp.com/v3/businesses/search",
       {
         headers: {
@@ -65,7 +49,7 @@ export async function GET(request: Request) {
       }
     );
 
-    const businesses = response.data.businesses || [];
+    const businesses = response.data || [];
     
     // Additional filter to ensure no convenience stores slip through
     const filteredBusinesses = businesses.filter((business: YelpBusiness) => {
@@ -75,7 +59,7 @@ export async function GET(request: Request) {
       );
       
       // Check categories to exclude convenience stores
-      const hasConvenienceCategory = business.categories?.some((category: YelpCategory) => 
+      const hasConvenienceCategory = business.categories?.some((category: any) => 
         category.alias.includes('convenience') || 
         category.title.toLowerCase().includes('convenience')
       );

@@ -23,7 +23,7 @@ import {
   assertBucket
 } from "@/config/googleCloudConfig";
 import type { VertexAiResult } from "@/app/services/restaurant/types";
-import type { MenuItem, Category } from '@/app/services/menu/types';
+import type { MenuItem, Category, MenuData } from '@/app/services/menu/types';
 
 // Queue system
 const queue: (() => Promise<any>)[] = [];

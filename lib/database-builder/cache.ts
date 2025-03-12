@@ -3,7 +3,7 @@
 import { db } from '@/config/firebaseConfig';
 import { 
   doc, 
-getDocs, 
+  getDocs, 
   getDoc,
   setDoc, 
   collection, 
@@ -13,7 +13,7 @@ getDocs,
     increment,
     serverTimestamp, 
 } from 'firebase/firestore';
-import type { CachedRestaurant } from '@/interfaces/restaurant/types';
+import type { CachedRestaurant } from '@/app/services/restaurant/types';
 import geohash from 'ngeohash';
 import { CONFIG } from './config';
 

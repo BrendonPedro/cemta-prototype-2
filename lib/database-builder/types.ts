@@ -5,11 +5,19 @@ import {
   Timestamp,
   serverTimestamp 
 } from 'firebase/firestore';
-import type { CachedRestaurant, OpeningHours } from '@/interfaces/restaurant/types';
+// Import types from the centralized location instead of defining them here
+import type { CachedRestaurant, OpeningHours } from '@/app/services/restaurant/types';
+// Don't import Restaurant if it's defined locally
+import type { Coordinates } from '@/app/services/location/type';
 
- 
 export interface Geometry {
-  location: Location;
+  location: Coordinates;
+}
+
+// Keep your local Location interface if needed elsewhere in this file
+export interface Location {
+  lat: number;
+  lng: number;
 }
 
 export interface TownData {
@@ -41,11 +49,6 @@ export interface ValidateSetupResult {
   success: boolean;
   status?: ProcessingStatus;
   error?: string;
-}
-
-export interface Location {
-  lat: number;
-  lng: number;
 }
 
 export interface PlaceGeometry {
@@ -223,41 +226,22 @@ export interface SearchMetrics {
 
 // (Used in FindRestaurantsAndMenus.tsx and AboutPage.tsx)
 export interface Restaurant {
-  // Essential Information
   id: string;
   name: string;
   address: string;
+  location: {
+    lat: number;
+    lng: number;
+  };
   rating: number;
-
-  // Location Information
-  latitude: number;
-  longitude: number;
-  county: string;
-  townName: string;
-  
-  // Menu Information
+  googlePlaceId: string;
+  photos: string[];
   menuCount: number;
-  hasMenu?: boolean;
-  menuId?: string;
-  menuImageUrl?: string;
-  
-  // Media & Visual Content
-  imageUrl?: string;
-  photoUrl?: string;
-  
-  // Contact & Business Details
-  priceLevel?: string | null;
-  phone?: string | null;
-  website?: string | null;
-  openingHours?: OpeningHours | null;
-  
-  // Integration Data
-  hasGoogleData?: boolean;
-  hasYelpData?: boolean;
-  yelpId?: string | null;
-  yelpRating?: number | null;
-  
-  // State Management
-  contribution?: boolean;
-  hasDetailsFetched?: boolean;
+  lastUpdated: string;
+  createdAt: string;
+  source: {
+    google: boolean;
+    yelp: boolean;
+  };
+  townName: string;
 }

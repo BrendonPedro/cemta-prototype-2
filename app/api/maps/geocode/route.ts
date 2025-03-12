@@ -7,7 +7,9 @@ import {
   AddressType,
 } from "@googlemaps/google-maps-services-js";
 import { counties, getNearbyTowns } from '@/lib/data/counties';
-import { determineLocationDetails } from "@/app/services/locationService";
+import { determineLocation } from "@/app/services/location/locationService";
+// Import types from the centralized location
+import type { Coordinates } from "@/app/services/location/type";
 
 interface LocationStats {
   towns: Set<string>;
@@ -56,7 +58,7 @@ export async function GET(request: Request) {
       }
 
       // First try using our local location service
-      const localLocation = await determineLocationDetails(parsedLat, parsedLng);
+      const localLocation = await determineLocation(parsedLat, parsedLng);
       
       // If we got valid local data, use it as a fallback
       const validLocalData = localLocation.county !== 'Unknown County' && 
@@ -170,10 +172,7 @@ export async function GET(request: Request) {
         const location = result.geometry.location;
         
         // Get local data for the coordinates
-        const localLocation = await determineLocationDetails(
-          location.lat,
-          location.lng
-        );
+        const localLocation = await determineLocation(location.lat, location.lng);
 
         return NextResponse.json({
           ...result,

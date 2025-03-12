@@ -1,11 +1,12 @@
+"use client";
+
 import React, { useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
+import { RequestableRoles } from "@/interfaces/auth/types";
 
 const EditProfilePage: React.FC = () => {
-  const { userData, updateUserRole } = useAuth();
-  const [requestedRole, setRequestedRole] = useState<
-    "partner" | "validator" | null
-  >(null);
+  const { userRole, updateUserRole } = useAuth();
+  const [requestedRole, setRequestedRole] = useState<RequestableRoles | null>(null);
 
   const handleRoleRequest = async () => {
     if (requestedRole) {
@@ -23,7 +24,7 @@ const EditProfilePage: React.FC = () => {
       <select
         value={requestedRole || ""}
         onChange={(e) =>
-          setRequestedRole(e.target.value as "partner" | "validator" | null)
+          setRequestedRole(e.target.value as RequestableRoles || null)
         }
       >
         <option value="">Select a role</option>

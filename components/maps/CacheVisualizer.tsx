@@ -4,8 +4,8 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Polygon } from '@react-google-maps/api';
 import geohash from 'ngeohash';
 import { CONFIG } from '@/lib/database-builder/config';
-import { mapCache } from "@/app/services/cache/mapCacheService";  // Updated path
-import { LatLngLiteral } from '@googlemaps/google-maps-services-js';  // Use Google's type instead
+import { mapCache } from "@/app/services/cache/mapCacheService";
+import { LatLngLiteral } from '@googlemaps/google-maps-services-js';
 
 interface CacheVisualizerProps {
   map: google.maps.Map | null;

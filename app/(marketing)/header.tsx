@@ -15,7 +15,8 @@ import {
 } from "@clerk/nextjs";
 
 import { Button } from "@/components/ui/button";
-import useClerkFirebaseAuth from "@/hooks/useClerkFirebaseAuth";
+import { useAuth } from "@/components/AuthProvider";
+import { ROLE_ROUTES } from "@/interfaces/auth/types";
 
 interface HeaderProps {
   className?: string;
@@ -23,7 +24,7 @@ interface HeaderProps {
 
 export const Header = forwardRef<HTMLElement, HeaderProps>(
   ({ className = "" }, ref) => {
-    const { userRole } = useClerkFirebaseAuth();
+    const { userRole } = useAuth();
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const pathname = usePathname();
     const [isClient, setIsClient] = useState(false);
@@ -36,16 +37,10 @@ export const Header = forwardRef<HTMLElement, HeaderProps>(
     const isActive = (href: string) => pathname === href;
 
     const getDashboardUrl = (role: string | null) => {
-      switch (role) {
-        case "admin":
-          return "/dashboards/admin";
-        case "partner":
-          return "/dashboards/partner";
-        case "validator":
-          return "/dashboards/validator";
-        default:
-          return "/dashboards/user";
+      if (role && role in ROLE_ROUTES) {
+        return ROLE_ROUTES[role as keyof typeof ROLE_ROUTES];
       }
+      return "/dashboards/user";
     };
 
     const navItems = [
@@ -53,7 +48,6 @@ export const Header = forwardRef<HTMLElement, HeaderProps>(
       { href: "/menuAnalyzer", label: "MenuAI" },
       { href: "/restaurants", label: "Restaurants" },
       { href: getDashboardUrl(userRole), label: "Dashboard" },
-      // { href: "/cemtaTeam", label: "CEMTA Team" },
       { href: "/about", label: "About Us" },
       { href: "/contact", label: "Contact" },
       { href: "/faq", label: "FAQ" },

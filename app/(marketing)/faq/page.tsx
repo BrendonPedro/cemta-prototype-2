@@ -1,14 +1,16 @@
 "use client";
 
 import React from "react";
-import ProfileUpdateHandler from "@/components/unused/ProfileUpdateHandler";
 import { AuthProvider } from "@/components/AuthProvider";
 
 const faqPage = () => {
   return (
     <AuthProvider>
       <div>
-        <ProfileUpdateHandler />
+        <h1 className="text-3xl font-bold mb-6">Frequently Asked Questions</h1>
+        <div className="space-y-6">
+          <p>FAQ content will go here.</p>
+        </div>
       </div>
     </AuthProvider>
   );

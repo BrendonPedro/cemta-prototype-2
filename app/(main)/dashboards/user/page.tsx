@@ -1,17 +1,20 @@
-
 // app/(main)/dashboards/user/page.tsx
 
 "use client";
 
 import React from "react";
 import { FindRestaurantsAndMenus } from "@/app/shared/components/FindRestaurantsAndMenus";
-import useClerkFirebaseAuth from "@/hooks/useClerkFirebaseAuth";
+import { useAuth } from "@/components/AuthProvider";
 
 export default function UserDashboardPage() {
-  const { userRole } = useClerkFirebaseAuth();
+  const { userRole, loading } = useAuth();
 
-  if (!userRole) {
+  if (loading) {
     return <div>Loading...</div>;
+  }
+
+  if (userRole !== "user") {
+    return <div>Unauthorized access</div>;
   }
 
   return (

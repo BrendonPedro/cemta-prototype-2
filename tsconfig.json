@@ -22,7 +22,13 @@
     "paths": {
       "@/*": [
         "./*"
-      ]
+      ],
+      "@types/*": ["types/*"],
+      "@services/*": ["app/services/*"],
+      "@api/*": ["app/api/*"],
+      "@config/*": ["config/*"],
+      "@lib/*": ["lib/*"],
+      "@interfaces/*": ["interfaces/*"]
     },
     "plugins": [
       {

@@ -7,7 +7,6 @@ import {
   ProcessingStats, 
   ProcessingStatus,
   ValidateSetupResult,
-  CachedRestaurant 
 } from '@/lib/database-builder/types';
 import { 
   buildDatabase, 
@@ -38,8 +37,8 @@ import {
   clearLocationCache  
 } from '@/lib/database-builder/cache';
 import type { EnhancedCountyData } from '@/lib/data/counties';
-import { RestaurantData } from '@/lib/database-builder/types';
-import { saveRestaurantData } from '@/app/services/firebaseFirestore';
+import type { Restaurant, CachedRestaurant } from '@/app/services/restaurant/types';
+import { saveRestaurant } from '@/app/services/restaurant/restaurantService';
 
 import type { 
   ProcessingOptions,
@@ -69,30 +68,25 @@ async function processCachedRestaurants(
 
   for (const restaurant of newRestaurants) {
     try {
-      await saveRestaurantData(
+      // Create a restaurant object that matches the expected structure
+      await saveRestaurant(
         {
           id: restaurant.id,
           name: restaurant.name,
           address: restaurant.address,
-          location: {
-            lat: restaurant.latitude,
-            lng: restaurant.longitude
-          },
+          latitude: restaurant.latitude,
+          longitude: restaurant.longitude,
           rating: restaurant.rating || 0,
-          googlePlaceId: restaurant.id,
+          placeId: restaurant.id,
           photos: restaurant.imageUrl ? [restaurant.imageUrl] : [],
           menuCount: restaurant.menuCount || 0,
           lastUpdated: new Date().toISOString(),
           createdAt: new Date().toISOString(),
-          source: {
-            google: restaurant.hasGoogleData || false,
-            yelp: restaurant.hasYelpData || false
-          },
-          townName: ''
-        },
-        countyName,
-        townName,
-        { fromCache: true, incrementalUpdate: options.incrementalUpdate }
+          hasGoogleData: restaurant.hasGoogleData || false,
+          hasYelpData: restaurant.hasYelpData || false,
+          county: countyName,
+          townName: townName
+        }
       );
       
       processedIds.add(restaurant.id);
@@ -110,7 +104,6 @@ async function processCachedRestaurants(
     await verifyAndFixRestaurantCount(countyName, townName);
   }
 }
-
 
 export interface BuildDatabaseResult {
   success: boolean;

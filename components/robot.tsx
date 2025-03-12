@@ -1,3 +1,5 @@
+// This file can be removed as its functionality is duplicated in RobotMenu.tsx
+
 "use client";
 
 import { motion } from "framer-motion";

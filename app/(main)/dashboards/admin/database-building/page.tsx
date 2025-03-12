@@ -86,7 +86,7 @@ export default function DatabaseBuildingPage() {
         </Alert>
       )}
 
-<Card>
+      <Card>
         <CardHeader>
           <CardTitle>Data Management Tools</CardTitle>
         </CardHeader>
@@ -95,7 +95,6 @@ export default function DatabaseBuildingPage() {
             <TabsList>
               <TabsTrigger value="batch">Batch Processing</TabsTrigger>
               <TabsTrigger value="places">Places API</TabsTrigger>
-              <TabsTrigger value="monitoring">Monitoring</TabsTrigger> {/* Add this */}
             </TabsList>
 
             <TabsContent value="batch">
@@ -107,10 +106,6 @@ export default function DatabaseBuildingPage() {
                 onBatchComplete={handlePlacesBatchComplete}
                 townLocation={{ lat: 24.6851, lng: 120.8307 }}
               />
-            </TabsContent>
-
-            <TabsContent value="monitoring">
-              <DatabaseBuildingMonitor />
             </TabsContent>
           </Tabs>
         </CardContent>

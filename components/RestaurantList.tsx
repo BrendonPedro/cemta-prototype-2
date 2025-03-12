@@ -1,3 +1,5 @@
+// This component is unused and can be removed
+
 "use client";
 
 import React from "react";

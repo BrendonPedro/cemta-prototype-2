@@ -60,6 +60,25 @@ function isApiError(error: unknown): error is ApiError {
   );
 }
 
+// Helper function to get bucket name with fallback
+function getBucketName(envVar: string | undefined, fallback?: string): string {
+  if (envVar) return envVar;
+  if (fallback) return fallback;
+  return '';
+}
+
+// Type assertion helpers
+function assertStorage(storageInstance: Storage | null): asserts storageInstance is Storage {
+  if (!storageInstance) {
+    throw new Error('Storage is not initialized');
+  }
+}
+
+function assertBucket(bucket: Bucket | null): asserts bucket is Bucket {
+  if (!bucket) {
+    throw new Error('Bucket is not initialized');
+  }
+}
 
 async function setupBucket(bucket: Bucket | null, config: BucketConfig, retries = 3): Promise<boolean> {
   if (!bucket) {
@@ -99,95 +118,22 @@ async function setupBucket(bucket: Bucket | null, config: BucketConfig, retries 
   return false;
 }
 
-async function setupBucketWithRetry(bucket: Bucket | null, config: BucketConfig, maxRetries = 3): Promise<boolean> {
-  if (!bucket) {
-    console.error(`Bucket is not initialized for ${config.name}`);
-    return false;
-  }
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      const [exists] = await bucket.exists();
-      if (!exists) {
-        console.error(`Bucket ${bucket.name} does not exist`);
-        return false;
-      }
-
-      await Promise.all([
-        config.isPublic && makeBucketPublic(bucket),
-        config.enableCors && bucket.setMetadata({ cors: CORS_CONFIG }),
-        bucket.addLifecycleRule(LIFECYCLE_RULE),
-      ]);
-
-      console.log(`Successfully configured bucket ${bucket.name}`);
-      return true;
-    } catch (error) {
-      console.error(`Attempt ${attempt} failed for bucket ${bucket.name}:`, error);
-      if (attempt === maxRetries) {
-        console.error(`Failed to initialize ${bucket.name} after ${maxRetries} attempts`);
-        return false;
-      }
-      // Exponential backoff
-      await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
-    }
-  }
-  return false;
-}
-
 // Function to make bucket public using IAM policy
 async function makeBucketPublic(bucket: Bucket) {
   try {
-    // Get the current IAM policy
-    const [policy] = await bucket.iam.getPolicy({ requestedPolicyVersion: 3 });
-
-    // Check if the binding already exists
-    const bindingExists = policy.bindings.some(binding =>
-      binding.role === 'roles/storage.objectViewer' &&
-      binding.members.includes('allUsers')
-    );
-
-    if (!bindingExists) {
-      // Add a binding to grant allUsers the storage.objectViewer role
-      policy.bindings.push({
-        role: 'roles/storage.objectViewer',
-        members: ['allUsers'],
-      });
-
-      // Set the updated IAM policy
-      await bucket.iam.setPolicy(policy);
-      console.log(`Bucket ${bucket.name} is now public.`);
-    } else {
-      console.log(`Bucket ${bucket.name} is already public.`);
-    }
+    await bucket.iam.setPolicy({
+      bindings: [
+        {
+          role: 'roles/storage.objectViewer',
+          members: ['allUsers'],
+        },
+      ],
+    });
   } catch (error) {
     console.error(`Error making bucket ${bucket.name} public:`, error);
     throw error;
   }
 }
-
-// Helper function to clean bucket names
-function getBucketName(envVar: string | undefined): string {
-  if (!envVar) {
-    throw new Error(`Missing environment variable`);
-  }
-  return envVar.replace("gs://", "");
-}
-
-// null check helper
-function assertStorage(storage: Storage | null): asserts storage is Storage {
-  if (!storage) {
-    throw new Error('Storage is not initialized');
-  }
-}
-
-function assertBucket(bucket: Bucket | null): asserts bucket is Bucket {
-  if (!bucket) {
-    throw new Error('Bucket is not initialized');
-  }
-}
-
-// config/googleCloudConfig.ts
-
-// ... (keep existing imports and interfaces)
 
 // Initialize only on server side
 if (typeof window === 'undefined') {
@@ -315,7 +261,7 @@ export {
   processedMenuBucket,
   restaurantImagesBucket,
   yelpMenuBucket,
-  setupBucketWithRetry,
+  setupBucket,
   isApiError,
   assertStorage,
   assertBucket

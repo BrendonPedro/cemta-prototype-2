@@ -44,7 +44,7 @@ export default function AdminDashboard() {
         {/* Database Building Section */}
         <Card className="bg-white rounded-lg shadow-lg p-6">
           <h2 className="text-2xl font-semibold mb-4">Database Management</h2>
-          <DatabaseBuildingMonitor /> {/* Remove counties prop */}
+          <DatabaseBuildingMonitor />
         </Card>
 
         {/* Additional admin sections */}
@@ -95,7 +95,6 @@ export default function AdminDashboard() {
                 >
                   Full Database Builder
                 </button>
-                {/* Add more admin actions as needed */}
               </div>
             </div>
           </div>

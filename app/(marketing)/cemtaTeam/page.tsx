@@ -1,11 +1,15 @@
-// No "use client" directive here
-import { CemtaTeam } from "@/components/CemtaTeam";
+import { AboutUs } from "@/components/AboutUs";
+import { Metadata } from "next";
 
-// Notice the async keyword - server components can be async
-export default async function CemtaTeamPage() {
+export const metadata: Metadata = {
+  title: "CEMTA Team | CEMTA",
+  description: "Meet the team behind CEMTA's mission to revolutionize the dining experience in Taiwan.",
+};
+
+export default function CemtaTeamPage() {
   return (
     <div>
-      <CemtaTeam />
+      <AboutUs showTeamSection={true} />
     </div>
   );
 }

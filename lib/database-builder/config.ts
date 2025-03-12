@@ -24,20 +24,20 @@ export const CONFIG = {
     DAILY_LIMIT: 200, // Daily API call limit
   },
   SEARCH: {
-    INITIAL_RADIUS: 1000,      // Added for initial search radius
-    MAX_RADIUS: 2000,         // Maximum radius to search
-    RADIUS_INCREMENT: 250,    // How much to increment radius
-    MIN_RESULTS: 5,          // Minimum results needed
-    MAX_RESULTS: 20,         // Maximum results to return
-    NEARBY_THRESHOLD: 1000,   // Distance threshold for "nearby" (meters)
-    MAX_DISTANCE: 2000,      // Maximum distance to consider
-    BATCH_SIZE: 20,           // How many results to process at once
+    INITIAL_RADIUS: 1000,      // Initial search radius
+    MAX_RADIUS: 2000,          // Maximum radius to search
+    RADIUS_INCREMENT: 250,     // How much to increment radius
+    MIN_RESULTS: 5,            // Minimum results needed
+    MAX_RESULTS: 20,           // Maximum results to return
+    NEARBY_THRESHOLD: 1000,    // Distance threshold for "nearby" (meters)
+    MAX_DISTANCE: 2000,        // Maximum distance to consider
+    BATCH_SIZE: 20,            // How many results to process at once
     PRECISE: {
-      RADIUS: 1000,        // Smaller radius for precise location search
-      MAX_RESULTS: 20,    // Maximum results to fetch
-      BATCH_SIZE: 20,     // Results per API call
-      MAX_API_CALLS: 1,   // Maximum API calls
-      MERGE_DISTANCE: 100  // Distance to consider as duplicate
+      RADIUS: 1000,            // Smaller radius for precise location search
+      MAX_RESULTS: 20,         // Maximum results to fetch
+      BATCH_SIZE: 20,          // Results per API call
+      MAX_API_CALLS: 1,        // Maximum API calls
+      MERGE_DISTANCE: 100      // Distance to consider as duplicate
     }
   },
   PATHS: {
@@ -48,7 +48,6 @@ export const CONFIG = {
   FIRESTORE: {
     COLLECTIONS: COLLECTION_NAMES
   },
-
   MAPS: {
     CENTER: { lat: 25.0330, lng: 121.5654 }, // Default Taipei center
     BOUNDS: {
@@ -75,7 +74,6 @@ export const CONFIG = {
       gestureHandling: 'greedy' as const
     }
   },
-
   LOCATION: {
     VALIDATION: {
       PRECISION: 6,
@@ -84,12 +82,11 @@ export const CONFIG = {
     },
     SEARCH_HIERARCHY: [
       'LOCAL_DATA',     // Check local county/town data first
-      'CACHE',         // Then check location cache
-      'GOOGLE_MAPS',   // Then try Google Geocoding
-      'NEAREST_MATCH'  // Finally fallback to nearest known location
+      'CACHE',          // Then check location cache
+      'GOOGLE_MAPS',    // Then try Google Geocoding
+      'NEAREST_MATCH'   // Finally fallback to nearest known location
     ]
   },
-
   CACHE: {
     DURATION: 365 * 24 * 60 * 60 * 1000, // 365 days while building DB
     STRATEGY: {
@@ -110,8 +107,8 @@ export const CONFIG = {
       LOCATION_PRECISION: 6,  // For locationCaches (street-level precision)
       METRICS_PRECISION: 5    // For cacheMetrics (area-level precision)
     }
-},
-PROCESSING: {     // Keep existing processing config
+  },
+  PROCESSING: {
     START_DATE: '2024-01-01',
     TOTAL_LOCATIONS: 500,
     BATCH_SIZE: 20,
@@ -122,5 +119,5 @@ PROCESSING: {     // Keep existing processing config
       RETRY_DELAY: 3600000,
       DEFAULT_PRIORITY: 1
     }
-}
+  }
 };

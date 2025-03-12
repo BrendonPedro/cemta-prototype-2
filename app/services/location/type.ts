@@ -74,3 +74,8 @@ export interface MapState {
     zoom: number;
     timestamp: Date;
   }
+
+export interface LocationStats {
+  towns: Set<string>;
+  counties: Set<string>;
+}

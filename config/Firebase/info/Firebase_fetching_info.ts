@@ -1,3 +1,5 @@
+// This file contains only commented code and can be removed
+
 // // 1.GetDoc
 
 // async getUser() {

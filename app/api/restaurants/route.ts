@@ -5,6 +5,7 @@ import admin from "@/config/firebaseAdmin";
 import type { DecodedIdToken } from "firebase-admin/auth";
 import { CONFIG } from "@/lib/database-builder/config";
 import { calculateDistance } from "@/app/utils/locationUtils";
+import type { Coordinates } from "@/app/services/location/type";
 
 const RATE_LIMIT = {
   REQUESTS_PER_MINUTE: 60,
@@ -42,8 +43,8 @@ export async function GET(request: Request) {
 
     // 2. Parameter Validation
     const { searchParams } = new URL(request.url);
-    const lat = Number(searchParams.get("lat"));
-    const lng = Number(searchParams.get("lng"));
+    const lat = parseFloat(searchParams.get("lat") || "0");
+    const lng = parseFloat(searchParams.get("lng") || "0");
     const limit = Math.min(Number(searchParams.get("limit")) || 20, 100);
 
     if (!validateTaiwanCoordinates(lat, lng)) {
