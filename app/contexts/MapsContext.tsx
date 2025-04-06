@@ -234,11 +234,8 @@ export function MapsProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (position?.coords) {
       const { latitude, longitude } = position.coords;
-      if (validateTaiwanCoordinates(latitude, longitude)) {
-        const newLocation = { lat: latitude, lng: longitude };
-        if (state.settings.enabled && isValidCoordinate(newLocation)) {
-          setUserLocation(newLocation);
-        }
+      if (state.settings.enabled && isValidCoordinate({ lat: latitude, lng: longitude })) {
+        setUserLocation({ lat: latitude, lng: longitude });
       }
     }
   }, [position, state.settings.enabled, isValidCoordinate, setUserLocation]);
@@ -260,7 +257,7 @@ export function MapsProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-export const useMaps = () => {
+export const useMapsContext = () => {
   const context = useContext(MapsContext);
   if (!context) {
     throw new Error('useMaps must be used within a MapsProvider');

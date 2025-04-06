@@ -46,7 +46,10 @@ export const CONFIG = {
     PROCESSED_MENUS: 'counties/{countyName}/towns/{townName}/restaurants/{restaurantId}/menus/processed'
   },
   FIRESTORE: {
-    COLLECTIONS: COLLECTION_NAMES
+    COLLECTIONS: {
+      ...COLLECTION_NAMES,
+      MAPS_CACHE: "mapsCache"
+    }
   },
   MAPS: {
     CENTER: { lat: 25.0330, lng: 121.5654 }, // Default Taipei center

@@ -92,7 +92,7 @@ export const AboutUs = () => {
                 Our Mission
               </h2>
               <p className="text-lg text-gray-600 mb-6">
-                We're on a mission to transform how people experience Taiwan's rich culinary culture. By combining advanced AI technology with community engagement, we're breaking down language barriers and creating authentic connections through food.
+                We&apos;re on a mission to transform how people experience Taiwan&apos;s rich culinary culture. By combining advanced AI technology with community engagement, we&apos;re breaking down language barriers and creating authentic connections through food.
               </p>
               <div className="grid md:grid-cols-3 gap-8 mt-12">
                 <div className="p-6 rounded-xl bg-white shadow-lg hover:shadow-xl transition-shadow duration-300 border border-teal-100">
@@ -166,7 +166,7 @@ export const AboutUs = () => {
                 Our Vision
               </h2>
               <p className="text-lg text-gray-600">
-                To create a world where language is never a barrier to experiencing the joy and culture of local cuisine. Starting with Taiwan, we're building a platform that brings people together through food, technology, and community.
+                To create a world where language is never a barrier to experiencing the joy and culture of local cuisine. Starting with Taiwan, we&apos;re building a platform that brings people together through food, technology, and community.
               </p>
             </motion.div>
           </div>
