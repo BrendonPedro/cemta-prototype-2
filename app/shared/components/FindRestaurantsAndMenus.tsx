@@ -47,13 +47,13 @@ import {
 import { getYelpBusinessWithPhotos } from "@/app/services/yelp/yelpService";
 import { MenuWarningDialog } from "@/components/ui/menu-warning-dialog";
 import axios from "axios";
-import { determineLocation } from "@/app/services/location/locationService";
+import { determineLocation } from "@/app/services/maps/locationService";
 import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { AlertTriangle } from "lucide-react";
 import { AnimatePresence } from "framer-motion";
 import { RestaurantDetails } from "@/app/shared/components/RestaurantDetails";
-import { calculateDistance } from "@/app/utils/locationUtils";
+import { calculateDistance } from '@/app/services/maps/locationService';
 import { CONFIG } from "@/lib/database-builder/config";
 import { Loader2 } from "lucide-react";
 import { CachedRestaurant, Restaurant } from "@/app/services/restaurant/types";
@@ -69,6 +69,10 @@ import { mapCache } from "@/app/services/cache/mapCacheService";
 import { CacheVisualizer } from '@/components/maps/CacheVisualizer';
 import { mapStateCache } from "@/app/services/cache/mapStateCache";
 import { searchNearbyPlaces } from "@/app/services/maps/placesService";
+import { cacheService } from "@/app/services/maps/cacheService";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "@/config/firebaseConfig";
+
 type LatLngLiteral = { lat: number; lng: number };
 
 const mapContainerStyle = {
@@ -290,7 +294,7 @@ export function FindRestaurantsAndMenus() {
 
   const { userId } = useClerkAuth();
   const { firebaseToken, loading: authLoading, error: authError } = useAuth();
-  const restaurantHandler = useRestaurantHandler(firebaseToken || null);
+  const restaurantHandler = useRestaurantHandler(firebaseToken);
   const [restaurants, setRestaurants] = useState<Restaurant[]>([]);
   const [filteredRestaurants, setFilteredRestaurants] = useState<Restaurant[]>([]);
   const [nameFilter, setNameFilter] = useState("all");
@@ -315,20 +319,22 @@ export function FindRestaurantsAndMenus() {
     counties: new Set<string>()
   });
 
+  const localMapRef = useRef<google.maps.Map | null>(null);
+
   const {
     focusedRestaurant,
     selectedMarker,
     handleTableClick,
     handleMarkerClick,
     resetFocus,
-    mapRef
+    mapRef: restaurantMapRef
   } = restaurantHandler || {
     focusedRestaurant: null,
     selectedMarker: null,
     handleTableClick: () => {},
     handleMarkerClick: () => {},
     resetFocus: () => {},
-    mapRef: { current: null }
+    mapRef: null
   };
 
   const {
@@ -380,28 +386,73 @@ export function FindRestaurantsAndMenus() {
     setFilteredRestaurants(filtered.slice(currentPage * 20, (currentPage + 1) * 20));
   }, [restaurants, nameFilter, ratingFilter, menuCountFilter, currentPage]);
 
-  const fetchNearbyRestaurants = useCallback(async (lat: number, lng: number) => {
+  const fetchNearbyRestaurants = useCallback(async (latitude: number, longitude: number) => {
     setIsLoading(true);
+    setError(null);
+    
     try {
-      // First determine the location details
-      const location = await mapsService.determineLocation(lat, lng);
+      // Generate cache key
+      const locationKey = getLocationCacheKey(latitude, longitude);
+      console.log('Fetching restaurants for location key:', locationKey);
       
-      // Then search for restaurants
-      const places = await mapsService.searchNearby({
-        latitude: lat,
-        longitude: lng
+      // Try to get from cache first - with more detailed logging
+      console.log('Attempting to retrieve from cache...');
+      const cachedData = await cacheService.get<{
+        restaurants: Restaurant[];
+        latitude: number;
+        longitude: number;
+        timestamp: number;
+      }>(locationKey);
+      
+      console.log('Cache result:', cachedData ? 'HIT' : 'MISS');
+      
+      if (cachedData) {
+        console.log('Cache data structure:', Object.keys(cachedData));
+        
+        // Check if restaurants exist and is an array
+        if (cachedData.restaurants && Array.isArray(cachedData.restaurants)) {
+          console.log('Found', cachedData.restaurants.length, 'restaurants in cache');
+          
+          if (cachedData.restaurants.length > 0) {
+            console.log('Using cached restaurants data');
+            setRestaurants(cachedData.restaurants);
+            setIsLoading(false);
+            return;
+          } else {
+            console.log('Cache hit but no restaurants found, fetching from API');
+          }
+        } else {
+          console.log('Cache hit but no restaurants array found:', cachedData);
+        }
+      }
+      
+      // If not in cache, fetch from API
+      const response = await fetch(
+        `/api/restaurants?lat=${latitude}&lng=${longitude}&radius=1000`
+      );
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch restaurants');
+      }
+      
+      const data = await response.json();
+      setRestaurants(data);
+      
+      // Cache the results
+      await cacheService.set(locationKey, {
+        restaurants: data,
+        latitude,
+        longitude,
+        timestamp: Date.now()
       });
       
-      // Process the results...
-      // (your existing processing code)
-      
-    } catch (error) {
-      console.error('Error fetching restaurants:', error);
-      setError('Failed to load restaurants');
+    } catch (err) {
+      console.error('Error fetching restaurants:', err);
+      setError('Failed to fetch restaurants. Please try again.');
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [setIsLoading, setError, setRestaurants]);
 
   // Initialize location once auth is done
   useEffect(() => {
@@ -414,7 +465,7 @@ export function FindRestaurantsAndMenus() {
       setIsLoading(true);
   
       try {
-        if (geoError || !position || !position.coords) {
+        if (geoError || !position) {
           console.log('Using default location');
           toggleLocation(false); // Use MapsContext toggle
           setPinLocation(current); // Use MapsContext location
@@ -422,7 +473,7 @@ export function FindRestaurantsAndMenus() {
           return;
         }
   
-        const { latitude, longitude } = position.coords;
+        const { lat: latitude, lng: longitude } = position;
         console.log('Setting coordinates:', { latitude, longitude });
         
         toggleLocation(true); // Enable location in MapsContext
@@ -437,45 +488,54 @@ export function FindRestaurantsAndMenus() {
     };
   
     initLocation();
-  }, [position, geoError, userId, firebaseToken, authLoading, current, toggleLocation]);
+  }, [
+    position, 
+    geoError, 
+    userId, 
+    firebaseToken, 
+    authLoading, 
+    current, 
+    toggleLocation, 
+    setPinLocation, 
+    fetchNearbyRestaurants, 
+    setIsLoading, 
+    setError
+  ]);
 
-  // Fix the useEffect dependencies
+  // Update the useEffect to include all dependencies
   useEffect(() => {
-    if (position && position.coords) {
-      const { latitude, longitude } = position.coords;
+    if (position) {
+      const { lat: latitude, lng: longitude } = position;
       
       setUserLocation({
         lat: latitude,
-        lng: longitude,
+        lng: longitude
       });
-      setCurrentLocation({
-        lat: latitude,
-        lng: longitude,
-      });
+      
+      fetchNearbyRestaurants(latitude, longitude);
       setPinLocation({
         lat: latitude,
-        lng: longitude,
+        lng: longitude
       });
-      fetchNearbyRestaurants(latitude, longitude);
     }
-  }, [position, setUserLocation, setCurrentLocation, setPinLocation, fetchNearbyRestaurants]);
+  }, [position, fetchNearbyRestaurants, setPinLocation, setUserLocation]);
 
   const handleLocationToggle = async (enabled: boolean) => {
     try {
       await toggleLocation(enabled);
       
-      if (enabled && position?.coords) {
-        const { latitude, longitude } = position.coords;
-        if (mapRef.current) {
+      if (enabled && position) {
+        const { lat: latitude, lng: longitude } = position;
+        if (localMapRef.current) {
           const newLocation = { lat: latitude, lng: longitude };
-          mapRef.current.panTo(newLocation);
-          mapRef.current.setZoom(15);
+          localMapRef.current.panTo(newLocation);
+          localMapRef.current.setZoom(15);
         }
         await fetchNearbyRestaurants(latitude, longitude);
       } else {
-        if (mapRef.current) {
-          mapRef.current.panTo(DEFAULT_CENTER);
-          mapRef.current.setZoom(12);
+        if (localMapRef.current) {
+          localMapRef.current.panTo(DEFAULT_CENTER);
+          localMapRef.current.setZoom(12);
         }
         await fetchNearbyRestaurants(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng);
       }
@@ -490,11 +550,11 @@ const handleRefreshLocation = async () => {
   setLocationError(null);
 
   try {
-    if (!position || !position.coords) {
+    if (!position) {
       throw new Error('Unable to get current location. Please ensure location services are enabled.');
     }
 
-    const { latitude, longitude } = position.coords;
+    const { lat: latitude, lng: longitude } = position;
     console.log('Refreshing location:', { latitude, longitude });
 
     const newLocation = { lat: latitude, lng: longitude };
@@ -505,9 +565,9 @@ const handleRefreshLocation = async () => {
     setPinLocation(newLocation);
 
     // Update map position - make sure to do this before fetching restaurants
-    if (mapRef.current) {
-      mapRef.current.panTo(newLocation);
-      mapRef.current.setZoom(15); // Reset zoom to a good level for viewing restaurants
+    if (localMapRef.current) {
+      localMapRef.current.panTo(newLocation);
+      localMapRef.current.setZoom(15); // Reset zoom to a good level for viewing restaurants
     }
 
     // Fetch new restaurants data
@@ -531,9 +591,9 @@ const handleRefreshLocation = async () => {
       setCenter(DEFAULT_CENTER);
       setPinLocation(DEFAULT_CENTER);
 
-      if (mapRef.current) {
-        mapRef.current.panTo(DEFAULT_CENTER);
-        mapRef.current.setZoom(12);
+      if (localMapRef.current) {
+        localMapRef.current.panTo(DEFAULT_CENTER);
+        localMapRef.current.setZoom(12);
       }
 
       await fetchNearbyRestaurants(DEFAULT_CENTER.lat, DEFAULT_CENTER.lng);
@@ -544,7 +604,7 @@ const handleRefreshLocation = async () => {
 };
 
 const handleMapLoad = useCallback(async (map: google.maps.Map) => {
-  mapRef.current = map;
+  localMapRef.current = map;
   
   // Check for cached map state
   const cacheKey = 'last-map-state';
@@ -564,7 +624,7 @@ const handleMapLoad = useCallback(async (map: google.maps.Map) => {
       timestamp: new Date()
     });
   });
-}, [mapRef, restaurants.length]);
+}, [restaurants.length]);
    
 
   const handleMapClick = useCallback((e: google.maps.MapMouseEvent) => {
@@ -725,8 +785,8 @@ const handleMapLoad = useCallback(async (map: google.maps.Map) => {
     handleTableClick(restaurant); // Use function from useRestaurantHandler
     const position = { lat: restaurant.latitude, lng: restaurant.longitude };
     setCenter(position);
-    if (mapRef.current) {
-      mapRef.current.panTo(position);
+    if (localMapRef.current) {
+      localMapRef.current.panTo(position);
     }
   };
 
@@ -734,6 +794,102 @@ const handleMapLoad = useCallback(async (map: google.maps.Map) => {
   useEffect(() => {
     handleFilter();
   }, [handleFilter]);
+
+  // Enhance the debug function
+  const debugCache = async (latitude: number, longitude: number) => {
+    try {
+      console.log('=== CACHE DEBUGGING ===');
+      console.log('Coordinates:', { latitude, longitude });
+      
+      // Check the cache key generation
+      const locationKey = getLocationCacheKey(latitude, longitude);
+      console.log('Generated cache key:', locationKey);
+      
+      // Check memory cache
+      console.log('Checking memory cache...');
+      const memoryCache = await cacheService.get(locationKey);
+      console.log('Memory cache result:', memoryCache ? 'HIT' : 'MISS');
+      if (memoryCache) {
+        console.log('Memory cache data:', memoryCache);
+      }
+      
+      // Check Firestore directly
+      console.log('Checking Firestore cache...');
+      const collectionName = CONFIG.FIRESTORE.COLLECTIONS.MAPS_CACHE || 'maps_cache';
+      console.log('Using collection:', collectionName);
+      
+      const docRef = doc(db, collectionName, locationKey);
+      const docSnap = await getDoc(docRef);
+      
+      console.log('Firestore cache result:', docSnap.exists() ? 'HIT' : 'MISS');
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        console.log('Firestore data:', data);
+        
+        // Check if the data structure is as expected
+        if (data.data && data.data.restaurants) {
+          console.log('Found restaurants in data.data:', data.data.restaurants.length);
+        } else if (data.restaurants) {
+          console.log('Found restaurants directly in data:', data.restaurants.length);
+        } else {
+          console.log('No restaurants found in cache data');
+        }
+        
+        // Try to manually load from cache
+        try {
+          let restaurantsData;
+          if (data.data && data.data.restaurants) {
+            restaurantsData = data.data.restaurants;
+          } else if (data.restaurants) {
+            restaurantsData = data.restaurants;
+          }
+          
+          if (restaurantsData && restaurantsData.length > 0) {
+            console.log('Manually loading', restaurantsData.length, 'restaurants from cache');
+            setRestaurants(restaurantsData);
+            setIsLoading(false);
+            console.log('Cache data loaded successfully!');
+          }
+        } catch (err) {
+          console.error('Error manually loading cache:', err);
+        }
+      }
+      
+      // Check other collections that might have the data
+      console.log('Checking alternative collections...');
+      const altCollections = [
+        'locationCaches',
+        'mapsCache',
+        'mapCache',
+        CONFIG.FIRESTORE.COLLECTIONS.LOCATION_CACHE
+      ];
+      
+      for (const collection of altCollections) {
+        if (collection === collectionName) continue;
+        
+        console.log(`Checking collection: ${collection}`);
+        const altDocRef = doc(db, collection, locationKey);
+        const altDocSnap = await getDoc(altDocRef);
+        
+        if (altDocSnap.exists()) {
+          console.log(`Found data in alternative collection: ${collection}`);
+          console.log('Data:', altDocSnap.data());
+        }
+      }
+      
+      console.log('=== END DEBUGGING ===');
+    } catch (error) {
+      console.error('Error during cache debugging:', error);
+    }
+  };
+
+  // Update the useEffect to sync the refs
+  useEffect(() => {
+    // When the map is loaded, update our local ref
+    if (restaurantMapRef && restaurantMapRef.current) {
+      localMapRef.current = restaurantMapRef.current;
+    }
+  }, [restaurantMapRef]);
 
   if (authLoading) {
     return (
@@ -1227,7 +1383,7 @@ const handleMapLoad = useCallback(async (map: google.maps.Map) => {
                 isSameLocation={isSameLocation}
                 handleMarkerClick={handleMarkerClick}
                 selectedMarker={selectedMarker}
-                mapRef={mapRef}
+                mapRef={localMapRef}
                 googleMapsConfig={googleMapsConfig}
               />
             

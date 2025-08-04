@@ -20,7 +20,10 @@ export interface ReverseGeocodeResult {
 export interface LocationResult {
   county: string;
   townName: string;
-  coordinates: LatLngLiteral;
+  coordinates: {
+    lat: number;
+    lng: number;
+  };
   formattedAddress?: string;
   placeId?: string;
   accuracy?: string;
@@ -28,7 +31,7 @@ export interface LocationResult {
 }
 
 export interface MapState {
-  center: LatLngLiteral;
+  center: google.maps.LatLngLiteral;
   zoom: number;
   timestamp: Date;
 }

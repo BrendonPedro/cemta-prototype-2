@@ -6,13 +6,14 @@ import type { DecodedIdToken } from "firebase-admin/auth";
 import { CONFIG } from "@/lib/database-builder/config";
 import { calculateDistance } from "@/app/utils/locationUtils";
 import type { Coordinates } from "@/app/services/location/type";
+import { NextRequest } from 'next/server';
 
 const RATE_LIMIT = {
   REQUESTS_PER_MINUTE: 60,
   WINDOW_MS: 60 * 1000
 };
 
-export async function GET(request: Request) {
+export async function GET(request: NextRequest) {
   const startTime = Date.now();
 
   try {
@@ -45,7 +46,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const lat = parseFloat(searchParams.get("lat") || "0");
     const lng = parseFloat(searchParams.get("lng") || "0");
-    const limit = Math.min(Number(searchParams.get("limit")) || 20, 100);
+    const radius = parseInt(searchParams.get('radius') || '1000');
 
     if (!validateTaiwanCoordinates(lat, lng)) {
       return NextResponse.json(
@@ -88,7 +89,9 @@ export async function GET(request: Request) {
         const distB = calculateDistance(lat, lng, b.latitude, b.longitude);
         return distA - distB;
       })
-      .slice(0, limit);
+      .slice(0, radius);
+
+    console.log('Found restaurants:', sortedResults.length);
 
     return NextResponse.json({
       restaurants: sortedResults,

@@ -17,7 +17,6 @@
     "isolatedModules": true,
     "jsx": "preserve",
     "incremental": true,
-    "typeRoots": ["./node_modules/@types", "./@types"],
     "baseUrl": ".",
     "paths": {
       "@/*": [
@@ -43,7 +42,7 @@
     ".next/types/**/*.ts",
     "app/api/storage/route.ts",
     "app/api/process-document-ai/route.ts"
-  ],
+, "tailwind.config.js"  ],
   "exclude": [
     "node_modules",
     "postcss.config.js"

@@ -1,9 +1,7 @@
 // Unified Maps hook
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { useJsApiLoader } from '@react-google-maps/api';
-import { googleMapsConfig } from '@/config/googleMapsConfig';
+import { useCallback } from 'react';
 import { useMapsContext } from '@/app/contexts/MapsContext';
 import type { LatLngLiteral } from '@googlemaps/google-maps-services-js';
 
@@ -15,47 +13,20 @@ interface UseMapsOptions {
 }
 
 export function useMaps(options: UseMapsOptions = {}) {
-  // Get context values first
+  // Get context values
   const context = useMapsContext();
   
-  // Use context's isLoaded and loadError instead of creating new ones
-  const { isLoaded, loadError } = context;
+  // Use context's values directly
+  const { 
+    isLoaded, 
+    loadError, 
+    state, 
+    position, 
+    geoError, 
+    isLocating, 
+    getUserLocation 
+  } = context;
   
-  const [locationError, setLocationError] = useState<string | null>(null);
-  const [isLocating, setIsLocating] = useState(false);
-
-  // Get user's location
-  const getUserLocation = useCallback(() => {
-    if (!navigator.geolocation) {
-      setLocationError('Geolocation is not supported by your browser');
-      return;
-    }
-
-    setIsLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const { latitude, longitude } = position.coords;
-        const location = { lat: latitude, lng: longitude };
-        
-        // Update context
-        context.setUserLocation(location);
-        context.setCurrentLocation(location);
-        context.setPinLocation(location);
-        
-        setIsLocating(false);
-      },
-      (error) => {
-        setLocationError(`Error getting location: ${error.message}`);
-        setIsLocating(false);
-      },
-      {
-        enableHighAccuracy: options.enableHighAccuracy ?? true,
-        timeout: options.timeout ?? 10000,
-        maximumAge: options.maximumAge ?? 60000
-      }
-    );
-  }, [context, options.enableHighAccuracy, options.timeout, options.maximumAge]);
-
   // Geocode an address
   const geocodeAddress = useCallback(async (address: string) => {
     if (!isLoaded) return null;
@@ -89,22 +60,14 @@ export function useMaps(options: UseMapsOptions = {}) {
     }
   }, [isLoaded]);
 
-  // Initialize location on mount if requested
-  useEffect(() => {
-    if (options.watchPosition) {
-      getUserLocation();
-    }
-  }, [getUserLocation, options.watchPosition]);
-
   return {
     // Include context properties
     ...context,
     
     // Add hook-specific properties
-    locationError,
-    isLocating,
-    getUserLocation,
+    locationError: geoError,
     geocodeAddress,
-    searchNearbyPlaces
+    searchNearbyPlaces,
+    currentLocation: state.locations.current
   };
 } 

@@ -1,1 +1,0 @@
-// This hook can be removed as it duplicates functionality in useGoogleMapsScript.ts

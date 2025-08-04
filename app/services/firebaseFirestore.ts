@@ -27,7 +27,7 @@ import geohash from 'ngeohash';
 import { db } from "@/lib/database-builder/db";
 import { CONFIG } from '@/lib/database-builder/config';
 import type { Restaurant, CachedRestaurant, OpeningHours, MenuSummary, Photo, SaveRestaurantResult, SaveRestaurantOptions, VertexAiResult } from '@/app/services/restaurant/types';
-import { calculateDistance } from '@/app/utils/locationUtils'
+import { calculateDistance } from '@/app/services/maps/locationService';
 import type { UserPreferences } from "@/interfaces/users/user-preferences";
 import type { PlaceData } from "@googlemaps/google-maps-services-js";
 import { calculateMatchScore } from '@/app/utils/restaurantMatching';
@@ -40,6 +40,7 @@ import type {
   MenuItemName,
   RestaurantInfo 
 } from '@/app/services/menu/types';
+import type { LocationCacheEntry } from "@/app/services/cache/mapCacheService";
 
 // For the county/town creation part:
 type RestaurantDocData = WithFieldValue<DocumentData>;
@@ -549,19 +550,20 @@ export const CACHE_CONSTANTS = {
 const SAVE_DEBOUNCE = 2000; // 2 seconds
 
 export async function getCachedRestaurantsForLocation(
-  lat: number, 
+  lat: number,
   lng: number
 ): Promise<CachedRestaurant[] | null> {
   const locationKey = getLocationCacheKey(lat, lng);
+  
   try {
-    const cached = await mapCache.get(locationKey);
+    const cached = await mapCache.get<LocationCacheEntry>(locationKey);
     if (cached?.restaurants) {
       console.log(`Cache hit for ${locationKey} - ${cached.restaurants.length} restaurants`);
       return cached.restaurants;
     }
     return null;
   } catch (error) {
-    console.error('Error accessing cache:', error);
+    console.error(`Error getting cached restaurants for ${locationKey}:`, error);
     return null;
   }
 }
@@ -569,82 +571,74 @@ export async function getCachedRestaurantsForLocation(
 export async function saveCachedRestaurantsForLocation(
   lat: number,
   lng: number,
-  newRestaurants: CachedRestaurant[],
+  restaurants: CachedRestaurant[],
+  county: string = '',
+  townName: string = ''
 ): Promise<void> {
   const locationKey = getLocationCacheKey(lat, lng);
+  
   try {
-    const existing = await mapCache.get(locationKey);
-    const existingRestaurants = existing?.restaurants || [];
-
+    const existing = await mapCache.get<LocationCacheEntry>(locationKey) || {
+      restaurants: [],
+      latitude: lat,
+      longitude: lng,
+      county: '',
+      townName: '',
+      firstCached: Date.now(),
+      lastAccessed: Date.now(),
+      expiresAt: Date.now() + CACHE_CONSTANTS.DURATION
+    };
+    
     // Create maps for both Google and Yelp IDs
     const seenGoogleIds = new Set<string>();
     const seenYelpIds = new Set<string>();
     
-    const mergedRestaurants = [...existingRestaurants, ...newRestaurants]
-      .filter(restaurant => {
-        const googleDuplicate = restaurant.id && seenGoogleIds.has(restaurant.id);
-        const yelpDuplicate = restaurant.yelpId && seenYelpIds.has(restaurant.yelpId);
-
-        if (googleDuplicate || yelpDuplicate) return false;
-
-        if (restaurant.id) seenGoogleIds.add(restaurant.id);
-        if (restaurant.yelpId) seenYelpIds.add(restaurant.yelpId);
-        
-        return true;
-      });
-
-    // Sort by distance but don't slice - keep all unique restaurants
-    const sortedRestaurants = mergedRestaurants
-      .sort((a, b) => {
-        const distA = calculateDistance(lat, lng, a.latitude, a.longitude);
-        const distB = calculateDistance(lat, lng, b.latitude, b.longitude);
-        return distA - distB;
-      });
-
-    // Only save if there are actual changes
-    if (mergedRestaurants.length !== existingRestaurants.length) {
-      console.log(`Cache update summary for ${locationKey}:`);
-      console.log(`- Existing restaurants: ${existingRestaurants.length}`);
-      console.log(`- New unique restaurants: ${newRestaurants.length}`);
-      console.log(`- Total after merge: ${mergedRestaurants.length}`);
-
-      // Save to both memory and Firestore cache
-      await mapCache.set(locationKey, {
-        restaurants: sortedRestaurants,
-        latitude: lat,
-        longitude: lng,
-        coordinates: { lat, lng },
-        county: existing?.county || '',
-        townName: existing?.townName || '',
-        timestamp: Date.now(),
-        firstCached: existing?.firstCached || Date.now(),
-        lastAccessed: Date.now(),
-        expiresAt: Date.now() + CACHE_CONSTANTS.DURATION,
-        geohash: locationKey
-      });
-
-      console.log(`Successfully updated collection: ${CACHE_CONSTANTS.COLLECTION_NAME}`);
-    } else {
-      console.log(`No new unique restaurants to add to cache ${locationKey}`);
-    }
+    // Add existing restaurants to the sets
+    existing.restaurants.forEach(r => {
+      if (r.googlePlaceId) seenGoogleIds.add(r.googlePlaceId);
+      if (r.yelpId) seenYelpIds.add(r.yelpId);
+    });
+    
+    // Filter out duplicates from the new restaurants
+    const uniqueNewRestaurants = restaurants.filter(r => {
+      if (r.googlePlaceId && seenGoogleIds.has(r.googlePlaceId)) return false;
+      if (r.yelpId && seenYelpIds.has(r.yelpId)) return false;
+      
+      if (r.googlePlaceId) seenGoogleIds.add(r.googlePlaceId);
+      if (r.yelpId) seenYelpIds.add(r.yelpId);
+      
+      return true;
+    });
+    
+    // Combine existing and new restaurants
+    const combinedRestaurants = [...existing.restaurants, ...uniqueNewRestaurants];
+    
+    // Update the cache
+    await mapCache.saveRestaurantsForLocation(
+      lat,
+      lng,
+      combinedRestaurants,
+      county || existing.county,
+      townName || existing.townName
+    );
+    
+    console.log(`Updated cache for ${locationKey} - now has ${combinedRestaurants.length} restaurants`);
   } catch (error) {
-    console.error('Error saving cache:', error);
-    throw error;
+    console.error(`Error saving cached restaurants for ${locationKey}:`, error);
   }
 }
 
-async function getLocationCacheValidity(
-  lat: number, 
+export async function validateCachedLocation(
+  lat: number,
   lng: number,
-  cacheKey: string
-): Promise<{ isValid: boolean; reason?: string }> {
+  locationKey: string
+): Promise<{ isValid: boolean; reason?: string; distance?: number }> {
   try {
-    const cached = await mapCache.get(cacheKey);
-    
+    const cached = await mapCache.get<LocationCacheEntry>(locationKey);
     if (!cached) {
-      return { isValid: false, reason: 'no-cache' };
+      return { isValid: false, reason: 'not_found' };
     }
-
+    
     const now = Date.now();
     
     // Check if cache has expired
@@ -652,21 +646,21 @@ async function getLocationCacheValidity(
       return { isValid: false, reason: 'expired' };
     }
 
-    // Check if location is too far from cached center
+    // Check if location is too far from the cached location
     const distance = calculateDistance(
       lat,
       lng,
       cached.latitude,
       cached.longitude
     );
-
+    
     if (distance > CONFIG.SEARCH.PRECISE.RADIUS) {
-      return { isValid: false, reason: 'too-far' };
+      return { isValid: false, reason: 'distance', distance };
     }
-
+    
     return { isValid: true };
   } catch (error) {
-    console.error('Error checking cache validity:', error);
+    console.error(`Error validating cached location for ${locationKey}:`, error);
     return { isValid: false, reason: 'error' };
   }
 }

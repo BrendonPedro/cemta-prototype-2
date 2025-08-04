@@ -31,7 +31,7 @@ const MarketingLayout = ({ children, showBackgroundImage = true }: Props) => {
   const isHomepage = pathname === "/";
 
   return (
-    <div className={`min-h-screen flex flex-col ${isHomepage ? 'bg-white' : 'bg-gradient-to-br from-customTeal to-white'}`}>
+    <div className={`min-h-screen flex flex-col bg-background text-foreground ${isHomepage ? 'bg-white' : 'bg-gradient-to-br from-customTeal to-white'}`}>
       <Header />
       <div className="flex flex-grow">
         {shouldShowSidebar && (

@@ -5,29 +5,31 @@ import { Restaurant } from "@/app/services/restaurant/types";
 import { validateTaiwanCoordinates } from '@/config/googleMapsConfig';
 import { CONFIG } from '@/lib/database-builder/config';
 import { getCachedRestaurantDetails } from '@/app/services/firebaseFirestore';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '@/config/firebaseConfig';
 
-const defaultHandler = {
-  focusedRestaurant: null,
-  selectedMarker: null,
-  handleTableClick: () => {},
-  handleMarkerClick: () => {},
-  resetFocus: () => {},
-  mapRef: { current: null }
-};
+// Define the return type for better type checking
+interface RestaurantHandlerReturn {
+  focusedRestaurant: Restaurant | null;
+  selectedMarker: string | null;
+  handleTableClick: (restaurant: Restaurant) => void;
+  handleMarkerClick: (restaurant: Restaurant, position: { lat: number; lng: number }) => void;
+  resetFocus: () => void;
+  mapRef: React.RefObject<google.maps.Map | null>;
+}
 
-export function useRestaurantHandler(firebaseToken: string | null) {
-  // Early return if no token
-  if (!firebaseToken) {
-    return defaultHandler;
-  }
-
-  // All hooks need to be called unconditionally
+export function useRestaurantHandler(firebaseToken: string | null): RestaurantHandlerReturn {
+  // Always declare all state at the top
   const [focusedRestaurant, setFocusedRestaurant] = useState<Restaurant | null>(null);
   const [selectedMarker, setSelectedMarker] = useState<string | null>(null);
   const mapRef = useRef<google.maps.Map | null>(null);
   const restaurantCache = useRef<Map<string, { data: Restaurant; timestamp: number }>>(new Map());
+  const hasToken = !!firebaseToken;
 
+  // All hooks must be called unconditionally
   useEffect(() => {
+    if (!hasToken) return;
+    
     const cleanup = () => {
       const now = Date.now();
       restaurantCache.current.forEach((entry, id) => {
@@ -39,9 +41,8 @@ export function useRestaurantHandler(firebaseToken: string | null) {
 
     const interval = setInterval(cleanup, CONFIG.PROCESSING.VERIFICATION_INTERVAL);
     return () => clearInterval(interval);
-  }, []);
+  }, [hasToken]);
 
-  // Add validation helper
   const validatePosition = useCallback((lat: number, lng: number): boolean => {
     if (!validateTaiwanCoordinates(lat, lng)) {
       console.warn('Location outside Taiwan bounds:', { lat, lng });
@@ -54,7 +55,8 @@ export function useRestaurantHandler(firebaseToken: string | null) {
     restaurant: Restaurant,
     position: { lat: number; lng: number }
   ) => {
-    // Validate position before proceeding
+    if (!hasToken) return;
+    
     if (!validatePosition(position.lat, position.lng)) {
       console.warn('Skipping selection - invalid position');
       return;
@@ -84,7 +86,6 @@ export function useRestaurantHandler(firebaseToken: string | null) {
           ...cachedDetails,
           hasDetailsFetched: true
         };
-        // Update memory cache
         restaurantCache.current.set(restaurant.id, {
           data: updatedRestaurant,
           timestamp: Date.now()
@@ -115,7 +116,6 @@ export function useRestaurantHandler(firebaseToken: string | null) {
             ...data.restaurant,
             hasDetailsFetched: true
           };
-          // Update memory cache
           restaurantCache.current.set(restaurant.id, {
             data: updatedRestaurant,
             timestamp: Date.now()
@@ -131,22 +131,26 @@ export function useRestaurantHandler(firebaseToken: string | null) {
       console.error('Error handling restaurant selection:', error);
       setFocusedRestaurant(restaurant);
     }
-  }, [firebaseToken, validatePosition]);
+  }, [firebaseToken, validatePosition, hasToken]);
 
   const handleTableClick = useCallback((restaurant: Restaurant) => {
+    if (!hasToken) return;
+    
     const position = { 
       lat: restaurant.latitude, 
       lng: restaurant.longitude 
     };
     handleRestaurantSelection(restaurant, position);
-  }, [handleRestaurantSelection]);
+  }, [handleRestaurantSelection, hasToken]);
 
   const handleMarkerClick = useCallback((
     restaurant: Restaurant,
     position: { lat: number; lng: number }
   ) => {
+    if (!hasToken) return;
+    
     handleRestaurantSelection(restaurant, position);
-  }, [handleRestaurantSelection]);
+  }, [handleRestaurantSelection, hasToken]);
 
   const resetFocus = useCallback(() => {
     setFocusedRestaurant(null);

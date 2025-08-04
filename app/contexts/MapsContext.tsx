@@ -1,14 +1,12 @@
 'use client';
 
-import { createContext, useContext, useCallback, useReducer, useEffect } from 'react';
+import { createContext, useContext, useCallback, useReducer, useEffect, useState } from 'react';
 import { useJsApiLoader } from '@react-google-maps/api';
 import { googleMapsConfig, DEFAULT_CENTER, validateTaiwanCoordinates } from '@/config/googleMapsConfig';
-import { useGeolocation } from '@/hooks/use-geolocation';
 import { LatLngLiteral } from '@googlemaps/google-maps-services-js';
-import { mapCache } from "@/app/services/cache/mapCacheService";
-import { getLocationCacheKey } from '../services/firebaseFirestore';
+import { cacheService } from "@/app/services/maps/cacheService";
+import { getLocationCacheKey } from '@/app/services/maps/cacheService';
 import { CONFIG } from '@/lib/database-builder/config';
-import type { MapCacheEntry } from '@/app/services/cache/mapCacheService';
 
 interface MapState {
   locations: {
@@ -105,26 +103,54 @@ interface MapsContextType {
   isLoaded: boolean;
   loadError: Error | undefined;
   state: MapState;
+  position: LatLngLiteral | null;
+  geoError: string | null;
+  isLocating: boolean;
+  getUserLocation: () => void;
   setUserLocation: (location: LatLngLiteral | null) => void;
   setCurrentLocation: (location: LatLngLiteral) => void;
   setCenter: (location: LatLngLiteral) => void;
   setPinLocation: (location: LatLngLiteral | null) => void;
   setLocationEnabled: (enabled: boolean) => void;
-  toggleLocation: (enabled: boolean) => void;
+  toggleLocation: (enabled: boolean) => Promise<void>;
 }
 
 const MapsContext = createContext<MapsContextType | null>(null);
 
 export function MapsProvider({ children }: { children: React.ReactNode }) {
   const { isLoaded, loadError } = useJsApiLoader(googleMapsConfig);
-  const { position } = useGeolocation({
-    enableHighAccuracy: true,
-    timeout: CONFIG.API.DELAY_BETWEEN_CALLS,
-    maximumAge: CONFIG.CACHE.STRATEGY.MEMORY.TTL,
-    watchPosition: false
-  });
-  
   const [state, dispatch] = useReducer(mapReducer, initialState);
+  
+  // Implement geolocation directly instead of using the hook
+  const [position, setPosition] = useState<LatLngLiteral | null>(null);
+  const [geoError, setGeoError] = useState<string | null>(null);
+  const [isLocating, setIsLocating] = useState(false);
+
+  // Get user's location directly
+  const getUserLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      setGeoError('Geolocation is not supported by your browser');
+      return;
+    }
+
+    setIsLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (geoPosition) => {
+        const { latitude, longitude } = geoPosition.coords;
+        setPosition({ lat: latitude, lng: longitude });
+        setIsLocating(false);
+      },
+      (error) => {
+        setGeoError(`Error getting location: ${error.message}`);
+        setIsLocating(false);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 60000
+      }
+    );
+  }, []);
 
   // Validate coordinates helper
   const isValidCoordinate = useCallback((location: LatLngLiteral): boolean => {
@@ -178,20 +204,19 @@ export function MapsProvider({ children }: { children: React.ReactNode }) {
     try {
       dispatch({ type: 'TOGGLE_LOCATION', payload: enabled });
       
-      if (enabled && position?.coords) {
-        const { latitude, longitude } = position.coords;
+      if (enabled && position) {
+        const { lat: latitude, lng: longitude } = position;
         
         if (validateTaiwanCoordinates(latitude, longitude)) {
           const newLocation = { lat: latitude, lng: longitude };
           const locationKey = getLocationCacheKey(latitude, longitude);
           
-          const cachedData = await mapCache.get(locationKey);
+          const cachedData = await cacheService.get(locationKey);
           
           if (cachedData) {
-            // Extract coordinates from cache entry
             const coordinates = {
-              lat: cachedData.latitude,
-              lng: cachedData.longitude
+              lat: (cachedData as any).latitude || 0,
+              lng: (cachedData as any).longitude || 0
             };
   
             if (isValidCoordinate(coordinates)) {
@@ -201,8 +226,7 @@ export function MapsProvider({ children }: { children: React.ReactNode }) {
               dispatch({ type: 'SET_PIN', payload: coordinates });
             }
           } else {
-            // Create a new cache entry with required fields
-            await mapCache.set(locationKey, {
+            await cacheService.set(locationKey, {
               coordinates: newLocation,
               latitude: newLocation.lat,
               longitude: newLocation.lng,
@@ -232,8 +256,8 @@ export function MapsProvider({ children }: { children: React.ReactNode }) {
 
   // Add effect to validate position changes
   useEffect(() => {
-    if (position?.coords) {
-      const { latitude, longitude } = position.coords;
+    if (position) {
+      const { lat: latitude, lng: longitude } = position;
       if (state.settings.enabled && isValidCoordinate({ lat: latitude, lng: longitude })) {
         setUserLocation({ lat: latitude, lng: longitude });
       }
@@ -245,6 +269,10 @@ export function MapsProvider({ children }: { children: React.ReactNode }) {
       isLoaded,
       loadError,
       state,
+      position,
+      geoError,
+      isLocating,
+      getUserLocation,
       setUserLocation,
       setCurrentLocation,
       setCenter,

@@ -272,7 +272,7 @@ export interface Photo {
   export type YelpApiResponse = YelpSearchResponse | YelpErrorResponse;
 
 //-----CACHE-----
-export interface CachedRestaurant extends Restaurant { // Added cache-specific fields
+export interface CachedRestaurant extends Restaurant { 
   // Essential Information 
   id: string;
   name: string;
@@ -308,6 +308,7 @@ export interface CachedRestaurant extends Restaurant { // Added cache-specific f
   yelpId?: string | null;
   yelpRating?: number | null;
   placeId?: string;
+  googlePlaceId?: string;
   lastYelpSync?: string;
   
   // State Management

@@ -1,7 +1,21 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@config "../tailwind.config.js";
+@import "tailwindcss";
 
+@theme {
+  /* Ensure custom colors are available in v4 - these generate utility classes */
+  --color-customTeal: #008080;
+  --color-customTeal2: #00BFBF; 
+  --color-customBlack: #000000;
+  --color-customBlack2: #333333;
+  --color-customTealDark: #2c7a7b;
+  --color-customTealLight: #81e6d9;
+  
+  /* Additional colors from config */
+  --color-purple-951: rgba(79, 70, 229, 1);
+  --color-gray-950: hsla(0, 0%, 100%, 0.6);
+  --color-gray-951: hsla(0, 0%, 100%, 0.4);
+  --color-gray-952: #373b64;
+}
 
 /* Custom CSS to hide inactive TabsContent components */
 [data-state="inactive"][role="tabpanel"] {

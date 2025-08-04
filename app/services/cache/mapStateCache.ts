@@ -1,73 +1,35 @@
-// app/services/cache/mapStateCache.ts
-import { CONFIG } from '@/lib/database-builder/config';
-import { cacheService } from '@/app/services/cacheService';
-import type { MapState } from '@/app/services/location/type';
-import { DEFAULT_CENTER } from '@/config/googleMapsConfig';
+import type { MapState } from '@/app/services/maps/types';
 
-interface MemoryMapState {
-  data: MapState;
-  timestamp: number;
+class MapStateCache {
+  private state: MapState | null = null;
+
+  async get(key: string): Promise<MapState | null> {
+    // In a real implementation, this would fetch from storage
+    return this.state;
+  }
+
+  async set(key: string, state: MapState): Promise<void> {
+    this.state = {
+      ...state,
+      timestamp: new Date()
+    };
+  }
+
+  clear(): void {
+    this.state = null;
+  }
+
+  isValid(): boolean {
+    if (!this.state) return false;
+    
+    const now = new Date();
+    const cacheTime = this.state.timestamp;
+    const diffMinutes = (now.getTime() - cacheTime.getTime()) / (1000 * 60);
+    
+    // Cache is valid for 30 minutes
+    return diffMinutes < 30;
+  }
 }
 
-const memoryStateCache = new Map<string, MemoryMapState>();
-
-export const mapStateCache = {
-  async get(key: string): Promise<MapState | null> {
-    const memoryCacheEntry = memoryStateCache.get(key);
-    const now = Date.now();
-
-    if (memoryCacheEntry && now - memoryCacheEntry.timestamp < CONFIG.CACHE.STRATEGY.MEMORY.TTL) {
-      return memoryCacheEntry.data;
-    }
-
-    const data = await cacheService.get<MapState>(
-      key, 
-      CONFIG.FIRESTORE.COLLECTIONS.MAP_STATES
-    );
-
-    if (data) {
-      memoryStateCache.set(key, {
-        data,
-        timestamp: now
-      });
-      return data;
-    }
-
-    return null;
-  },
-
-  async set(key: string, value: Partial<MapState>): Promise<void> {
-    const now = new Date();
-    const normalizedValue: MapState = {
-      center: value.center || DEFAULT_CENTER,
-      zoom: value.zoom || 14,
-      timestamp: now
-    };
-
-    memoryStateCache.set(key, {
-      data: normalizedValue,
-      timestamp: now.getTime()
-    });
-
-    await cacheService.set(
-      key, 
-      normalizedValue, 
-      CONFIG.FIRESTORE.COLLECTIONS.MAP_STATES
-    );
-  },
-
-  cleanup(): void {
-    const now = Date.now();
-    for (const [key, entry] of memoryStateCache.entries()) {
-      if (now - entry.timestamp > CONFIG.CACHE.STRATEGY.MEMORY.TTL) {
-        memoryStateCache.delete(key);
-      }
-    }
-  }
-};
-
-// Set up periodic cleanup
-setInterval(
-  () => mapStateCache.cleanup(), 
-  CONFIG.PROCESSING.VERIFICATION_INTERVAL
-);
+// Singleton instance
+export const mapStateCache = new MapStateCache(); 

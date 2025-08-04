@@ -1,13 +1,12 @@
-import { transform } from "next/dist/build/swc"
-import type { Config } from "tailwindcss"
-
-const config = {
+// import { transform } from "next/dist/build/swc"
+/** @type {import('tailwindcss').Config} */
+module.exports = {
   darkMode: ["class"],
   content: [
-    './pages/**/*.{js, jsx, ts,tsx}',
-    './components/**/*.{js, jsx, ts,tsx}',
-    './app/**/*.{js, jsx, ts,tsx}',
-    './src/**/*.{js, jsx, ts,tsx}',
+    './pages/**/*.{js,jsx,ts,tsx}',
+    './components/**/*.{js,jsx,ts,tsx}',
+    './app/**/*.{js,jsx,ts,tsx}',
+    './src/**/*.{js,jsx,ts,tsx}',
 	],
   prefix: "",
   theme: {
@@ -99,11 +98,11 @@ const config = {
       },
     },
   },
-  plugins: [require("tailwindcss-animate")],
-} satisfies Config
+  plugins: [
+    require('tailwindcss-animate'),
+  ],
+};
 
-
-export default config
 
 // import type { Config } from 'tailwindcss';
 

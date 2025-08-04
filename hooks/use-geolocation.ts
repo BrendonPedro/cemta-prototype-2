@@ -1,106 +1,40 @@
-// hooks/use-geolocation.ts
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { validateTaiwanCoordinates } from '@/config/googleMapsConfig';
-import { CONFIG } from '@/lib/database-builder/config';
+'use client';
 
-interface GeolocationState {
-  position: GeolocationPosition | null;
-  error: GeolocationPositionError | null;
-  isLoading: boolean;
-  timestamp: number | null;
-}
+import { useState, useEffect } from 'react';
+import { useMaps } from '@/app/hooks/use-maps';
 
-interface UseGeolocationOptions {
+export interface GeolocationOptions {
   enableHighAccuracy?: boolean;
   timeout?: number;
   maximumAge?: number;
   watchPosition?: boolean;
 }
 
-export function useGeolocation(options: UseGeolocationOptions = {}) {
-  const [state, setState] = useState<GeolocationState>({
-    position: null,
-    error: null,
-    isLoading: true,
-    timestamp: null
-  });
+export function useGeolocation(options?: GeolocationOptions) {
+  const { getUserLocation, locationError, isLocating, position: contextPosition } = useMaps();
+  const [position, setPosition] = useState<{ lat: number; lng: number } | null>(null);
   
-  const positionRef = useRef<GeolocationPosition | null>(null);
-  const watchIdRef = useRef<number>();
-
-  const handleSuccess = useCallback((position: GeolocationPosition) => {
-    const { latitude, longitude } = position.coords;
-    
-    if (validateTaiwanCoordinates(latitude, longitude)) {
-      positionRef.current = position;
-      setState({
-        position,
-        error: null,
-        isLoading: false,
-        timestamp: Date.now()
-      });
-    } else {
-      setState(prev => ({
-        position: positionRef.current,
-        error: new GeolocationPositionError(),
-        isLoading: false,
-        timestamp: prev.timestamp
-      }));
-    }
-  }, []);
-
-  const handleError = useCallback((error: GeolocationPositionError) => {
-    setState(prev => ({
-      position: positionRef.current,
-      error,
-      isLoading: false,
-      timestamp: prev.timestamp
-    }));
-  }, []);
-
+  // Update position when the context position changes
   useEffect(() => {
-    if (!navigator.geolocation) {
-      setState(prev => ({
-        ...prev,
-        error: new GeolocationPositionError(),
-        isLoading: false
-      }));
-      return;
+    if (contextPosition) {
+      setPosition(contextPosition);
     }
-
-    const geolocationOptions: PositionOptions = {
-      enableHighAccuracy: options.enableHighAccuracy ?? true,
-      timeout: options.timeout ?? CONFIG.API.DELAY_BETWEEN_CALLS,
-      maximumAge: options.maximumAge ?? CONFIG.CACHE.STRATEGY.MEMORY.TTL
-    };
-
-    if (options.watchPosition) {
-      watchIdRef.current = navigator.geolocation.watchPosition(
-        handleSuccess, 
-        handleError, 
-        geolocationOptions
-      );
-
-      return () => {
-        if (watchIdRef.current) {
-          navigator.geolocation.clearWatch(watchIdRef.current);
-        }
-      };
-    } 
-
-    navigator.geolocation.getCurrentPosition(
-      handleSuccess, 
-      handleError, 
-      geolocationOptions
-    );
-  }, [
-    options.enableHighAccuracy,
-    options.timeout,
-    options.maximumAge,
-    options.watchPosition,
-    handleSuccess,
-    handleError
-  ]);
-
-  return state;
-}
+  }, [contextPosition]);
+  
+  const getCurrentPosition = async () => {
+    try {
+      // This will update the location in the context
+      getUserLocation();
+      // The position will be updated via the useEffect above
+    } catch (error) {
+      console.error('Error getting location:', error);
+    }
+  };
+  
+  return {
+    getCurrentPosition,
+    position,
+    error: locationError,
+    isLoading: isLocating
+  };
+} 

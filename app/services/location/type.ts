@@ -1,5 +1,4 @@
 import { Timestamp } from 'firebase/firestore';
-import { EnhancedCountyData, EnhancedTownData } from '@/lib/data/counties';
 import { CachedRestaurant } from '@/app/services/restaurant/types';
 
 export interface Coordinates {
@@ -23,59 +22,31 @@ export interface LocationResponse extends LocationDetails {
 export interface LocationCache {
   gridKey: string;
   timestamp: Timestamp | { seconds: number; nanoseconds: number } | number;
-  geohash: string;
+  latitude: number;
+  longitude: number;
+  coordinates: Coordinates;
   county: string;
+  townName: string;
   restaurants: CachedRestaurant[];
-  lastUpdated: {
-    county: Timestamp | { seconds: number; nanoseconds: number } | number;
-    restaurants: Timestamp | { seconds: number; nanoseconds: number } | number;
-    images: Timestamp | { seconds: number; nanoseconds: number } | number;
-  };
-  cached?: boolean;
+  firstCached: number;
+  lastAccessed: number;
+  expiresAt: number;
+  geohash?: string;
 }
 
-export interface NearestLocation {
-  town: EnhancedTownData | null;
-  county: EnhancedCountyData | null;
-  distance: number;
-}
-
-export interface APIMetricsLog {
-  timestamp: string;
-  gridKey: string;
-  cached: boolean;
-  apis: {
-    googlemaps: {
-      places: number;
-      geocoding: number;
-      photos: number;
-    };
-    yelp: number;
+export interface SearchResults {
+  restaurants: CachedRestaurant[];
+  location: {
+    lat: number;
+    lng: number;
+    county: string;
+    townName: string;
   };
-  restaurants: {
-    total: number;
+  stats: {
     fromCache: number;
     newlyFetched: number;
     withGooglePhotos: number;
     withYelpData: number;
   };
   duration: number;
-}
-
-export interface CacheTimestamps {
-  timestamp: number;
-  firstCached: number;
-  lastAccessed: number;
-  expiresAt: number;
-}
-
-export interface MapState {
-    center: google.maps.LatLngLiteral;
-    zoom: number;
-    timestamp: Date;
-  }
-
-export interface LocationStats {
-  towns: Set<string>;
-  counties: Set<string>;
-}
+} 

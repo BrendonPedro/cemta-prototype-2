@@ -1,11 +1,11 @@
 import { Client, PlacesNearbyRanking } from "@googlemaps/google-maps-services-js";
 import { CONFIG } from '@/lib/database-builder/config';
-import { determineLocation } from '@/app/services/location/locationService';
+import { determineLocation } from '@/app/services/maps/locationService';
 import { cacheService, getLocationCacheKey } from '@/app/services/cacheService';
-import { mapStateCache } from '@/app/services/cache/mapStateCache';
+import { mapsService } from '@/app/services/maps';
 import { getYelpBusinessWithPhotos } from '@/app/services/yelp/yelpService';
 import { uploadImageToBucket } from '@/app/services/gcpBucketStorage';
-import { calculateDistance } from '@/app/utils/locationUtils';
+import { locationService } from '@/app/services/maps/locationService';
 import { validateTaiwanCoordinates } from '@/config/googleMapsConfig';
 import { 
   writeBatch, 

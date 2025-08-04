@@ -48,7 +48,7 @@ export const CONFIG = {
   FIRESTORE: {
     COLLECTIONS: {
       ...COLLECTION_NAMES,
-      MAPS_CACHE: "mapsCache"
+      MAPS_CACHE: 'maps_cache'
     }
   },
   MAPS: {

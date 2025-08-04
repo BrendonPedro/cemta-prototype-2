@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState, useMemo } from "react";
+import React, { createContext, useContext, useEffect, useState, useMemo, useCallback } from "react";
 import { useAuth as useClerkAuth, useUser as useClerkUser } from "@clerk/nextjs";
 import { signInWithCustomToken } from "firebase/auth";
 import { doc, getDoc, updateDoc, serverTimestamp, type DocumentSnapshot } from "firebase/firestore";
@@ -44,9 +44,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  const updateUserRole = async (newRole: UserRoleType) => {
+  const updateUserRole = useCallback(async (newRole: UserRoleType) => {
     if (!userId) return;
-    
     try {
       const userRef = doc(db, "users", userId);
       await updateDoc(userRef, {
@@ -58,16 +57,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       setError("Failed to update user role");
       console.error("Error updating user role:", error);
     }
-  };
+  }, [userId]);
 
-  const getValidFirebaseToken = async () => {
+  const getValidFirebaseToken = useCallback(async () => {
     try {
       if (!user) return null;
       const customToken = await getToken({
         template: "integration_firebase",
       });
       if (!customToken) return null;
-      
       const userCredential = await signInWithCustomToken(auth, customToken);
       const newToken = await userCredential.user.getIdToken();
       setFirebaseToken(newToken);
@@ -77,9 +75,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       setError("Failed to refresh authentication token");
       return null;
     }
-  };
+  }, [getToken, user]);
 
-  const makeAuthenticatedRequest = async (url: string, options: RequestInit = {}) => {
+  const makeAuthenticatedRequest = useCallback(async (url: string, options: RequestInit = {}) => {
     try {
       // First attempt with current token
       const response = await fetch(url, {
@@ -89,12 +87,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           Authorization: `Bearer ${firebaseToken}`,
         },
       });
-
       // If token expired, get new token and retry once
       if (response.status === 401) {
         const newToken = await getValidFirebaseToken();
         if (!newToken) throw new Error('Failed to refresh token');
-
         // Retry with new token
         return await fetch(url, {
           ...options,
@@ -104,13 +100,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           },
         });
       }
-
       return response;
     } catch (error) {
       console.error('Request failed:', error);
       throw error;
     }
-  };
+  }, [firebaseToken, getValidFirebaseToken]);
 
   useEffect(() => {
     const authenticateWithFirebase = async () => {
@@ -164,7 +159,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       getValidFirebaseToken,
       makeAuthenticatedRequest
     }),
-    [firebaseToken, loading, error, userRole, roleRequest, userId]
+    [
+      firebaseToken,
+      loading,
+      error,
+      userRole,
+      roleRequest,
+      userId,
+      updateUserRole,
+      getValidFirebaseToken,
+      makeAuthenticatedRequest
+    ]
   );
 
   if (error && user) {

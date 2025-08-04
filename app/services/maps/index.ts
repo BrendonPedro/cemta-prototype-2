@@ -1,28 +1,28 @@
 // Main entry point for Maps Service
-import { geocodeService } from '@/app/services/maps/geocodeService';
-import { placesService } from '@/app/services/maps/placesService';
-import { locationService } from '@/app/services/maps/locationService';
-import { cacheService } from '@/app/services/maps/cacheService';
+import { geocodeService } from './geocodeService';
+import { placesService } from './placesService';
+import { locationService } from './locationService';
+import { cacheService } from './cacheService';
 
 export const mapsService = {
   // Location and geocoding services
   geocode: geocodeService.geocode,
   reverseGeocode: geocodeService.reverseGeocode,
   determineLocation: locationService.determineLocation,
+  calculateDistance: locationService.calculateDistance,
+  normalizeCoordinates: locationService.normalizeCoordinates,
   
   // Places services
   searchNearby: placesService.searchNearby,
   getPlaceDetails: placesService.getPlaceDetails,
-  
-  // Distance calculations
-  calculateDistance: locationService.calculateDistance,
+  isValidEstablishment: placesService.isValidEstablishment,
   
   // Cache management
   cache: cacheService
 };
 
-export type { 
-  GeocodeResult,
-  ReverseGeocodeResult,
-  LocationResult
-} from './types'; 
+// Export individual services for direct access
+export { geocodeService, placesService, locationService, cacheService };
+
+// Export types
+export type * from './types'; 
